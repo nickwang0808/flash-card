@@ -18,8 +18,10 @@ A local-first, git-powered spaced repetition flashcard app for vocabulary learni
 │                     GitHub Repository                            │
 │                                                                  │
 │   flashcards/                                                    │
-│   ├── cards.json          # card content                         │
-│   ├── state.json          # FSRS scheduling state                │
+│   ├── data/                                                      │
+│   │   └── <profile>/                                             │
+│   │       ├── cards.json  # card content per user                │
+│   │       └── state.json  # FSRS state per user                 │
 │   ├── index.html          # webapp entry                         │
 │   ├── src/                # webapp source                        │
 │   └── dist/               # built assets                         │
@@ -44,8 +46,8 @@ A local-first, git-powered spaced repetition flashcard app for vocabulary learni
 {
   "chabacano": {
     "id": "chabacano",
-    "spanish": "chabacano",
-    "english": "apricot",
+    "source": "chabacano",
+    "translation": "apricot",
     "example": "Los chabacanos están en temporada en primavera.",
     "notes": "Common in Mexico, 'albaricoque' used in Spain",
     "deck": "spanish",
@@ -58,8 +60,8 @@ A local-first, git-powered spaced repetition flashcard app for vocabulary learni
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | id | string | yes | Unique identifier, matches key |
-| spanish | string | yes | Spanish word/phrase |
-| english | string | yes | English translation |
+| source | string | yes | Word/phrase in source language |
+| translation | string | yes | Translation |
 | example | string | no | Example sentence |
 | notes | string | no | Additional context |
 | deck | string | yes | Deck name for organization |
@@ -183,8 +185,8 @@ Manages card data and state.
 ```typescript
 interface Card {
   id: string;
-  spanish: string;
-  english: string;
+  source: string;
+  translation: string;
   example?: string;
   notes?: string;
   deck: string;
@@ -229,7 +231,7 @@ interface CardStore {
 
 **Implementation notes:**
 - Initialize missing state entries with `createEmptyCard()`
-- For cards with `reversible: true`, generate a virtual reverse card (swap spanish/english) keyed as `id:reverse`
+- For cards with `reversible: true`, generate a virtual reverse card (swap source/translation) keyed as `id:reverse`
 - Reverse cards have independent SRS state in state.json
 - After each review, update in-memory state AND write to localStorage (write-ahead)
 - `save()` writes state.json to git fs, commits
@@ -315,6 +317,7 @@ Manages user settings.
 interface Settings {
   repoUrl: string;
   token: string;  // fine-grained PAT
+  profile: string;  // user profile name, maps to data/<profile>/
   newCardsPerDay: number;  // default 10
   reviewOrder: 'random' | 'oldest-first' | 'deck-grouped';
   theme: 'light' | 'dark' | 'system';
@@ -335,6 +338,7 @@ Storage: localStorage (never committed to repo)
 ### Screens
 
 1. **Setup Screen** (first run)
+   - Profile name input
    - Repo URL input
    - PAT input (with help text about scopes)
    - Clone button
@@ -349,7 +353,7 @@ Storage: localStorage (never committed to repo)
    - Settings gear
 
 3. **Review Screen**
-   - Prompt side (centered, large) — spanish or english depending on direction
+   - Prompt side (centered, large) — source or translation depending on direction
    - "Show Answer" button
    - Answer side + example + notes (after reveal)
    - Rating buttons: Again / Hard / Good / Easy
@@ -457,8 +461,8 @@ tests/
 export const testCards = {
   "test-card-1": {
     id: "test-card-1",
-    spanish: "hola",
-    english: "hello",
+    source: "hola",
+    translation: "hello",
     deck: "test",
     created: "2025-01-01T00:00:00Z"
   },
@@ -571,8 +575,13 @@ flashcards/
 ├── vite.config.ts
 ├── tsconfig.json
 ├── package.json
-├── cards.json                  # actual card data (in repo root)
-└── state.json                  # actual state data (in repo root)
+├── data/
+│   ├── nick/
+│   │   ├── cards.json          # card content per user
+│   │   └── state.json          # FSRS state per user
+│   └── wife/
+│       ├── cards.json
+│       └── state.json
 ```
 
 ## Implementation Order
