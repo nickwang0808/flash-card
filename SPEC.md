@@ -395,9 +395,10 @@ App
 
 ### Test Environment
 
-Use a separate test repository with known fixture data:
-- `flashcards-test` repo with pre-populated cards.json and state.json
-- Fixtures committed to test repo for reproducibility
+- Before each test run: create a temporary branch from `main`, layer fixture data on top
+- Tests clone that branch — always testing against the current schema from `main`
+- After tests: delete the temporary branch
+- No separate test repo needed
 
 ### Unit Tests (Vitest)
 
@@ -425,10 +426,8 @@ tests/
 │   └── offline-sync.test.ts    # offline/online transitions
 ```
 
-**Test repo setup:**
-- Use environment variable for test repo URL
-- Separate PAT for test repo (CI secret)
-- Reset test repo state before each test run via GitHub API
+**Test branch setup:**
+- Create temp branch from `main`, apply fixtures, run tests, delete branch
 
 ### E2E Tests (Playwright)
 
@@ -481,7 +480,7 @@ Environment variable `VITE_DEBUG=true` enables:
 // src/config.ts
 export const config = {
   debug: import.meta.env.VITE_DEBUG === 'true',
-  testRepoUrl: import.meta.env.VITE_TEST_REPO_URL,
+  testBranch: 'test-fixtures',
 };
 ```
 
@@ -500,13 +499,24 @@ jobs:
         with:
           node-version: '20'
       - run: npm ci
+      - run: npm run validate:schema  # validate cards.json + state.json
       - run: npm run test:unit
       - run: npm run test:integration
         env:
-          TEST_REPO_URL: ${{ secrets.TEST_REPO_URL }}
-          TEST_REPO_PAT: ${{ secrets.TEST_REPO_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run test:e2e
 ```
+
+### Schema Validation
+
+Run on every push and PR to catch malformed data early — especially useful since Claude is writing `cards.json` via PRs.
+
+Validates:
+- `cards.json` — all required fields present, correct types, IDs match keys
+- `state.json` — valid FSRS fields, keys reference existing cards (or `card:reverse` for reversible cards)
+- No orphaned state entries (state exists but card was deleted)
+
+Implemented as a Vitest test or standalone script (`npm run validate:schema`) that can run in CI and locally.
 
 ## File Structure
 
