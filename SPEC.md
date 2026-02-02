@@ -44,8 +44,8 @@ A local-first, git-powered spaced repetition flashcard app for vocabulary learni
 {
   "chabacano": {
     "id": "chabacano",
-    "front": "chabacano",
-    "back": "apricot",
+    "spanish": "chabacano",
+    "english": "apricot",
     "example": "Los chabacanos están en temporada en primavera.",
     "notes": "Common in Mexico, 'albaricoque' used in Spain",
     "deck": "spanish",
@@ -58,8 +58,8 @@ A local-first, git-powered spaced repetition flashcard app for vocabulary learni
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | id | string | yes | Unique identifier, matches key |
-| front | string | yes | Question/prompt side |
-| back | string | yes | Answer side |
+| spanish | string | yes | Spanish word/phrase |
+| english | string | yes | English translation |
 | example | string | no | Example sentence |
 | notes | string | no | Additional context |
 | deck | string | yes | Deck name for organization |
@@ -149,8 +149,8 @@ Manages card data and state.
 ```typescript
 interface Card {
   id: string;
-  front: string;
-  back: string;
+  spanish: string;
+  english: string;
   example?: string;
   notes?: string;
   deck: string;
@@ -192,7 +192,7 @@ interface CardStore {
 
 **Implementation notes:**
 - Initialize missing state entries with `createEmptyCard()`
-- For cards with `reversible: true`, generate a virtual reverse card (swap front/back) keyed as `id:reverse`
+- For cards with `reversible: true`, generate a virtual reverse card (swap spanish/english) keyed as `id:reverse`
 - Reverse cards have independent SRS state in state.json
 - After each review, update in-memory state AND write to localStorage (write-ahead)
 - `save()` writes state.json to git fs, commits
@@ -302,9 +302,9 @@ Storage: localStorage (never committed to repo)
    - Settings gear
 
 3. **Review Screen**
-   - Card front (centered, large)
+   - Prompt side (centered, large) — spanish or english depending on direction
    - "Show Answer" button
-   - Card back + example + notes (after reveal)
+   - Answer side + example + notes (after reveal)
    - Rating buttons: Again / Hard / Good / Easy
    - Progress bar
    - "End Session" button
@@ -411,8 +411,8 @@ tests/
 export const testCards = {
   "test-card-1": {
     id: "test-card-1",
-    front: "hola",
-    back: "hello",
+    spanish: "hola",
+    english: "hello",
     deck: "test",
     created: "2025-01-01T00:00:00Z"
   },
