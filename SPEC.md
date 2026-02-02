@@ -107,6 +107,38 @@ Reverse cards are virtual — generated at load time by CardStore, not stored in
 | Testing | Vitest + @testing-library |
 | CSS | Tailwind CSS (via shadcn) |
 
+## Card Creation Flow
+
+Cards are created by Claude (via GitHub MCP), not by the web app.
+
+### Process
+1. Claude reads existing `cards.json` to check for duplicate keys
+2. Creates a branch (e.g. `cards/fruit-vocab`)
+3. Adds new entries to `cards.json` (does NOT touch `state.json`)
+4. Opens a PR for user review
+5. User merges PR on GitHub
+6. Web app picks up new cards on next sync, initializes state via `createEmptyCard()`
+
+### Deduplication
+- Card ID = spanish word, so JSON key uniqueness prevents exact duplicates
+- Claude must read existing `cards.json` before adding cards and skip existing keys
+- Topics may overlap (e.g. "food" and "cooking" both have "cuchara") — Claude checks across all existing cards, not just the current batch
+
+### Instructions
+A `CLAUDE_INSTRUCTIONS.md` file in the repo defines:
+- Card schema and required/optional fields
+- Branch naming convention (`cards/<topic>`)
+- PR format (list of added cards in description)
+- Dedup rules (check existing keys, skip duplicates)
+- Batch size guidelines
+
+### Future: Custom MCP
+If the instructions-based approach proves error-prone, build a lightweight MCP server that:
+- Validates card schema before committing
+- Automates dedup checks
+- Enforces PR conventions
+- Works with Claude Code (no desktop required)
+
 ## Core Modules
 
 ### 1. GitService
