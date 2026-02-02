@@ -1,0 +1,583 @@
+# Flashcards App Specification
+
+## Overview
+
+A local-first, git-powered spaced repetition flashcard app for vocabulary learning. Cards are created via Claude MCP and stored in a GitHub repository. Review sessions happen in a web app that clones the repo locally using IndexedDB, works offline, and syncs when ready.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Card Creation                             │
+│                                                                  │
+│   User → Claude (with GitHub MCP) → commits to cards.json       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     GitHub Repository                            │
+│                                                                  │
+│   flashcards/                                                    │
+│   ├── cards.json          # card content                         │
+│   ├── state.json          # FSRS scheduling state                │
+│   ├── index.html          # webapp entry                         │
+│   ├── src/                # webapp source                        │
+│   └── dist/               # built assets                         │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Web App (GitHub Pages)                        │
+│                                                                  │
+│   - Clones repo to IndexedDB via isomorphic-git                  │
+│   - Reviews cards offline                                        │
+│   - Commits locally after each card                              │
+│   - Pushes on session end or manual sync                         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Data Models
+
+### cards.json
+
+```json
+{
+  "chabacano": {
+    "id": "chabacano",
+    "front": "chabacano",
+    "back": "apricot",
+    "example": "Los chabacanos están en temporada en primavera.",
+    "notes": "Common in Mexico, 'albaricoque' used in Spain",
+    "deck": "spanish",
+    "tags": ["fruit", "mexico"],
+    "created": "2025-02-01T10:00:00Z"
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| id | string | yes | Unique identifier, matches key |
+| front | string | yes | Question/prompt side |
+| back | string | yes | Answer side |
+| example | string | no | Example sentence |
+| notes | string | no | Additional context |
+| deck | string | yes | Deck name for organization |
+| tags | string[] | no | Tags for filtering |
+| created | ISO8601 | yes | Creation timestamp |
+| reversible | boolean | no | If true, also review back→front as a separate card (default false) |
+
+### state.json
+
+```json
+{
+  "chabacano": {
+    "due": "2025-02-05T00:00:00Z",
+    "stability": 4.2,
+    "difficulty": 0.31,
+    "elapsed_days": 3,
+    "scheduled_days": 4,
+    "reps": 3,
+    "lapses": 0,
+    "state": "Review",
+    "last_review": "2025-02-01T10:30:00Z"
+  }
+}
+```
+
+This matches ts-fsrs Card type. Cards in cards.json without a state.json entry are new and should be initialized with `createEmptyCard()`.
+
+State keys use the convention:
+- `chabacano` — forward card (front→back)
+- `chabacano:reverse` — reverse card (back→front), only exists if `reversible: true`
+
+Reverse cards are virtual — generated at load time by CardStore, not stored in cards.json.
+
+## Tech Stack
+
+| Concern | Solution |
+|---------|----------|
+| Framework | React |
+| UI Components | shadcn/ui (Radix + Tailwind) |
+| Bundler | Vite |
+| Git operations | isomorphic-git |
+| Local filesystem | @isomorphic-git/lightning-fs (IndexedDB) |
+| Scheduling | ts-fsrs |
+| Testing | Vitest + @testing-library |
+| CSS | Tailwind CSS (via shadcn) |
+
+## Core Modules
+
+### 1. GitService
+
+Handles all git operations via isomorphic-git.
+
+```typescript
+interface GitService {
+  // Setup
+  init(repoUrl: string, token: string): Promise<void>;
+  isInitialized(): boolean;
+
+  // Sync
+  clone(): Promise<void>;
+  pull(): Promise<void>;
+  push(): Promise<void>;
+
+  // File operations
+  readFile(path: string): Promise<string>;
+  writeFile(path: string, content: string): Promise<void>;
+
+  // Commits
+  commit(message: string): Promise<void>;
+  hasUnpushedCommits(): Promise<boolean>;
+
+  // Status
+  getStatus(): Promise<'synced' | 'ahead' | 'behind' | 'diverged'>;
+}
+```
+
+**Implementation notes:**
+- Store repo URL and token in localStorage
+- Clone to `/repo` in LightningFS
+- Handle auth via `onAuth` callback
+- Detect conflicts on pull, surface to user
+
+### 2. CardStore
+
+Manages card data and state.
+
+```typescript
+interface Card {
+  id: string;
+  front: string;
+  back: string;
+  example?: string;
+  notes?: string;
+  deck: string;
+  tags?: string[];
+  created: string;
+}
+
+interface CardState {
+  // ts-fsrs Card fields
+  due: Date;
+  stability: number;
+  difficulty: number;
+  elapsed_days: number;
+  scheduled_days: number;
+  reps: number;
+  lapses: number;
+  state: State;
+  last_review?: Date;
+}
+
+interface CardStore {
+  // Load from git repo
+  load(): Promise<void>;
+
+  // Getters
+  getAllCards(): Card[];
+  getCard(id: string): Card | undefined;
+  getState(id: string): CardState;
+  getDueCards(): Card[];
+  getNewCards(): Card[];
+
+  // Review
+  reviewCard(id: string, rating: Rating): CardState;
+
+  // Persistence
+  save(): Promise<void>;  // writes state.json, commits
+}
+```
+
+**Implementation notes:**
+- Initialize missing state entries with `createEmptyCard()`
+- For cards with `reversible: true`, generate a virtual reverse card (swap front/back) keyed as `id:reverse`
+- Reverse cards have independent SRS state in state.json
+- After each review, update in-memory state AND write to localStorage (write-ahead)
+- `save()` writes state.json to git fs, commits
+
+### 3. ReviewSession
+
+Manages active review session.
+
+```typescript
+interface ReviewSession {
+  // Lifecycle
+  start(): void;
+  end(): Promise<void>;  // commits + pushes
+
+  // Cards
+  getCurrentCard(): Card | null;
+  getProgress(): { done: number; remaining: number; total: number };
+
+  // Actions
+  showAnswer(): void;
+  rate(rating: Rating): void;  // commits after each card
+  skip(): void;
+
+  // State
+  isActive(): boolean;
+}
+```
+
+**Card order strategy:**
+1. Shuffle due cards
+2. Interleave new cards (1 new per 5 reviews, configurable)
+3. New cards initialized and immediately reviewable
+
+### 4. SyncManager
+
+Handles sync status and recovery.
+
+```typescript
+interface SyncManager {
+  // Status
+  getStatus(): 'synced' | 'pending' | 'offline' | 'conflict';
+  getPendingCommits(): number;
+
+  // Actions
+  sync(): Promise<SyncResult>;
+
+  // Recovery
+  recoverFromLocalStorage(): Promise<void>;
+}
+
+type SyncResult =
+  | { status: 'ok' }
+  | { status: 'conflict'; branch: string };  // e.g. "sync/2025-02-01T10-30-00Z"
+```
+
+**Implementation notes:**
+- On app start, check localStorage for uncommitted reviews
+- If found, apply them to state.json before doing anything else
+- Track online/offline status via `navigator.onLine`
+
+**Conflict strategy:**
+- On push failure (non-fast-forward), do NOT force push or try to merge
+- Instead, push local commits to a timestamped branch: `sync/<ISO-timestamp>`
+- Show the user a message: "Conflict detected. Your reviews were pushed to branch `sync/...`. Merge it on GitHub when ready."
+- After pushing to the conflict branch, reset local to track remote main again (re-pull)
+- This keeps main always clean and lets you resolve via GitHub PR/merge
+
+### 5. SettingsStore
+
+Manages user settings.
+
+```typescript
+interface Settings {
+  repoUrl: string;
+  token: string;  // fine-grained PAT
+  newCardsPerSession: number;  // default 10
+  reviewOrder: 'random' | 'oldest-first' | 'deck-grouped';
+  theme: 'light' | 'dark' | 'system';
+}
+
+interface SettingsStore {
+  get(): Settings;
+  set(settings: Partial<Settings>): void;
+  clear(): void;  // logout
+  isConfigured(): boolean;
+}
+```
+
+Storage: localStorage (never committed to repo)
+
+## UI Components
+
+### Screens
+
+1. **Setup Screen** (first run)
+   - Repo URL input
+   - PAT input (with help text about scopes)
+   - Clone button
+   - Progress indicator
+
+2. **Home Screen**
+   - Sync status indicator
+   - Cards due count
+   - New cards count
+   - "Start Review" button
+   - "Sync" button
+   - Settings gear
+
+3. **Review Screen**
+   - Card front (centered, large)
+   - "Show Answer" button
+   - Card back + example + notes (after reveal)
+   - Rating buttons: Again / Hard / Good / Easy
+   - Progress bar
+   - "End Session" button
+
+4. **Settings Screen**
+   - Repo URL (read-only after setup)
+   - New cards per session slider
+   - Review order dropdown
+   - Theme toggle
+   - "Logout" button (clears everything)
+   - Debug info (commit count, last sync, etc)
+
+### Components
+
+```
+App
+├── SetupScreen
+├── HomeScreen
+│   ├── SyncStatus
+│   ├── DueCount
+│   └── ActionButtons
+├── ReviewScreen
+│   ├── CardDisplay
+│   ├── AnswerReveal
+│   ├── RatingButtons
+│   └── ProgressBar
+└── SettingsScreen
+```
+
+## Offline Behavior
+
+| Scenario | Behavior |
+|----------|----------|
+| Open app offline | Works, reads from IndexedDB |
+| Review offline | Works, commits locally |
+| Try to sync offline | Show "offline" status, queue for later |
+| Come back online | Auto-sync or prompt user |
+| New cards added while offline | Won't see until next pull |
+
+## Error Handling
+
+| Error | Handling |
+|-------|----------|
+| Clone fails | Show error, let user retry, check token |
+| Push fails (auth) | Prompt to re-enter token |
+| Push fails (conflict) | Push to `sync/<timestamp>` branch, notify user to merge on GitHub |
+| Corrupt localStorage | Clear and re-clone |
+| Corrupt IndexedDB | Clear and re-clone |
+| Network timeout | Retry with backoff, show status |
+
+## Testing Strategy
+
+### Test Environment
+
+Use a separate test repository with known fixture data:
+- `flashcards-test` repo with pre-populated cards.json and state.json
+- Fixtures committed to test repo for reproducibility
+
+### Unit Tests (Vitest)
+
+```
+tests/
+├── unit/
+│   ├── card-store.test.ts      # card loading, state management
+│   ├── review-session.test.ts  # session logic, card ordering
+│   ├── fsrs-integration.test.ts # scheduling calculations
+│   └── sync-manager.test.ts    # recovery, conflict detection
+```
+
+**Mocking strategy:**
+- Mock isomorphic-git for unit tests
+- Mock LightningFS with in-memory implementation
+- Use real ts-fsrs (it's pure functions)
+
+### Integration Tests
+
+```
+tests/
+├── integration/
+│   ├── git-operations.test.ts  # real git ops against test repo
+│   ├── full-review-flow.test.ts # complete session simulation
+│   └── offline-sync.test.ts    # offline/online transitions
+```
+
+**Test repo setup:**
+- Use environment variable for test repo URL
+- Separate PAT for test repo (CI secret)
+- Reset test repo state before each test run via GitHub API
+
+### E2E Tests (Playwright)
+
+```
+tests/
+├── e2e/
+│   ├── setup-flow.spec.ts      # first-run experience
+│   ├── review-session.spec.ts  # full review cycle
+│   └── sync-conflicts.spec.ts  # conflict resolution UI
+```
+
+### Test Data Fixtures
+
+```typescript
+// tests/fixtures/cards.ts
+export const testCards = {
+  "test-card-1": {
+    id: "test-card-1",
+    front: "hola",
+    back: "hello",
+    deck: "test",
+    created: "2025-01-01T00:00:00Z"
+  },
+  // ... more fixture cards
+};
+
+// tests/fixtures/state.ts
+export const testState = {
+  "test-card-1": {
+    due: "2025-02-01T00:00:00Z",
+    stability: 2.5,
+    difficulty: 0.3,
+    // ... full FSRS state
+  }
+};
+```
+
+### Debug Mode
+
+Environment variable `VITE_DEBUG=true` enables:
+
+1. **Test repo toggle** - Switch between prod and test repo
+2. **Time travel** - Override "now" for testing scheduling
+3. **State inspector** - View raw state.json in UI
+4. **Git log** - View recent commits in UI
+5. **Reset button** - Clear IndexedDB and localStorage
+6. **Network simulation** - Force offline mode
+
+```typescript
+// src/config.ts
+export const config = {
+  debug: import.meta.env.VITE_DEBUG === 'true',
+  testRepoUrl: import.meta.env.VITE_TEST_REPO_URL,
+};
+```
+
+### CI Pipeline (GitHub Actions)
+
+```yaml
+name: Test
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run test:unit
+      - run: npm run test:integration
+        env:
+          TEST_REPO_URL: ${{ secrets.TEST_REPO_URL }}
+          TEST_REPO_PAT: ${{ secrets.TEST_REPO_PAT }}
+      - run: npm run test:e2e
+```
+
+## File Structure
+
+```
+flashcards/
+├── .github/
+│   └── workflows/
+│       └── test.yml
+├── src/
+│   ├── main.tsx                # entry point
+│   ├── config.ts               # environment config
+│   ├── services/
+│   │   ├── git-service.ts
+│   │   ├── card-store.ts
+│   │   ├── review-session.ts
+│   │   ├── sync-manager.ts
+│   │   └── settings-store.ts
+│   ├── components/
+│   │   ├── ui/              # shadcn components
+│   │   ├── App.tsx
+│   │   ├── SetupScreen.tsx
+│   │   ├── HomeScreen.tsx
+│   │   ├── ReviewScreen.tsx
+│   │   └── SettingsScreen.tsx
+│   ├── utils/
+│   │   ├── fsrs.ts             # ts-fsrs wrapper
+│   │   └── date.ts
+│   └── styles/
+│       └── main.css
+├── tests/
+│   ├── fixtures/
+│   │   ├── cards.ts
+│   │   └── state.ts
+│   ├── mocks/
+│   │   ├── git-service.mock.ts
+│   │   └── lightning-fs.mock.ts
+│   ├── unit/
+│   ├── integration/
+│   └── e2e/
+├── index.html
+├── vite.config.ts
+├── tsconfig.json
+├── package.json
+├── cards.json                  # actual card data (in repo root)
+└── state.json                  # actual state data (in repo root)
+```
+
+## Implementation Order
+
+### Phase 1: Core (MVP)
+1. Project setup (Vite, TypeScript, deps)
+2. GitService with isomorphic-git
+3. CardStore with ts-fsrs
+4. Basic ReviewSession
+5. Minimal UI (setup + review only)
+6. Unit tests for core logic
+
+### Phase 2: Polish
+1. SyncManager with conflict handling
+2. SettingsStore
+3. Full UI with all screens
+4. Offline indicators
+5. Integration tests
+
+### Phase 3: DX & Testing
+1. Debug mode features
+2. E2E tests
+3. CI pipeline
+4. Error boundaries and recovery
+
+## Open Questions
+
+1. **Card order in review** - Random? Oldest due first? Configurable?
+2. **Multiple decks** - Filter by deck in UI, or always review all?
+3. **Stats/history** - Track review history for charts? (adds complexity)
+4. **PWA** - Add service worker for true installability?
+
+## Security Considerations
+
+- Fine-grained PAT scoped to single repo, `contents: read/write` only
+- PAT stored in localStorage (acceptable for personal use)
+- Never commit PAT to repo
+- HTTPS only (GitHub Pages enforces this)
+- CSP headers to prevent XSS
+
+## Dependencies
+
+```json
+{
+  "dependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "isomorphic-git": "^1.25.0",
+    "@isomorphic-git/lightning-fs": "^4.6.0",
+    "ts-fsrs": "^4.0.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0",
+    "@playwright/test": "^1.40.0",
+    "@testing-library/react": "^14.0.0",
+    "tailwindcss": "^3.4.0",
+    "autoprefixer": "^10.0.0",
+    "postcss": "^8.0.0"
+  }
+}
+```
+
+Keep dependencies minimal beyond React + shadcn/ui.
