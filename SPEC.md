@@ -80,7 +80,8 @@ A local-first, git-powered spaced repetition flashcard app for vocabulary learni
     "reps": 3,
     "lapses": 0,
     "state": "Review",
-    "last_review": "2025-02-01T10:30:00Z"
+    "last_review": "2025-02-01T10:30:00Z",
+    "suspended": false
   }
 }
 ```
@@ -169,6 +170,7 @@ interface CardState {
   lapses: number;
   state: State;
   last_review?: Date;
+  suspended: boolean;  // default false, excluded from review queue when true
 }
 
 interface CardStore {
@@ -184,6 +186,8 @@ interface CardStore {
 
   // Review
   reviewCard(id: string, rating: Rating): CardState;
+  suspendCard(id: string): void;
+  unsuspendCard(id: string): void;
 
   // Persistence
   save(): Promise<void>;  // writes state.json, commits
