@@ -425,10 +425,12 @@ App
 
 ### Test Environment
 
-- Before each test run: create a temporary branch from `main`, layer fixture data on top
-- Tests clone that branch — always testing against the current schema from `main`
-- After tests: delete the temporary branch
-- No separate test repo needed
+- Tests use a local bare git repo as a fake remote — no GitHub needed
+- `temp/` directory in the app repo holds test repos (gitignored)
+- Test setup creates a bare repo, seeds it with fixture data from `tests/fixtures/`
+- isomorphic-git clones from the local path — real git operations, no network
+- Playwright global setup creates the bare repo before all tests, teardown cleans it up
+- Fast, deterministic, no tokens or API calls
 
 ### Unit Tests (Vitest)
 
@@ -456,8 +458,8 @@ tests/
 │   └── offline-sync.test.ts    # offline/online transitions
 ```
 
-**Test branch setup:**
-- Create temp branch from `main`, apply fixtures, run tests, delete branch
+**Test setup:**
+- Create bare repo in `temp/test-repo.git`, seed with fixtures, point tests at it
 
 ### E2E Tests (Playwright)
 
@@ -532,8 +534,6 @@ jobs:
       - run: npm run validate:schema  # validate cards.json + state.json
       - run: npm run test:unit
       - run: npm run test:integration
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run test:e2e
 ```
 
@@ -588,6 +588,7 @@ flash-card/
 │   ├── unit/
 │   ├── integration/
 │   └── e2e/
+├── temp/                       # test repos, gitignored
 ├── index.html
 ├── vite.config.ts
 ├── tsconfig.json
