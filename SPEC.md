@@ -317,8 +317,8 @@ Manages user settings.
 
 ```typescript
 interface Settings {
-  repoUrl: string;
-  token: string;  // fine-grained PAT
+  repoUrl: string;  // e.g. github.com/user/flashcards
+  token: string;  // fine-grained PAT with contents: read/write on the repo
   newCardsPerDay: number;  // default 10
   reviewOrder: 'random' | 'oldest-first' | 'deck-grouped';
   theme: 'light' | 'dark' | 'system';
@@ -338,17 +338,17 @@ Storage: localStorage (never committed to repo)
 
 ### Screens
 
-1. **Setup Screen** (first run)
-   - Repo URL input
-   - PAT input (with help text about scopes)
-   - Clone button
-   - Progress indicator
+1. **Auth Screen** (first run)
+   - Repo URL input (e.g. `github.com/user/flashcards`)
+   - PAT input (with help text: needs `contents: read/write` on that repo)
+   - App validates token has access to the repo
+   - Clone progress indicator
 
-2. **Home Screen**
+2. **Deck List Screen** (home)
+   - List of decks (directories in data repo)
+   - Each deck shows: due count, new count
+   - Click a deck to start review session
    - Sync status indicator
-   - Cards due count
-   - New cards count
-   - "Start Review" button
    - "Sync" button
    - Settings gear
 
@@ -372,10 +372,10 @@ Storage: localStorage (never committed to repo)
 
 ```
 App
-├── SetupScreen
-├── HomeScreen
+├── AuthScreen
+├── DeckListScreen
 │   ├── SyncStatus
-│   ├── DueCount
+│   ├── DeckCard (per deck: name, due count, new count)
 │   └── ActionButtons
 ├── ReviewScreen
 │   ├── CardDisplay
@@ -553,8 +553,8 @@ flash-card/
 │   ├── components/
 │   │   ├── ui/              # shadcn components
 │   │   ├── App.tsx
-│   │   ├── SetupScreen.tsx
-│   │   ├── HomeScreen.tsx
+│   │   ├── AuthScreen.tsx
+│   │   ├── DeckListScreen.tsx
 │   │   ├── ReviewScreen.tsx
 │   │   └── SettingsScreen.tsx
 │   ├── utils/
