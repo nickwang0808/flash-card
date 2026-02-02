@@ -11,27 +11,32 @@ A local-first, git-powered spaced repetition flashcard app for vocabulary learni
 │                        Card Creation                             │
 │                                                                  │
 │   User → Claude (with GitHub MCP) → commits to cards.json       │
+│   Or manually add/edit cards.json                                │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     GitHub Repository                            │
+│                   Data Repository (per user)                     │
 │                                                                  │
-│   flashcards/                                                    │
-│   ├── data/                                                      │
-│   │   └── <profile>/                                             │
-│   │       ├── cards.json  # card content per user                │
-│   │       └── state.json  # FSRS state per user                 │
-│   ├── index.html          # webapp entry                         │
+│   flash-card-data/                                               │
+│   ├── spanish-vocab/                                             │
+│   │   ├── cards.json                                             │
+│   │   └── state.json                                             │
+│   └── spanish-verbs/                                             │
+│       ├── cards.json                                             │
+│       └── state.json                                             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                App Repository (shared, GitHub Pages)             │
+│                                                                  │
+│   flash-card/                                                    │
 │   ├── src/                # webapp source                        │
+│   ├── index.html          # webapp entry                         │
 │   └── dist/               # built assets                         │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Web App (GitHub Pages)                        │
 │                                                                  │
-│   - Clones repo to IndexedDB via isomorphic-git                  │
+│   - Clones data repo to IndexedDB via isomorphic-git             │
 │   - Reviews cards offline                                        │
 │   - Commits locally after each card                              │
 │   - Pushes on session end or manual sync                         │
@@ -50,7 +55,6 @@ A local-first, git-powered spaced repetition flashcard app for vocabulary learni
     "translation": "apricot",
     "example": "Los chabacanos están en temporada en primavera.",
     "notes": "Common in Mexico, 'albaricoque' used in Spain",
-    "deck": "spanish",
     "tags": ["fruit", "mexico"],
     "created": "2025-02-01T10:00:00Z"
   }
@@ -64,7 +68,6 @@ A local-first, git-powered spaced repetition flashcard app for vocabulary learni
 | translation | string | yes | Translation |
 | example | string | no | Example sentence |
 | notes | string | no | Additional context |
-| deck | string | yes | Deck name for organization |
 | tags | string[] | no | Tags for filtering |
 | created | ISO8601 | yes | Creation timestamp |
 | reversible | boolean | no | If true, also review back→front as a separate card (default false) |
@@ -189,7 +192,6 @@ interface Card {
   translation: string;
   example?: string;
   notes?: string;
-  deck: string;
   tags?: string[];
   created: string;
 }
@@ -317,7 +319,6 @@ Manages user settings.
 interface Settings {
   repoUrl: string;
   token: string;  // fine-grained PAT
-  profile: string;  // user profile name, maps to data/<profile>/
   newCardsPerDay: number;  // default 10
   reviewOrder: 'random' | 'oldest-first' | 'deck-grouped';
   theme: 'light' | 'dark' | 'system';
@@ -338,7 +339,6 @@ Storage: localStorage (never committed to repo)
 ### Screens
 
 1. **Setup Screen** (first run)
-   - Profile name input
    - Repo URL input
    - PAT input (with help text about scopes)
    - Clone button
@@ -535,8 +535,9 @@ Implemented as a Vitest test or standalone script (`npm run validate:schema`) th
 
 ## File Structure
 
+### App repo (flash-card)
 ```
-flashcards/
+flash-card/
 ├── .github/
 │   └── workflows/
 │       └── test.yml
@@ -574,14 +575,18 @@ flashcards/
 ├── index.html
 ├── vite.config.ts
 ├── tsconfig.json
-├── package.json
-├── data/
-│   ├── nick/
-│   │   ├── cards.json          # card content per user
-│   │   └── state.json          # FSRS state per user
-│   └── wife/
-│       ├── cards.json
-│       └── state.json
+└── package.json
+```
+
+### Data repo (per user, e.g. flash-card-data)
+```
+flash-card-data/
+├── spanish-vocab/
+│   ├── cards.json
+│   └── state.json
+└── spanish-verbs/
+    ├── cards.json
+    └── state.json
 ```
 
 ## Implementation Order
