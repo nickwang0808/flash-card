@@ -342,6 +342,7 @@ Storage: localStorage (never committed to repo)
    - Repo URL input (e.g. `github.com/user/flashcards`)
    - PAT input (with help text: needs `contents: read/write` on that repo)
    - App validates token has access to the repo
+   - Test run: clone, read decks, verify structure, report result
    - Clone progress indicator
 
 2. **Deck List Screen** (home)
@@ -352,7 +353,17 @@ Storage: localStorage (never committed to repo)
    - "Sync" button
    - Settings gear
 
-3. **Review Screen**
+3. **Sync Screen**
+   - Online/offline status indicator (live via `navigator.onLine`)
+   - Last sync timestamp
+   - Pending commits count
+   - "Pull" button — fetch latest from remote
+   - "Push" button — push local commits to main
+   - "Push as Branch" button — push to `sync/<timestamp>` branch (for manual conflict resolution)
+   - Git log — recent local commits
+   - Error messages with retry option
+
+4. **Review Screen**
    - Prompt side (centered, large) — source or translation depending on direction
    - "Show Answer" button
    - Answer side + example + notes (after reveal)
@@ -374,9 +385,13 @@ Storage: localStorage (never committed to repo)
 App
 ├── AuthScreen
 ├── DeckListScreen
-│   ├── SyncStatus
 │   ├── DeckCard (per deck: name, due count, new count)
 │   └── ActionButtons
+├── SyncScreen
+│   ├── OnlineStatus
+│   ├── PendingCommits
+│   ├── GitLog
+│   └── SyncActions (pull, push, push-as-branch)
 ├── ReviewScreen
 │   ├── CardDisplay
 │   ├── AnswerReveal
@@ -555,6 +570,7 @@ flash-card/
 │   │   ├── App.tsx
 │   │   ├── AuthScreen.tsx
 │   │   ├── DeckListScreen.tsx
+│   │   ├── SyncScreen.tsx
 │   │   ├── ReviewScreen.tsx
 │   │   └── SettingsScreen.tsx
 │   ├── utils/
