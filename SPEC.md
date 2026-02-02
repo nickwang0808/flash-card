@@ -100,7 +100,7 @@ Reverse cards are virtual — generated at load time by CardStore, not stored in
 |---------|----------|
 | Framework | React |
 | UI Components | shadcn/ui (Radix + Tailwind) |
-| Bundler | Vite |
+| Bundler | Vite (with vite-plugin-pwa) |
 | Git operations | isomorphic-git |
 | Local filesystem | @isomorphic-git/lightning-fs (IndexedDB) |
 | Scheduling | ts-fsrs |
@@ -131,6 +131,7 @@ A `CLAUDE_INSTRUCTIONS.md` file in the repo defines:
 - PR format (list of added cards in description)
 - Dedup rules (check existing keys, skip duplicates)
 - Batch size guidelines
+- Commit message format: one commit per card, e.g. `add card: chabacano (apricot)`
 
 ### Future: Custom MCP
 If the instructions-based approach proves error-prone, build a lightweight MCP server that:
@@ -232,6 +233,8 @@ interface CardStore {
 - Reverse cards have independent SRS state in state.json
 - After each review, update in-memory state AND write to localStorage (write-ahead)
 - `save()` writes state.json to git fs, commits
+- Commit messages are explicit: `review: chabacano (Good) — next due 2025-02-05`
+- For reverse cards: `review: chabacano:reverse (Again) — next due 2025-02-02`
 
 ### 3. ReviewSession
 
@@ -249,13 +252,21 @@ interface ReviewSession {
 
   // Actions
   showAnswer(): void;
-  rate(rating: Rating): void;  // commits after each card
+  rate(rating: Rating): void;  // commits with message: "review: {id} ({rating}) — next due {date}"
   skip(): void;
 
   // State
   isActive(): boolean;
 }
 ```
+
+**Daily limits:**
+- New cards capped per day (default 10), tracked in localStorage with today's date
+- If the date changes, counter resets
+- Reviews are uncapped — skipping due cards hurts FSRS scheduling
+- Multiple sessions in one day share the same new card budget
+- Tracked in localStorage, so switching devices resets the count (acceptable for personal use)
+- "More new cards" button in UI to add another batch if you want to keep going
 
 **Card order strategy:**
 1. Shuffle due cards
@@ -304,7 +315,7 @@ Manages user settings.
 interface Settings {
   repoUrl: string;
   token: string;  // fine-grained PAT
-  newCardsPerSession: number;  // default 10
+  newCardsPerDay: number;  // default 10
   reviewOrder: 'random' | 'oldest-first' | 'deck-grouped';
   theme: 'light' | 'dark' | 'system';
 }
@@ -347,7 +358,7 @@ Storage: localStorage (never committed to repo)
 
 4. **Settings Screen**
    - Repo URL (read-only after setup)
-   - New cards per session slider
+   - New cards per day slider
    - Review order dropdown
    - Theme toggle
    - "Logout" button (clears everything)
@@ -572,7 +583,8 @@ flashcards/
 3. CardStore with ts-fsrs
 4. Basic ReviewSession
 5. Minimal UI (setup + review only)
-6. Unit tests for core logic
+6. PWA setup (vite-plugin-pwa, manifest, service worker)
+7. Unit tests for core logic
 
 ### Phase 2: Polish
 1. SyncManager with conflict handling
@@ -592,7 +604,7 @@ flashcards/
 1. **Card order in review** - Random? Oldest due first? Configurable?
 2. **Multiple decks** - Filter by deck in UI, or always review all?
 3. **Stats/history** - Track review history for charts? (adds complexity)
-4. **PWA** - Add service worker for true installability?
+4. ~~**PWA** - Add service worker for true installability?~~ — Yes, included in Phase 1
 
 ## Security Considerations
 
@@ -619,6 +631,7 @@ flashcards/
     "vitest": "^1.0.0",
     "@playwright/test": "^1.40.0",
     "@testing-library/react": "^14.0.0",
+    "vite-plugin-pwa": "^0.17.0",
     "tailwindcss": "^3.4.0",
     "autoprefixer": "^10.0.0",
     "postcss": "^8.0.0"
