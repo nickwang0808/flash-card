@@ -1,7 +1,6 @@
 import { useState } from 'react';
+import { fsrs, createEmptyCard, Rating, type Grade } from 'ts-fsrs';
 import { useDeck } from '../hooks/useDeck';
-import { cardStatesCollection } from '../services/collections';
-import { Rating, reviewCard, createEmptyCard, type Grade } from '../services/collections';
 
 interface Props {
   deck: string;
@@ -9,51 +8,29 @@ interface Props {
 }
 
 export function ReviewScreen({ deck, onBack }: Props) {
-  const { currentCard, isLoading, deck: deckCards } = useDeck(deck);
+  const { newItems, dueItems, isLoading, collection } = useDeck(deck);
   const [answerRevealed, setAnswerRevealed] = useState(false);
-  const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
 
-  // Filter out cards that were reviewed this session (in case optimistic update is slow)
-  const actualCurrentCard = currentCard && !reviewedIds.has(currentCard.id) ? currentCard :
-    deckCards.find(c => !reviewedIds.has(c.id) && (c.isNew || (c.due && c.due <= new Date()))) ?? null;
+  // New cards first, then due cards
+  const allItems = [...newItems, ...dueItems];
+  const currentCard = allItems[0] ?? null;
 
   function rate(rating: Grade) {
-    if (!actualCurrentCard) return;
+    if (!currentCard) return;
 
-    // For new cards, create initial state first
-    const currentState = actualCurrentCard.state ? actualCurrentCard.state : createEmptyCard();
-    const newState = reviewCard(currentState, rating);
+    const isReverse = currentCard.isReverse;
+    const existingState = isReverse ? currentCard.reverseState : currentCard.state;
+    const currentState = existingState ? existingState : createEmptyCard();
+    const newState = fsrs().repeat(currentState, new Date())[rating].card;
 
-    // Override due for Again/Hard (in-session rescheduling)
-    if (rating === Rating.Again) {
-      newState.due = new Date(Date.now() + 60_000);
-    } else if (rating === Rating.Hard) {
-      newState.due = new Date(Date.now() + 5 * 60_000);
-    }
-
-    // Check if this card state exists in collection
-    const existingState = cardStatesCollection.get(actualCurrentCard.id);
-
-    if (existingState) {
-      // Update existing state - use callback to modify draft
-      cardStatesCollection.update(actualCurrentCard.id, (draft) => {
+    // Update card - FSRS handles scheduling, reactive system handles the list
+    collection.update(currentCard.source, (draft) => {
+      if (isReverse) {
+        draft.reverseState = newState;
+      } else {
         draft.state = newState;
-      });
-    } else {
-      // Insert new state for first-time reviewed cards
-      cardStatesCollection.insert({
-        id: actualCurrentCard.id,
-        deckName: actualCurrentCard.deckName,
-        cardId: actualCurrentCard.cardId,
-        state: newState,
-      });
-    }
-
-    // Track this card as reviewed (for immediate UI feedback)
-    // For Again/Hard, don't add to reviewed set so it can reappear
-    if (rating !== Rating.Again && rating !== Rating.Hard) {
-      setReviewedIds(prev => new Set([...prev, actualCurrentCard.id]));
-    }
+      }
+    });
 
     setAnswerRevealed(false);
   }
@@ -66,18 +43,11 @@ export function ReviewScreen({ deck, onBack }: Props) {
     );
   }
 
-  const totalToday = deckCards.length;
-
-  if (!actualCurrentCard) {
+  if (!currentCard) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 gap-4">
         <h2 className="text-xl font-bold">Session Complete</h2>
-        <p className="text-muted-foreground">
-          Reviewed {reviewedIds.size} card{reviewedIds.size !== 1 ? 's' : ''} this session
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {totalToday} cards scheduled for today
-        </p>
+        <p className="text-muted-foreground">No more cards to review today.</p>
         <button
           onClick={onBack}
           className="rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90"
@@ -88,8 +58,10 @@ export function ReviewScreen({ deck, onBack }: Props) {
     );
   }
 
-  // Calculate progress
-  const reviewed = reviewedIds.size;
+  // Determine front/back based on direction
+  const front = currentCard.isReverse ? currentCard.translation : currentCard.source;
+  const back = currentCard.isReverse ? currentCard.source : currentCard.translation;
+  const isNew = currentCard.isReverse ? !currentCard.reverseState : !currentCard.state;
 
   return (
     <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto">
@@ -102,43 +74,35 @@ export function ReviewScreen({ deck, onBack }: Props) {
           End Session
         </button>
         <span className="text-sm text-muted-foreground">
-          {reviewed + 1} / {totalToday}
+          {allItems.length} remaining
         </span>
-      </div>
-
-      {/* Progress bar */}
-      <div className="w-full h-1.5 bg-secondary rounded-full mb-8">
-        <div
-          className="h-full bg-primary rounded-full transition-all"
-          style={{ width: `${(reviewed / totalToday) * 100}%` }}
-        />
       </div>
 
       {/* Card */}
       <div className="flex-1 flex flex-col items-center justify-center gap-6">
-        {actualCurrentCard.isNew && (
+        {isNew && (
           <span className="text-xs font-medium text-green-500 uppercase tracking-wider">
             New
           </span>
         )}
 
         <div className="text-center">
-          <p className="text-3xl font-bold">{actualCurrentCard.front}</p>
-          {actualCurrentCard.isReverse && (
+          <p className="text-3xl font-bold">{front}</p>
+          {currentCard.isReverse && (
             <p className="text-xs text-muted-foreground mt-1">reverse</p>
           )}
         </div>
 
         {answerRevealed ? (
           <div className="text-center space-y-3 animate-in fade-in">
-            <p className="text-xl">{actualCurrentCard.back}</p>
-            {actualCurrentCard.example && (
+            <p className="text-xl">{back}</p>
+            {currentCard.example && (
               <p className="text-sm text-muted-foreground italic">
-                {actualCurrentCard.example}
+                {currentCard.example}
               </p>
             )}
-            {actualCurrentCard.notes && (
-              <p className="text-sm text-muted-foreground">{actualCurrentCard.notes}</p>
+            {currentCard.notes && (
+              <p className="text-sm text-muted-foreground">{currentCard.notes}</p>
             )}
           </div>
         ) : (

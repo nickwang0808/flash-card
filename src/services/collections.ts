@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/query-core';
 import { createCollection, type Collection } from '@tanstack/db';
 import { queryCollectionOptions } from '@tanstack/query-db-collection';
-import { fsrs, generatorParameters, type Card, type Grade } from 'ts-fsrs';
+import { type Card } from 'ts-fsrs';
 import { github, getConfig } from './github';
 import { githubService } from './github-service';
 
@@ -22,14 +22,6 @@ export interface FlashCard {
 // Deck: just a name
 export interface Deck {
   name: string;
-}
-
-// FSRS scheduler
-const fsrsParams = generatorParameters();
-const scheduler = fsrs(fsrsParams);
-
-export function reviewCard(card: Card, rating: Grade, now?: Date): Card {
-  return scheduler.repeat(card, now ?? new Date())[rating].card;
 }
 
 // Query Client

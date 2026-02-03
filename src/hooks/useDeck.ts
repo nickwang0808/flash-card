@@ -46,5 +46,6 @@ export function useDeck(deckName: string) {
     isLoading,
     newItems,
     dueItems,
+    collection,
   };
 }
