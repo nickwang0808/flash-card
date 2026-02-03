@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { settingsStore, type Settings } from '../services/settings-store';
-import { gitService } from '../services/git-service';
+import { queryClient } from '../services/query-client';
 
 interface Props {
   onBack: () => void;
@@ -27,13 +27,13 @@ export function SettingsScreen({ onBack, onLogout }: Props) {
     }
   }
 
-  async function handleLogout() {
+  function handleLogout() {
     if (!confirm('Clear all local data and log out?')) return;
     settingsStore.clear();
-    localStorage.removeItem('flash-card-wal');
+    localStorage.removeItem('flash-card-pending-reviews');
     localStorage.removeItem('flash-card-new-count');
     localStorage.removeItem('flash-card-last-sync');
-    await gitService.wipe();
+    queryClient.clear();
     onLogout();
   }
 
@@ -114,7 +114,7 @@ export function SettingsScreen({ onBack, onLogout }: Props) {
             Logout
           </button>
           <p className="text-xs text-muted-foreground mt-2 text-center">
-            Clears all local data including cached repo
+            Clears all local data
           </p>
         </div>
       </div>

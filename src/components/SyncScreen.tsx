@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
-import { syncManager, type SyncResult } from '../services/sync-manager';
-import { gitService } from '../services/git-service';
-import { settingsStore } from '../services/settings-store';
+import { syncManager } from '../services/sync-manager';
 
 interface Props {
   onBack: () => void;
@@ -12,8 +10,8 @@ export function SyncScreen({ onBack }: Props) {
   const [lastSync, setLastSync] = useState(syncManager.getLastSyncTime());
   const [status, setStatus] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const [log, setLog] = useState<Array<{ message: string; oid: string; timestamp: number }>>([]);
-  const [pendingCommits, setPendingCommits] = useState(false);
+  const [log, setLog] = useState<Array<{ message: string; sha: string; date: string }>>([]);
+  const [pendingCount, setPendingCount] = useState(syncManager.getPendingCount());
 
   useEffect(() => {
     loadInfo();
@@ -28,43 +26,26 @@ export function SyncScreen({ onBack }: Props) {
   }, []);
 
   async function loadInfo() {
-    const commits = await gitService.getLog(10);
-    setLog(commits);
-    const config = settingsStore.get();
-    const hasPending = await gitService.hasUnpushedCommits({ repoUrl: config.repoUrl, token: config.token });
-    setPendingCommits(hasPending);
+    try {
+      const commits = await syncManager.getCommits(10);
+      setLog(commits);
+    } catch {
+      // offline or error
+    }
+    setPendingCount(syncManager.getPendingCount());
   }
 
-  function showResult(result: SyncResult) {
+  async function handleSync() {
+    setLoading(true);
+    setStatus('Syncing...');
+    const result = await syncManager.sync();
     if (result.status === 'ok') {
       setStatus('Synced successfully');
-    } else if (result.status === 'conflict') {
-      setStatus(`Conflict — pushed to branch: ${result.branch}`);
     } else {
       setStatus(`Error: ${result.message}`);
     }
     setLastSync(syncManager.getLastSyncTime());
-    loadInfo();
-  }
-
-  async function handlePull() {
-    setLoading(true);
-    setStatus('Pulling...');
-    showResult(await syncManager.pull());
-    setLoading(false);
-  }
-
-  async function handlePush() {
-    setLoading(true);
-    setStatus('Pushing...');
-    showResult(await syncManager.push());
-    setLoading(false);
-  }
-
-  async function handlePushAsBranch() {
-    setLoading(true);
-    setStatus('Pushing as branch...');
-    showResult(await syncManager.pushAsBranch());
+    await loadInfo();
     setLoading(false);
   }
 
@@ -89,8 +70,8 @@ export function SyncScreen({ onBack }: Props) {
             Last sync: {new Date(lastSync).toLocaleString()}
           </p>
         )}
-        {pendingCommits && (
-          <p className="text-xs text-orange-500">Unpushed commits</p>
+        {pendingCount > 0 && (
+          <p className="text-xs text-orange-500">{pendingCount} reviews pending sync</p>
         )}
         {status && (
           <p className="text-sm text-muted-foreground">{status}</p>
@@ -100,38 +81,24 @@ export function SyncScreen({ onBack }: Props) {
       {/* Actions */}
       <div className="flex gap-2 mb-8">
         <button
-          onClick={handlePull}
+          onClick={handleSync}
           disabled={loading || !online}
-          className="flex-1 rounded-md border border-input px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+          className="flex-1 rounded-md bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
         >
-          Pull
-        </button>
-        <button
-          onClick={handlePush}
-          disabled={loading || !online}
-          className="flex-1 rounded-md border border-input px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
-        >
-          Push
-        </button>
-        <button
-          onClick={handlePushAsBranch}
-          disabled={loading || !online}
-          className="flex-1 rounded-md border border-input px-3 py-2 text-sm hover:bg-accent disabled:opacity-50 text-xs"
-        >
-          Push as Branch
+          Sync
         </button>
       </div>
 
-      {/* Git log */}
+      {/* Commit log */}
       <div>
         <h2 className="text-sm font-medium mb-2">Recent Commits</h2>
         <div className="space-y-2">
           {log.map((entry) => (
-            <div key={entry.oid} className="text-xs border-l-2 border-border pl-3 py-1">
-              <p className="font-mono text-muted-foreground">{entry.oid}</p>
+            <div key={entry.sha} className="text-xs border-l-2 border-border pl-3 py-1">
+              <p className="font-mono text-muted-foreground">{entry.sha}</p>
               <p>{entry.message.split('\n')[0]}</p>
               <p className="text-muted-foreground">
-                {new Date(entry.timestamp).toLocaleString()}
+                {new Date(entry.date).toLocaleString()}
               </p>
             </div>
           ))}

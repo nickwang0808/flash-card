@@ -1,14 +1,14 @@
-import { Buffer } from 'buffer';
-globalThis.Buffer = Buffer;
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './services/query-client';
 import { App } from './components/App';
 import './styles/main.css';
-import './test-seed'; // Exposes window.__TEST__ for e2e tests
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
   </React.StrictMode>,
 );

@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { reviewSession } from '../services/review-session';
 import { cardStore } from '../services/card-store';
+import { syncManager } from '../services/sync-manager';
 import { Rating } from '../utils/fsrs';
-import { gitService } from '../services/git-service';
-import { settingsStore } from '../services/settings-store';
 
 interface Props {
   deck: string;
@@ -29,13 +28,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
     setRating(false);
   }
 
-  async function handleEnd() {
-    try {
-      const config = settingsStore.get();
-      await gitService.push({ repoUrl: config.repoUrl, token: config.token });
-    } catch {
-      // Push failed, that's ok — will sync later
-    }
+  function handleEnd() {
     reviewSession.end();
     onBack();
   }
@@ -49,12 +42,16 @@ export function ReviewScreen({ deck, onBack }: Props) {
   }
 
   if (reviewSession.isComplete()) {
+    const pendingCount = syncManager.getPendingCount();
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 gap-4">
         <h2 className="text-xl font-bold">Session Complete</h2>
         <p className="text-muted-foreground">
           Reviewed {state.done} card{state.done !== 1 ? 's' : ''}
         </p>
+        {pendingCount > 0 && (
+          <p className="text-xs text-orange-500">{pendingCount} reviews pending sync</p>
+        )}
         <div className="flex gap-2">
           <button
             onClick={() => reviewSession.addMoreNewCards()}

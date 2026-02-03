@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mockGitService } from '../mocks/git-service.mock';
+import { mockGithubApi } from '../mocks/github-api.mock';
 import { testCardsJson } from '../fixtures/cards';
 import { testStateJson } from '../fixtures/state';
 
-vi.mock('../../src/services/git-service', () => ({
-  gitService: mockGitService,
+vi.mock('../../src/services/github-api', () => ({
+  githubApi: mockGithubApi,
+  parseRepoUrl: () => ({ owner: 'test', repo: 'repo' }),
 }));
 
 import { cardStore } from '../../src/services/card-store';
@@ -14,12 +15,12 @@ import { Rating } from '../../src/utils/fsrs';
 describe('ReviewSession', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    mockGitService._clearFiles();
+    mockGithubApi._clearFiles();
     localStorage.clear();
 
-    mockGitService._setFile('test-deck/cards.json', testCardsJson);
-    mockGitService._setFile('test-deck/state.json', testStateJson);
-    mockGitService.listDirectories.mockResolvedValue(['test-deck']);
+    mockGithubApi._setFile('test-deck/cards.json', testCardsJson);
+    mockGithubApi._setFile('test-deck/state.json', testStateJson);
+    mockGithubApi.listDirectory.mockResolvedValue([{ name: 'test-deck', type: 'dir' }]);
     await cardStore.loadAllDecks();
   });
 
@@ -45,17 +46,17 @@ describe('ReviewSession', () => {
     expect(reviewSession.getState()!.answerRevealed).toBe(true);
   });
 
-  it('rating advances to next card', async () => {
+  it('rating advances to next card and queues review', async () => {
     reviewSession.start('test-deck');
-    const firstCard = reviewSession.getCurrentCard();
     reviewSession.showAnswer();
     await reviewSession.rate(Rating.Good);
 
     const secondCard = reviewSession.getCurrentCard();
-    // Either moved to next card or session ended
     if (secondCard) {
       expect(reviewSession.getState()!.done).toBe(1);
     }
+    // Should have queued a pending review
+    expect(cardStore.hasPendingReviews()).toBe(true);
   });
 
   it('skip advances without rating', () => {
@@ -63,11 +64,10 @@ describe('ReviewSession', () => {
     reviewSession.skip();
     const state = reviewSession.getState()!;
     expect(state.currentIndex).toBe(1);
-    expect(state.done).toBe(0); // skip doesn't count as done
+    expect(state.done).toBe(0);
   });
 
   it('respects new card daily limit', () => {
-    // Set limit to 2
     localStorage.setItem(
       'flash-card-settings',
       JSON.stringify({ repoUrl: 'x', token: 'x', newCardsPerDay: 2, reviewOrder: 'random', theme: 'system' }),
@@ -75,7 +75,6 @@ describe('ReviewSession', () => {
 
     reviewSession.start('test-deck');
     const state = reviewSession.getState()!;
-    // Should have at most 2 new cards + due cards
     const newCards = state.cards.filter((c) => {
       const s = cardStore.getState('test-deck', c.id);
       return s.reps === 0;

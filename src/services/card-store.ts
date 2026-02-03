@@ -1,4 +1,5 @@
-import { gitService } from './git-service';
+import { githubApi, parseRepoUrl, type GitHubConfig } from './github-api';
+import { settingsStore } from './settings-store';
 import {
   type CardState,
   createNewCardState,
@@ -30,7 +31,14 @@ export interface ReviewableCard {
   deckName: string;
 }
 
-const WAL_KEY = 'flash-card-wal'; // write-ahead log
+const PENDING_KEY = 'flash-card-pending-reviews';
+
+export interface PendingReview {
+  deckName: string;
+  cardId: string;
+  state: CardState;
+  commitMessage: string;
+}
 
 interface DeckData {
   name: string;
@@ -40,44 +48,41 @@ interface DeckData {
 
 let decks: DeckData[] = [];
 
-function getWAL(): Record<string, Record<string, CardState>> {
+function getConfig(): GitHubConfig {
+  const s = settingsStore.get();
+  const { owner, repo } = parseRepoUrl(s.repoUrl);
+  return { owner, repo, token: s.token };
+}
+
+function getPendingReviews(): PendingReview[] {
   try {
-    const raw = localStorage.getItem(WAL_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const raw = localStorage.getItem(PENDING_KEY);
+    return raw ? JSON.parse(raw) : [];
   } catch {
-    return {};
+    return [];
   }
 }
 
-function setWAL(wal: Record<string, Record<string, CardState>>): void {
-  localStorage.setItem(WAL_KEY, JSON.stringify(wal));
-}
-
-function clearDeckWAL(deckName: string): void {
-  const wal = getWAL();
-  delete wal[deckName];
-  setWAL(wal);
-}
-
-function writeDeckWAL(deckName: string, cardId: string, state: CardState): void {
-  const wal = getWAL();
-  if (!wal[deckName]) wal[deckName] = {};
-  wal[deckName][cardId] = state;
-  setWAL(wal);
+function setPendingReviews(reviews: PendingReview[]): void {
+  localStorage.setItem(PENDING_KEY, JSON.stringify(reviews));
 }
 
 export const cardStore = {
   async loadDeck(deckName: string): Promise<void> {
+    const config = getConfig();
+
     let cardsRaw: string;
     try {
-      cardsRaw = await gitService.readFile(`${deckName}/cards.json`);
+      const result = await githubApi.readFile(config, `${deckName}/cards.json`);
+      cardsRaw = result.content;
     } catch {
       return; // no cards.json = not a deck
     }
 
     let stateRaw = '{}';
     try {
-      stateRaw = await gitService.readFile(`${deckName}/state.json`);
+      const result = await githubApi.readFile(config, `${deckName}/state.json`);
+      stateRaw = result.content;
     } catch {
       // no state.json yet, that's fine
     }
@@ -85,10 +90,12 @@ export const cardStore = {
     const cards: Record<string, CardData> = JSON.parse(cardsRaw);
     const state: Record<string, CardState> = JSON.parse(stateRaw);
 
-    // Apply WAL entries
-    const wal = getWAL();
-    if (wal[deckName]) {
-      Object.assign(state, wal[deckName]);
+    // Apply pending reviews
+    const pending = getPendingReviews();
+    for (const p of pending) {
+      if (p.deckName === deckName) {
+        state[p.cardId] = p.state;
+      }
     }
 
     // Initialize missing states
@@ -96,13 +103,11 @@ export const cardStore = {
       if (!state[id]) {
         state[id] = createNewCardState();
       }
-      // Generate reverse card state if reversible
       if (cards[id].reversible && !state[`${id}:reverse`]) {
         state[`${id}:reverse`] = createNewCardState();
       }
     }
 
-    // Replace or add deck
     const idx = decks.findIndex((d) => d.name === deckName);
     const deck: DeckData = { name: deckName, cards, state };
     if (idx >= 0) decks[idx] = deck;
@@ -110,7 +115,9 @@ export const cardStore = {
   },
 
   async loadAllDecks(): Promise<void> {
-    const dirs = await gitService.listDirectories();
+    const config = getConfig();
+    const entries = await githubApi.listDirectory(config, '');
+    const dirs = entries.filter(e => e.type === 'dir' && !e.name.startsWith('.')).map(e => e.name);
     decks = [];
     for (const dir of dirs) {
       await this.loadDeck(dir);
@@ -189,44 +196,23 @@ export const cardStore = {
     const updated = fsrsReview(current, rating);
     deck.state[cardId] = updated;
 
-    // Write-ahead to localStorage
-    writeDeckWAL(deckName, cardId, updated);
+    // Queue pending review
+    const msg = `review: ${cardId} (${ratingName(rating)}) — next due ${updated.due.split('T')[0]}`;
+    const pending = getPendingReviews();
+    pending.push({ deckName, cardId, state: updated, commitMessage: msg });
+    setPendingReviews(pending);
 
     return updated;
   },
 
-  async save(deckName: string): Promise<void> {
-    const deck = decks.find((d) => d.name === deckName);
-    if (!deck) return;
-
-    await gitService.writeFile(
-      `${deckName}/state.json`,
-      JSON.stringify(deck.state, null, 2),
-    );
-    clearDeckWAL(deckName);
+  getPendingCount(): number {
+    return getPendingReviews().length;
   },
 
-  async commitReview(deckName: string, cardId: string, rating: Grade, nextDue: string): Promise<void> {
-    await this.save(deckName);
-    const msg = `review: ${cardId} (${ratingName(rating)}) — next due ${nextDue.split('T')[0]}`;
-    await gitService.commit(msg);
+  hasPendingReviews(): boolean {
+    return getPendingReviews().length > 0;
   },
 
-  hasWALEntries(): boolean {
-    const wal = getWAL();
-    return Object.keys(wal).length > 0;
-  },
-
-  async recoverFromWAL(): Promise<void> {
-    const wal = getWAL();
-    for (const deckName of Object.keys(wal)) {
-      const deck = decks.find((d) => d.name === deckName);
-      if (deck) {
-        Object.assign(deck.state, wal[deckName]);
-        await this.save(deckName);
-        await gitService.commit(`recover: apply ${Object.keys(wal[deckName]).length} pending reviews for ${deckName}`);
-      }
-    }
-    localStorage.removeItem(WAL_KEY);
-  },
+  getPendingReviews,
+  setPendingReviews,
 };

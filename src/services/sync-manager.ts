@@ -1,18 +1,20 @@
-import { gitService, type GitServiceConfig } from './git-service';
+import { githubApi, parseRepoUrl, type GitHubConfig } from './github-api';
 import { settingsStore } from './settings-store';
-import { cardStore } from './card-store';
+import { cardStore, type PendingReview } from './card-store';
+import { queryClient } from './query-client';
+import type { CardState } from '../utils/fsrs';
 
 const LAST_SYNC_KEY = 'flash-card-last-sync';
 
-export type SyncStatus = 'synced' | 'pending' | 'offline' | 'conflict';
+export type SyncStatus = 'synced' | 'pending' | 'offline';
 export type SyncResult =
   | { status: 'ok' }
-  | { status: 'conflict'; branch: string }
   | { status: 'error'; message: string };
 
-function getConfig(): GitServiceConfig {
+function getConfig(): GitHubConfig {
   const s = settingsStore.get();
-  return { repoUrl: s.repoUrl, token: s.token };
+  const { owner, repo } = parseRepoUrl(s.repoUrl);
+  return { owner, repo, token: s.token };
 }
 
 export const syncManager = {
@@ -24,67 +26,104 @@ export const syncManager = {
     return localStorage.getItem(LAST_SYNC_KEY);
   },
 
-  async getStatus(): Promise<SyncStatus> {
+  getStatus(): SyncStatus {
     if (!this.isOnline()) return 'offline';
-    const config = getConfig();
-    const hasUnpushed = await gitService.hasUnpushedCommits(config);
-    if (hasUnpushed) return 'pending';
+    if (cardStore.hasPendingReviews()) return 'pending';
     return 'synced';
   },
 
-  async pull(): Promise<SyncResult> {
-    if (!this.isOnline()) return { status: 'error', message: 'Offline' };
-    try {
-      await gitService.pull(getConfig());
-      localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
-      return { status: 'ok' };
-    } catch (e: any) {
-      return { status: 'error', message: e.message ?? String(e) };
-    }
-  },
-
-  async push(): Promise<SyncResult> {
-    if (!this.isOnline()) return { status: 'error', message: 'Offline' };
-    try {
-      await gitService.push(getConfig());
-      localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
-      return { status: 'ok' };
-    } catch (e: any) {
-      // Non-fast-forward means conflict
-      if (e.message?.includes('not a simple fast-forward') || e.code === 'PushRejectedError') {
-        return this.pushAsBranch();
-      }
-      return { status: 'error', message: e.message ?? String(e) };
-    }
-  },
-
-  async pushAsBranch(): Promise<SyncResult> {
-    if (!this.isOnline()) return { status: 'error', message: 'Offline' };
-    try {
-      const branch = await gitService.pushAsBranch(getConfig());
-      // Reset local to remote main
-      await gitService.pull(getConfig());
-      localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
-      return { status: 'conflict', branch };
-    } catch (e: any) {
-      return { status: 'error', message: e.message ?? String(e) };
-    }
+  getPendingCount(): number {
+    return cardStore.getPendingCount();
   },
 
   async sync(): Promise<SyncResult> {
-    // Recover WAL first
-    if (cardStore.hasWALEntries()) {
-      await cardStore.recoverFromWAL();
+    if (!this.isOnline()) return { status: 'error', message: 'Offline' };
+
+    const pending = cardStore.getPendingReviews();
+    if (pending.length === 0) {
+      localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+      return { status: 'ok' };
     }
 
-    // Pull first, then push
-    const pullResult = await this.pull();
-    if (pullResult.status !== 'ok') return pullResult;
-
     const config = getConfig();
-    const hasUnpushed = await gitService.hasUnpushedCommits(config);
-    if (!hasUnpushed) return { status: 'ok' };
 
-    return this.push();
+    try {
+      // Group pending reviews by deck
+      const byDeck = new Map<string, PendingReview[]>();
+      for (const p of pending) {
+        const list = byDeck.get(p.deckName) || [];
+        list.push(p);
+        byDeck.set(p.deckName, list);
+      }
+
+      for (const [deckName, reviews] of byDeck) {
+        // Get current state.json and its SHA
+        let currentState: Record<string, CardState> = {};
+        let sha: string;
+        try {
+          const result = await githubApi.readFile(config, `${deckName}/state.json`);
+          currentState = JSON.parse(result.content);
+          sha = result.sha;
+        } catch {
+          // state.json doesn't exist yet — we'll create it
+          // Use a special empty SHA for creation
+          sha = '';
+          currentState = {};
+        }
+
+        // Apply each review sequentially, committing each one
+        for (const review of reviews) {
+          currentState[review.cardId] = review.state;
+          const content = JSON.stringify(currentState, null, 2);
+
+          if (sha === '') {
+            // Create new file (no sha parameter)
+            const res = await fetch(
+              `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${deckName}/state.json`,
+              {
+                method: 'PUT',
+                headers: {
+                  Authorization: `Bearer ${config.token}`,
+                  Accept: 'application/vnd.github.v3+json',
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  message: review.commitMessage,
+                  content: btoa(Array.from(new TextEncoder().encode(content), b => String.fromCharCode(b)).join('')),
+                }),
+              },
+            );
+            if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+            const data = await res.json();
+            sha = data.content.sha;
+          } else {
+            sha = await githubApi.writeFile(
+              config,
+              `${deckName}/state.json`,
+              content,
+              sha,
+              review.commitMessage,
+            );
+          }
+        }
+      }
+
+      // Clear pending queue on success
+      cardStore.setPendingReviews([]);
+
+      // Invalidate query cache to re-fetch fresh data
+      queryClient.invalidateQueries({ queryKey: ['decks'] });
+      queryClient.invalidateQueries({ queryKey: ['cards'] });
+
+      localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+      return { status: 'ok' };
+    } catch (e: any) {
+      return { status: 'error', message: e.message ?? String(e) };
+    }
+  },
+
+  async getCommits(limit: number = 10) {
+    const config = getConfig();
+    return githubApi.getCommits(config, limit);
   },
 };

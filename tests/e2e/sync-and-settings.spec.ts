@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { seedTestData, wipeAppData, getGitLog } from './helpers';
+import { cloneTestRepo, E2E_REPO_URL } from './helpers';
 
 test.describe('Sync screen', () => {
   test.beforeEach(async ({ page }) => {
-    await seedTestData(page);
+    await cloneTestRepo(page);
   });
 
   test('navigates to sync screen and shows status', async ({ page }) => {
@@ -11,19 +11,17 @@ test.describe('Sync screen', () => {
 
     await expect(page.getByRole('heading', { name: 'Sync' })).toBeVisible();
     await expect(page.getByText('Online')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Pull' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Push' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Push as Branch' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sync' }).last()).toBeVisible();
   });
 
-  test('shows recent commits in git log', async ({ page }) => {
+  test('shows recent commits from GitHub', async ({ page }) => {
     await page.getByRole('button', { name: 'Sync', exact: true }).click();
 
     await expect(page.getByText('Recent Commits')).toBeVisible();
     await expect(page.getByText('seed test data')).toBeVisible();
   });
 
-  test('shows review commits after a session', async ({ page }) => {
+  test('shows pending reviews after a session', async ({ page }) => {
     // Do a review first
     await page.getByText('spanish-vocab').click();
     await page.getByRole('button', { name: 'Show Answer' }).click();
@@ -33,8 +31,8 @@ test.describe('Sync screen', () => {
     // Go to sync
     await page.getByRole('button', { name: 'Sync', exact: true }).click();
 
-    // Should see the review commit
-    await expect(page.getByText(/review: .+ \(Good\)/)).toBeVisible();
+    // Should see pending reviews count
+    await expect(page.getByText(/\d+ reviews? pending sync/)).toBeVisible();
   });
 
   test('back button returns to deck list', async ({ page }) => {
@@ -47,14 +45,14 @@ test.describe('Sync screen', () => {
 
 test.describe('Settings screen', () => {
   test.beforeEach(async ({ page }) => {
-    await seedTestData(page);
+    await cloneTestRepo(page);
   });
 
   test('navigates to settings and shows current config', async ({ page }) => {
     await page.getByRole('button', { name: 'Settings' }).click();
 
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
-    await expect(page.getByText('https://github.com/test/flashcards')).toBeVisible();
+    await expect(page.getByText(E2E_REPO_URL)).toBeVisible();
     await expect(page.getByText(/New cards per day: 10/)).toBeVisible();
   });
 
@@ -64,7 +62,6 @@ test.describe('Settings screen', () => {
     const select = page.getByRole('combobox');
     await expect(select).toBeVisible();
 
-    // Check options exist
     await expect(page.getByRole('option', { name: 'Random' })).toBeAttached();
     await expect(page.getByRole('option', { name: 'Oldest first' })).toBeAttached();
     await expect(page.getByRole('option', { name: 'Deck grouped' })).toBeAttached();
@@ -105,10 +102,8 @@ test.describe('Settings screen', () => {
     const slider = page.getByRole('slider');
     await slider.fill('5');
 
-    // Verify it's reflected in the label
     await expect(page.getByText(/New cards per day: 5/)).toBeVisible();
 
-    // Verify it persisted to localStorage
     const stored = await page.evaluate(() => {
       const raw = localStorage.getItem('flash-card-settings');
       return raw ? JSON.parse(raw).newCardsPerDay : null;
@@ -126,14 +121,12 @@ test.describe('Settings screen', () => {
   test('logout clears all data and returns to auth screen', async ({ page }) => {
     await page.getByRole('button', { name: 'Settings' }).click();
 
-    // Accept the confirm dialog
     page.on('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Logout' }).click();
 
     await expect(page.getByRole('heading', { name: 'Flash Cards' })).toBeVisible();
     await expect(page.getByPlaceholder(/github.com/i)).toBeVisible();
 
-    // Verify localStorage is cleared
     const hasSettings = await page.evaluate(() =>
       localStorage.getItem('flash-card-settings'),
     );
@@ -143,17 +136,14 @@ test.describe('Settings screen', () => {
 
 test.describe('New card daily limit', () => {
   test('respects new cards per day setting', async ({ page }) => {
-    await seedTestData(page);
+    await cloneTestRepo(page);
 
-    // Set limit to 2
     await page.getByRole('button', { name: 'Settings' }).click();
     await page.getByRole('slider').fill('2');
     await page.getByRole('button', { name: 'Back' }).click();
 
-    // Start review
     await page.getByText('spanish-vocab').click();
 
-    // Should only have 2 cards (the new card limit)
     await expect(page.getByText(/1 \/ 2/)).toBeVisible();
   });
 });

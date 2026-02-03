@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { cardStore } from '../services/card-store';
 import { syncManager } from '../services/sync-manager';
+import { useDecks } from '../hooks/use-decks';
 
 interface Props {
   onSelectDeck: (deck: string) => void;
@@ -9,13 +9,12 @@ interface Props {
 }
 
 export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
-  const [decks, setDecks] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: decks, isLoading: loading, refetch } = useDecks();
   const [syncStatus, setSyncStatus] = useState<string>('');
   const [online, setOnline] = useState(navigator.onLine);
 
   useEffect(() => {
-    loadDecks();
+    setSyncStatus(syncManager.getStatus());
     const handleOnline = () => setOnline(true);
     const handleOffline = () => setOnline(false);
     window.addEventListener('online', handleOnline);
@@ -26,30 +25,18 @@ export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
     };
   }, []);
 
-  async function loadDecks() {
-    setLoading(true);
-    try {
-      await cardStore.loadAllDecks();
-      setDecks(cardStore.getDeckNames());
-      const status = await syncManager.getStatus();
-      setSyncStatus(status);
-    } catch (e: any) {
-      console.error('Failed to load decks:', e);
-    }
-    setLoading(false);
-  }
-
   async function handleSync() {
     setSyncStatus('syncing...');
     const result = await syncManager.sync();
     if (result.status === 'ok') {
-      await loadDecks();
-    } else if (result.status === 'conflict') {
-      setSyncStatus(`conflict — pushed to ${result.branch}`);
+      await refetch();
+      setSyncStatus('synced');
     } else {
       setSyncStatus(`error: ${result.message}`);
     }
   }
+
+  const pendingCount = syncManager.getPendingCount();
 
   if (loading) {
     return (
@@ -82,30 +69,27 @@ export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
       <div className="flex items-center gap-2 mb-4 text-xs text-muted-foreground">
         <span className={`w-2 h-2 rounded-full ${online ? 'bg-green-500' : 'bg-red-500'}`} />
         <span>{online ? 'Online' : 'Offline'}</span>
+        {pendingCount > 0 && <span>· {pendingCount} pending</span>}
         {syncStatus && <span>· {syncStatus}</span>}
       </div>
 
       <div className="space-y-3">
-        {decks.map((deck) => {
-          const dueCount = cardStore.getDueCount(deck);
-          const newCount = cardStore.getNewCount(deck);
-          return (
-            <button
-              key={deck}
-              onClick={() => onSelectDeck(deck)}
-              className="w-full text-left rounded-lg border border-border p-4 hover:bg-accent transition-colors"
-            >
-              <div className="font-medium">{deck}</div>
-              <div className="text-sm text-muted-foreground mt-1">
-                <span className="text-blue-500">{dueCount} due</span>
-                {' · '}
-                <span className="text-green-500">{newCount} new</span>
-              </div>
-            </button>
-          );
-        })}
+        {decks?.map((deck) => (
+          <button
+            key={deck.name}
+            onClick={() => onSelectDeck(deck.name)}
+            className="w-full text-left rounded-lg border border-border p-4 hover:bg-accent transition-colors"
+          >
+            <div className="font-medium">{deck.name}</div>
+            <div className="text-sm text-muted-foreground mt-1">
+              <span className="text-blue-500">{deck.dueCount} due</span>
+              {' · '}
+              <span className="text-green-500">{deck.newCount} new</span>
+            </div>
+          </button>
+        ))}
 
-        {decks.length === 0 && (
+        {(!decks || decks.length === 0) && (
           <p className="text-center text-muted-foreground py-8">
             No decks found. Add directories with cards.json to your repo.
           </p>

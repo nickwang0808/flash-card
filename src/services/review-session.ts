@@ -142,9 +142,6 @@ export const reviewSession = {
       incrementNewCardCount(1);
     }
 
-    // Commit per card
-    await cardStore.commitReview(deckName, card.id, rating, state.due);
-
     session.done++;
     session.currentIndex++;
     session.answerRevealed = false;

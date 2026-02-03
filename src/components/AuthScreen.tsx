@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { settingsStore } from '../services/settings-store';
-import { gitService } from '../services/git-service';
+import { githubApi, parseRepoUrl } from '../services/github-api';
 
 interface Props {
   onComplete: () => void;
@@ -21,11 +21,21 @@ export function AuthScreen({ onComplete }: Props) {
     const url = repoUrl.startsWith('http') ? repoUrl : `https://${repoUrl}`;
 
     try {
-      setStatus('Cloning repository...');
-      await gitService.clone({ repoUrl: url, token }, (msg) => setStatus(msg));
+      setStatus('Validating credentials...');
+      const { owner, repo } = parseRepoUrl(url);
+      const config = { owner, repo, token };
 
-      setStatus('Verifying deck structure...');
-      const dirs = await gitService.listDirectories();
+      const valid = await githubApi.validateRepo(config);
+      if (!valid) {
+        setError('Cannot access repository. Check your URL and token.');
+        setLoading(false);
+        return;
+      }
+
+      setStatus('Checking deck structure...');
+      const entries = await githubApi.listDirectory(config, '');
+      const dirs = entries.filter(e => e.type === 'dir' && !e.name.startsWith('.'));
+
       if (dirs.length === 0) {
         setError('No decks found. Repository should contain directories with cards.json files.');
         setLoading(false);
@@ -36,7 +46,7 @@ export function AuthScreen({ onComplete }: Props) {
       let foundDeck = false;
       for (const dir of dirs) {
         try {
-          await gitService.readFile(`${dir}/cards.json`);
+          await githubApi.readFile(config, `${dir.name}/cards.json`);
           foundDeck = true;
           break;
         } catch {
@@ -54,7 +64,7 @@ export function AuthScreen({ onComplete }: Props) {
       setStatus('Done!');
       onComplete();
     } catch (e: any) {
-      setError(e.message || 'Clone failed. Check your URL and token.');
+      setError(e.message || 'Connection failed. Check your URL and token.');
       setLoading(false);
     }
   }
