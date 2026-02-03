@@ -15,8 +15,9 @@ export function ReviewScreen({ deck, onBack }: Props) {
   const [rating, setRating] = useState(false);
 
   useEffect(() => {
+    const unsub = reviewSession.subscribe(() => forceUpdate((n) => n + 1));
     reviewSession.start(deck);
-    return reviewSession.subscribe(() => forceUpdate((n) => n + 1));
+    return unsub;
   }, [deck]);
 
   const state = reviewSession.getState();

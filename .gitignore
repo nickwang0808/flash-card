@@ -4,3 +4,4 @@ temp/
 *.local
 .env
 .env.*
+test-results/
