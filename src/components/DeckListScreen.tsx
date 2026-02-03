@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLiveQuery } from '@tanstack/react-db';
-import { cardsCollection } from '../services/collections';
+import { decksCollection } from '../services/collections';
 import { useDeck } from '../hooks/useDeck';
 
 interface Props {
@@ -37,15 +37,13 @@ function DeckRow({
 export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
   const [online, setOnline] = useState(navigator.onLine);
 
-  // Get unique deck names from cards collection
-  const { data: cards, isLoading } = useLiveQuery(
-    (q) => q.from({ cards: cardsCollection }),
+  // Get deck names from decks collection
+  const { data: decks, isLoading } = useLiveQuery(
+    (q) => q.from({ decks: decksCollection }),
     [],
   );
 
-  const deckNames = cards
-    ? [...new Set(cards.map((card) => card.deckName))]
-    : [];
+  const deckNames = decks?.map((deck) => deck.name) ?? [];
 
   useEffect(() => {
     const handleOnline = () => setOnline(true);

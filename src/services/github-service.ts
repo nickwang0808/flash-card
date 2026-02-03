@@ -25,7 +25,8 @@ interface FlashCardJSON {
   tags?: string[];
   created: string;
   reversible?: boolean;
-  state?: CardStateJSON;
+  state?: CardStateJSON;         // source → translation
+  reverseState?: CardStateJSON;  // translation → source
 }
 
 function parseCardState(json: CardStateJSON): Card {
@@ -57,6 +58,36 @@ function isConfigured(): boolean {
 
 export const githubService = {
   /**
+   * List all decks (directories containing cards.json).
+   */
+  async listDecks(): Promise<string[]> {
+    if (!isConfigured()) return [];
+
+    const config = getConfig();
+
+    try {
+      const entries = await github.listDirectory(config, '');
+      const decks: string[] = [];
+
+      for (const entry of entries) {
+        if (entry.type === 'dir') {
+          try {
+            // Check if directory has cards.json
+            await github.readFile(config, `${entry.name}/cards.json`);
+            decks.push(entry.name);
+          } catch {
+            // No cards.json, not a deck
+          }
+        }
+      }
+
+      return decks;
+    } catch {
+      return [];
+    }
+  },
+
+  /**
    * Get cards with content + state for a specific deck.
    */
   async getCards(deckName: string): Promise<FlashCard[]> {
@@ -68,9 +99,7 @@ export const githubService = {
       const { content } = await github.readFile(config, `${deckName}/cards.json`);
       const cards: Record<string, FlashCardJSON> = JSON.parse(content);
 
-      return Object.entries(cards).map(([cardId, card]) => ({
-        id: `${deckName}/${cardId}`,
-        deckName,
+      return Object.values(cards).map((card) => ({
         source: card.source,
         translation: card.translation,
         example: card.example,
@@ -79,6 +108,7 @@ export const githubService = {
         created: card.created,
         reversible: card.reversible,
         state: card.state ? parseCardState(card.state) : undefined,
+        reverseState: card.reverseState ? parseCardState(card.reverseState) : undefined,
       }));
     } catch {
       return [];
@@ -86,53 +116,42 @@ export const githubService = {
   },
 
   /**
-   * Update cards (content + state). Groups updates by deck and writes to cards.json.
+   * Update cards (content + state) for a specific deck.
    */
-  async updateCards(cards: FlashCard[]): Promise<void> {
+  async updateCards(deckName: string, cards: FlashCard[]): Promise<void> {
     const config = getConfig();
 
-    // Group by deck
-    const byDeck = new Map<string, FlashCard[]>();
+    let existing: Record<string, FlashCardJSON> = {};
+    let sha: string | undefined;
+
+    try {
+      const result = await github.readFile(config, `${deckName}/cards.json`);
+      existing = JSON.parse(result.content);
+      sha = result.sha;
+    } catch {
+      // file doesn't exist yet
+    }
+
     for (const card of cards) {
-      const list = byDeck.get(card.deckName) || [];
-      list.push(card);
-      byDeck.set(card.deckName, list);
+      existing[card.source] = {
+        source: card.source,
+        translation: card.translation,
+        example: card.example,
+        notes: card.notes,
+        tags: card.tags,
+        created: card.created,
+        reversible: card.reversible,
+        state: card.state ? serializeCardState(card.state) : undefined,
+        reverseState: card.reverseState ? serializeCardState(card.reverseState) : undefined,
+      };
     }
 
-    // Write each deck's cards.json
-    for (const [deckName, deckCards] of byDeck) {
-      let existing: Record<string, FlashCardJSON> = {};
-      let sha: string | undefined;
-
-      try {
-        const result = await github.readFile(config, `${deckName}/cards.json`);
-        existing = JSON.parse(result.content);
-        sha = result.sha;
-      } catch {
-        // file doesn't exist yet
-      }
-
-      for (const card of deckCards) {
-        const cardId = card.id.split('/')[1]; // Extract cardId from "deckName/cardId"
-        existing[cardId] = {
-          source: card.source,
-          translation: card.translation,
-          example: card.example,
-          notes: card.notes,
-          tags: card.tags,
-          created: card.created,
-          reversible: card.reversible,
-          state: card.state ? serializeCardState(card.state) : undefined,
-        };
-      }
-
-      await github.writeFile(
-        config,
-        `${deckName}/cards.json`,
-        JSON.stringify(existing, null, 2),
-        sha,
-        `update: ${deckCards.length} card(s)`,
-      );
-    }
+    await github.writeFile(
+      config,
+      `${deckName}/cards.json`,
+      JSON.stringify(existing, null, 2),
+      sha,
+      `update: ${cards.length} card(s)`,
+    );
   },
 };
