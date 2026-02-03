@@ -17,7 +17,7 @@ function DeckRow({
   deckName: string;
   onSelect: () => void;
 }) {
-  const { newRemaining, dueRemaining } = useDeck(deckName);
+  const { newItems, dueItems } = useDeck(deckName);
 
   return (
     <button
@@ -26,9 +26,9 @@ function DeckRow({
     >
       <div className="font-medium">{deckName}</div>
       <div className="text-sm text-muted-foreground mt-1">
-        <span className="text-blue-500">{dueRemaining} due</span>
+        <span className="text-blue-500">{dueItems.length} due</span>
         {' · '}
-        <span className="text-green-500">{newRemaining} new</span>
+        <span className="text-green-500">{newItems.length} new</span>
       </div>
     </button>
   );
