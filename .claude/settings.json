@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "command": "powershell -ExecutionPolicy Bypass -File \"C:\\Users\\nickw\\.claude\\notifications\\notify.ps1\" stop",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "command": "powershell -ExecutionPolicy Bypass -File \"C:\\Users\\nickw\\.claude\\notifications\\notify.ps1\" notification",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

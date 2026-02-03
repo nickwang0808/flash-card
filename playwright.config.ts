@@ -1,4 +1,7 @@
+import { config } from 'dotenv';
 import { defineConfig, devices } from '@playwright/test';
+
+config();
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -8,6 +11,8 @@ export default defineConfig({
   workers: 1,
   reporter: 'html',
   timeout: 60000,
+  globalSetup: './tests/e2e/global-setup.ts',
+  globalTeardown: './tests/e2e/global-teardown.ts',
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',
