@@ -65,7 +65,12 @@ async function getReviewableCards(deckName: string): Promise<ReviewableCard[]> {
   const result: ReviewableCard[] = [];
 
   for (const card of deckCards) {
-    const cardId = card.id.split('/')[1]; // Remove deck prefix
+    // card.id should be "deckName/cardId", extract just the cardId part
+    const cardId = card.id?.includes('/') ? card.id.split('/')[1] : card.id;
+    if (!cardId) {
+      console.error('Card missing id:', card);
+      continue;
+    }
     result.push({
       id: cardId,
       deckName,

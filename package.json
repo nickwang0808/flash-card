@@ -11,7 +11,10 @@
     "test:integration": "vitest run tests/integration",
     "test:e2e": "playwright test",
     "test": "vitest run",
-    "validate:schema": "vitest run tests/unit/schema-validation.test.ts"
+    "validate:schema": "vitest run tests/unit/schema-validation.test.ts",
+    "seed": "npx tsx scripts/seed-test-repo.ts seed",
+    "seed:reset": "npx tsx scripts/seed-test-repo.ts reset",
+    "seed:status": "npx tsx scripts/seed-test-repo.ts status"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",

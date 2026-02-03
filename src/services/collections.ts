@@ -72,9 +72,10 @@ export const cardsCollection = createCollection(
 
           for (const [cardId, card] of Object.entries(cards)) {
             allCards.push({
+              ...card,
+              // Put id and deckName AFTER spread to ensure they're not overwritten
               id: `${dir.name}/${cardId}`,
               deckName: dir.name,
-              ...card,
             });
           }
         } catch {
