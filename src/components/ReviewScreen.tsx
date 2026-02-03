@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useDeck } from '../hooks/useDeck';
 import { cardStatesCollection } from '../services/collections';
-import { Rating, reviewCard as fsrsReview, createNewCardState, type Grade } from '../utils/fsrs';
+import { Rating, reviewCard, createEmptyCard, type Grade } from '../services/collections';
 
 interface Props {
   deck: string;
@@ -21,14 +21,14 @@ export function ReviewScreen({ deck, onBack }: Props) {
     if (!actualCurrentCard) return;
 
     // For new cards, create initial state first
-    const currentState = actualCurrentCard.state ?? createNewCardState();
-    const newState = fsrsReview(currentState, rating);
+    const currentState = actualCurrentCard.state ? actualCurrentCard.state : createEmptyCard();
+    const newState = reviewCard(currentState, rating);
 
     // Override due for Again/Hard (in-session rescheduling)
     if (rating === Rating.Again) {
-      newState.due = new Date(Date.now() + 60_000).toISOString();
+      newState.due = new Date(Date.now() + 60_000);
     } else if (rating === Rating.Hard) {
-      newState.due = new Date(Date.now() + 5 * 60_000).toISOString();
+      newState.due = new Date(Date.now() + 5 * 60_000);
     }
 
     // Check if this card state exists in collection
@@ -123,7 +123,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
         )}
 
         <div className="text-center">
-          <p className="text-3xl font-bold">{actualCurrentCard.source}</p>
+          <p className="text-3xl font-bold">{actualCurrentCard.front}</p>
           {actualCurrentCard.isReverse && (
             <p className="text-xs text-muted-foreground mt-1">reverse</p>
           )}
@@ -131,7 +131,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
 
         {answerRevealed ? (
           <div className="text-center space-y-3 animate-in fade-in">
-            <p className="text-xl">{actualCurrentCard.translation}</p>
+            <p className="text-xl">{actualCurrentCard.back}</p>
             {actualCurrentCard.example && (
               <p className="text-sm text-muted-foreground italic">
                 {actualCurrentCard.example}

@@ -1,184 +1,132 @@
-import { useLiveQuery } from '@tanstack/react-db';
-import { eq, lte } from '@tanstack/db';
+import {useLiveQuery} from '@tanstack/react-db';
+import {eq, lte} from '@tanstack/db';
+import { type Card } from 'ts-fsrs';
 import {
   cardsCollection,
   cardStatesCollection,
 } from '../services/collections';
-import { type CardState } from '../utils/fsrs';
-import { settingsStore } from '../services/settings-store';
+import {settingsStore} from '../services/settings-store';
 
-export interface ReviewableCard {
-  id: string; // Full id: "deckName/cardId" or "deckName/cardId:reverse"
+export interface StudiableCard {
+  id: string; // Full id (e.g., "deckName/cardId" or "deckName/cardId:reverse")
   cardId: string; // Just the cardId part (e.g., "hola" or "hola:reverse")
   deckName: string;
-  source: string;
-  translation: string;
+  front: string;
+  back: string;
   example?: string;
   notes?: string;
-  isReverse: boolean;
+  state: Card | null; // null for new cards
   isNew: boolean;
-  state: CardState | null; // null for new cards
-  due: Date | null; // null for new cards (always due)
+  isReverse: boolean;
+  due: Date | null;
 }
 
-interface UseDeckResult {
-  deck: ReviewableCard[];
-  currentCard: ReviewableCard | null;
-  isLoading: boolean;
-  newRemaining: number;
-  dueRemaining: number;
-}
-
-export function useDeck(deckName: string): UseDeckResult {
+export function useDeck(deckName: string) {
   const endOfDay = new Date();
   endOfDay.setHours(23, 59, 59, 999);
-  const endOfDayStr = endOfDay.toISOString();
-
-  const now = new Date();
 
   const settings = settingsStore.get();
   const newCardsLimit = settings.newCardsPerDay;
 
   // Query 1: All cards for this deck
-  const { data: allCards, isLoading: cardsLoading } = useLiveQuery(
+  const {data: cards, isLoading: cardsLoading} = useLiveQuery(
     (q) =>
       q
-        .from({ cards: cardsCollection })
-        .where(({ cards }) => eq(cards.deckName, deckName)),
-    [deckName],
+        .from({cards: cardsCollection})
+        .where(({cards}) => eq(cards.deckName, deckName)),
+    [deckName]
   );
 
   // Query 2: States due today for this deck
-  const { data: dueStates, isLoading: statesLoading } = useLiveQuery(
+  const {data: dueStates, isLoading: statesLoading} = useLiveQuery(
     (q) =>
       q
-        .from({ states: cardStatesCollection })
-        .where(({ states }) => eq(states.deckName, deckName))
-        .where(({ states }) => lte(states.state.due, endOfDayStr)),
-    [deckName, endOfDayStr],
+        .from({states: cardStatesCollection})
+        .where(({states}) => eq(states.deckName, deckName))
+        .where(({states}) => lte(states.state.due, endOfDay)),
+    [deckName, endOfDay.getTime()]
   );
 
   const isLoading = cardsLoading || statesLoading;
 
-  // Build a set of card IDs that have state entries due today
-  const stateMap = new Map<string, CardState>();
-  if (dueStates) {
-    for (const stateRow of dueStates) {
-      stateMap.set(stateRow.id, stateRow.state);
-    }
-  }
+  // Cards with a due state (normal or reverse)
+  const dueCardIds = new Set(
+    dueStates?.map((s) => s.id.replace(/:reverse$/, '')) ?? []
+  );
 
-  // Build reviewable cards list
-  const reviewableCards: ReviewableCard[] = [];
+  // New cards: no state exists for this card (neither normal nor reverse)
+  const newCards = (cards ?? []).filter((c) => !dueCardIds.has(c.id)).slice(0, newCardsLimit);
 
-  if (allCards) {
-    for (const card of allCards) {
-      const cardId = card.id.split('/')[1];
+  // Map due states to studiable cards (handles both normal and reverse)
+  const dueStudiable = (dueStates ?? []).map((s): StudiableCard => {
+    const isReverse = s.id.endsWith(':reverse');
+    const baseCardId = s.id.replace(/:reverse$/, '');
+    const card = cards?.find((c) => c.id === baseCardId);
 
-      // Check if this card has a state entry (due today)
-      const state = stateMap.get(card.id);
-      if (state) {
-        // Card with state due today
-        const due = new Date(state.due);
-        reviewableCards.push({
-          id: card.id,
-          cardId,
-          deckName: card.deckName,
-          source: card.source,
-          translation: card.translation,
-          example: card.example,
-          notes: card.notes,
-          isReverse: false,
-          isNew: false,
-          state,
-          due,
-        });
-      } else if (!cardStatesCollection.get(card.id)) {
-        // Card with NO state entry at all = new card
-        reviewableCards.push({
-          id: card.id,
-          cardId,
-          deckName: card.deckName,
-          source: card.source,
-          translation: card.translation,
-          example: card.example,
-          notes: card.notes,
-          isReverse: false,
-          isNew: true,
-          state: null,
-          due: null,
-        });
-      }
-      // else: card has state but not due today - skip
-
-      // Handle reverse card if reversible
-      if (card.reversible) {
-        const reverseId = `${card.id}:reverse`;
-        const reverseState = stateMap.get(reverseId);
-
-        if (reverseState) {
-          // Reverse card with state due today
-          const reverseDue = new Date(reverseState.due);
-          reviewableCards.push({
-            id: reverseId,
-            cardId: `${cardId}:reverse`,
-            deckName: card.deckName,
-            source: card.translation,
-            translation: card.source,
-            example: card.example,
-            notes: card.notes,
-            isReverse: true,
-            isNew: false,
-            state: reverseState,
-            due: reverseDue,
-          });
-        } else if (!cardStatesCollection.get(reverseId)) {
-          // Reverse card with NO state = new
-          reviewableCards.push({
-            id: reverseId,
-            cardId: `${cardId}:reverse`,
-            deckName: card.deckName,
-            source: card.translation,
-            translation: card.source,
-            example: card.example,
-            notes: card.notes,
-            isReverse: true,
-            isNew: true,
-            state: null,
-            due: null,
-          });
-        }
-      }
-    }
-  }
-
-  // Sort: due cards by due date, then new cards
-  reviewableCards.sort((a, b) => {
-    // Due cards first (sorted by due date), then new cards
-    if (!a.isNew && b.isNew) return -1;
-    if (a.isNew && !b.isNew) return 1;
-    if (a.due && b.due) return a.due.getTime() - b.due.getTime();
-    return 0;
+    return {
+      id: s.id,
+      cardId: s.cardId,
+      deckName: s.deckName,
+      front: isReverse ? (card?.translation ?? '') : (card?.source ?? ''),
+      back: isReverse ? (card?.source ?? '') : (card?.translation ?? ''),
+      example: card?.example,
+      notes: card?.notes,
+      state: s.state,
+      isNew: false,
+      isReverse,
+      due: s.state.due,
+    };
   });
 
-  // Limit new cards
-  let newCount = 0;
-  const limitedCards = reviewableCards.filter((card) => {
-    if (card.isNew) {
-      newCount++;
-      return newCount <= newCardsLimit;
+  // Map new cards + create reverse entries for reversible cards
+  const newStudiable = newCards.flatMap((c): StudiableCard[] => {
+    const card = c;
+    const cardIdOnly = card.id.split('/')[1]; // Extract cardId from "deckName/cardId"
+    const normal: StudiableCard = {
+      id: card.id,
+      cardId: cardIdOnly,
+      deckName: card.deckName,
+      front: card.source,
+      back: card.translation,
+      example: card.example,
+      notes: card.notes,
+      state: null,
+      isNew: true,
+      isReverse: false,
+      due: null,
+    };
+
+    if (card.reversible) {
+      const reverse: StudiableCard = {
+        id: `${card.id}:reverse`,
+        cardId: `${cardIdOnly}:reverse`,
+        deckName: card.deckName,
+        front: card.translation,
+        back: card.source,
+        example: card.example,
+        notes: card.notes,
+        state: null,
+        isNew: true,
+        isReverse: true,
+        due: null,
+      };
+      return [normal, reverse];
     }
-    return true;
+
+    return [normal];
   });
 
-  // Cards that are due RIGHT NOW (new cards are always due, others check due <= now)
-  const dueNow = limitedCards.filter((c) => c.isNew || (c.due && c.due <= now));
+  const studiableCards = [...newStudiable, ...dueStudiable];
+  const currentCard = studiableCards[0] ?? null;
 
   return {
-    deck: limitedCards,
-    currentCard: dueNow[0] ?? null,
     isLoading,
-    newRemaining: dueNow.filter((c) => c.isNew).length,
-    dueRemaining: dueNow.filter((c) => !c.isNew).length,
+    studiableCards,
+    // For ReviewScreen
+    currentCard,
+    deck: studiableCards,
+    // For DeckListScreen
+    newRemaining: newStudiable.length,
+    dueRemaining: dueStudiable.length,
   };
 }

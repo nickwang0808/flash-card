@@ -12,3 +12,4 @@ playwright-report/
 .idea/
 nultsconfig.tsbuildinfo
 nul
+tsconfig.tsbuildinfo

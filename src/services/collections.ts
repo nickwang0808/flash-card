@@ -1,14 +1,15 @@
 import { QueryClient } from '@tanstack/query-core';
-import { createCollection } from '@tanstack/db';
+import { createCollection, parseLoadSubsetOptions } from '@tanstack/db';
 import { queryCollectionOptions } from '@tanstack/query-db-collection';
+import { fsrs, generatorParameters, type Card, type Grade } from 'ts-fsrs';
 import { github, getConfig } from './github';
-import { settingsStore } from './settings-store';
-import { type CardState } from '../utils/fsrs';
+import { githubService } from './github-service';
 
-// Types
-export interface CardData {
-  id: string;
+// FlashCard: content + FSRS state in one structure
+export interface FlashCard {
+  id: string;           // "deckName/cardId"
   deckName: string;
+  // Content
   source: string;
   translation: string;
   example?: string;
@@ -16,21 +17,17 @@ export interface CardData {
   tags?: string[];
   created: string;
   reversible?: boolean;
+  // FSRS state (undefined for new cards that haven't been reviewed)
+  state?: Card;
 }
 
-export interface CardStateRow {
-  id: string; // "deckName/cardId"
-  deckName: string;
-  cardId: string;
-  state: CardState;
-}
+// FSRS scheduler
+const fsrsParams = generatorParameters();
+const scheduler = fsrs(fsrsParams);
 
-export interface DeckInfo {
-  name: string;
-  dueCount: number;
-  newCount: number;
+export function reviewCard(card: Card, rating: Grade, now?: Date): Card {
+  return scheduler.repeat(card, now ?? new Date())[rating].card;
 }
-
 // Query Client
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,181 +38,48 @@ export const queryClient = new QueryClient({
   },
 });
 
-// Helper to check if configured
-function isConfigured(): boolean {
-  return settingsStore.isConfigured();
+/**
+ * Extract deckName from LoadSubsetOptions where clause.
+ * Looks for eq(deckName, value) comparison.
+ */
+function extractDeckName(opts: { where?: unknown }): string | undefined {
+  const parsed = parseLoadSubsetOptions(opts as Parameters<typeof parseLoadSubsetOptions>[0]);
+  const deckFilter = parsed.filters.find(
+    (f) => f.field.length === 1 && f.field[0] === 'deckName' && f.operator === 'eq',
+  );
+  return deckFilter?.value as string | undefined;
 }
 
-// Cards Collection (read-only from GitHub)
+// Single unified collection: cards with content + state
 export const cardsCollection = createCollection(
   queryCollectionOptions({
-    queryKey: ['cards'],
-    queryFn: async (): Promise<CardData[]> => {
-      if (!isConfigured()) return [];
-
-      const config = getConfig();
-      const entries = await github.listDirectory(config, '');
-      const dirs = entries.filter((e) => e.type === 'dir' && !e.name.startsWith('.'));
-
-      const allCards: CardData[] = [];
-
-      for (const dir of dirs) {
-        try {
-          const { content } = await github.readFile(config, `${dir.name}/cards.json`);
-          const cards: Record<string, Omit<CardData, 'id' | 'deckName'>> = JSON.parse(content);
-
-          for (const [cardId, card] of Object.entries(cards)) {
-            allCards.push({
-              ...card,
-              // Put id and deckName AFTER spread to ensure they're not overwritten
-              id: `${dir.name}/${cardId}`,
-              deckName: dir.name,
-            });
-          }
-        } catch {
-          // Not a deck directory, skip
-        }
-      }
-
-      return allCards;
-    },
-    queryClient,
-    getKey: (item) => item.id,
-  }),
-);
-
-// Card States Collection (read from GitHub, write with onUpdate handler)
-export const cardStatesCollection = createCollection(
-  queryCollectionOptions({
-    queryKey: ['cardStates'],
-    queryFn: async (): Promise<CardStateRow[]> => {
-      if (!isConfigured()) return [];
-
-      const config = getConfig();
-      const entries = await github.listDirectory(config, '');
-      const dirs = entries.filter((e) => e.type === 'dir' && !e.name.startsWith('.'));
-
-      const allStates: CardStateRow[] = [];
-
-      for (const dir of dirs) {
-        try {
-          const { content } = await github.readFile(config, `${dir.name}/state.json`);
-          const states: Record<string, CardState> = JSON.parse(content);
-
-          for (const [cardId, state] of Object.entries(states)) {
-            allStates.push({
-              id: `${dir.name}/${cardId}`,
-              deckName: dir.name,
-              cardId,
-              state,
-            });
-          }
-        } catch {
-          // No state.json yet, skip
-        }
-      }
-
-      return allStates;
+    queryKey: (opts) => ['cards', extractDeckName(opts)],
+    queryFn: async (ctx) => {
+      const deckName = extractDeckName(ctx.meta?.loadSubsetOptions ?? {});
+      return githubService.getCards(deckName);
     },
     queryClient,
     getKey: (item) => item.id,
 
-    // Optimistic updates applied instantly, this syncs to GitHub
+    // TODO: make sure we are also passing in the deck name
     onUpdate: async ({ transaction }) => {
-      const config = getConfig();
-
-      // Group mutations by deck
-      const byDeck = new Map<string, Array<{ cardId: string; state: CardState }>>();
-      for (const m of transaction.mutations) {
-        const [deckName, cardId] = (m.key as string).split('/');
-        const list = byDeck.get(deckName) || [];
-        list.push({ cardId, state: m.modified.state });
-        byDeck.set(deckName, list);
-      }
-
-      // Write each deck's state.json to GitHub
-      for (const [deckName, updates] of byDeck) {
-        let existing: Record<string, CardState> = {};
-        let sha: string | undefined;
-
-        try {
-          const result = await github.readFile(config, `${deckName}/state.json`);
-          existing = JSON.parse(result.content);
-          sha = result.sha;
-        } catch {
-          // file doesn't exist yet
-        }
-
-        for (const { cardId, state } of updates) {
-          existing[cardId] = state;
-        }
-
-        await github.writeFile(
-          config,
-          `${deckName}/state.json`,
-          JSON.stringify(existing, null, 2),
-          sha,
-          `review: ${updates.length} card(s)`,
-        );
-      }
-
+      const updates = transaction.mutations.map((m) => m.modified as FlashCard);
+      await githubService.updateCards(updates);
       return { refetch: false };
     },
 
-    // Handle inserts for new card states
+    // TODO: make sure we are also passing in the deck name
     onInsert: async ({ transaction }) => {
-      const config = getConfig();
-
-      // Group mutations by deck
-      const byDeck = new Map<string, Array<{ cardId: string; state: CardState }>>();
-      for (const m of transaction.mutations) {
-        const [deckName, cardId] = (m.key as string).split('/');
-        const list = byDeck.get(deckName) || [];
-        list.push({ cardId, state: m.modified.state });
-        byDeck.set(deckName, list);
-      }
-
-      // Write each deck's state.json to GitHub
-      for (const [deckName, updates] of byDeck) {
-        let existing: Record<string, CardState> = {};
-        let sha: string | undefined;
-
-        try {
-          const result = await github.readFile(config, `${deckName}/state.json`);
-          existing = JSON.parse(result.content);
-          sha = result.sha;
-        } catch {
-          // file doesn't exist yet
-        }
-
-        for (const { cardId, state } of updates) {
-          existing[cardId] = state;
-        }
-
-        await github.writeFile(
-          config,
-          `${deckName}/state.json`,
-          JSON.stringify(existing, null, 2),
-          sha,
-          `review: ${updates.length} card(s)`,
-        );
-      }
-
+      const inserts = transaction.mutations.map((m) => m.modified as FlashCard);
+      await githubService.updateCards(inserts);
       return { refetch: false };
     },
   }),
 );
-
 
 // Refresh all data from GitHub
 export async function refreshData(): Promise<void> {
   await queryClient.invalidateQueries({ queryKey: ['cards'] });
-  await queryClient.invalidateQueries({ queryKey: ['cardStates'] });
-}
-
-// Check if online
-export function isOnline(): boolean {
-  return navigator.onLine;
 }
 
 // Get commits from GitHub
