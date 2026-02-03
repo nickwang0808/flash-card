@@ -19,9 +19,9 @@ vi.mock('../../src/services/collections', () => {
     cardStatesCollection: {
       toArrayWhenReady: () => Promise.resolve([]),
     },
-    reviewCard: async () => ({ reps: 1, due: new Date().toISOString(), suspended: false }),
+    reviewCard: () => ({ reps: 1, due: new Date().toISOString(), suspended: false }),
     getCardState: () => ({ reps: 0, due: new Date().toISOString(), suspended: false }),
-    getPendingCount: () => Promise.resolve(0),
+    getPendingCount: () => 0,
   };
 });
 
@@ -63,7 +63,7 @@ describe('ReviewSession', () => {
   it('rating advances to next card', async () => {
     await reviewSession.start('test-deck');
     reviewSession.showAnswer();
-    await reviewSession.rate(Rating.Good);
+    reviewSession.rate(Rating.Good);
 
     expect(reviewSession.getState()!.done).toBe(1);
   });

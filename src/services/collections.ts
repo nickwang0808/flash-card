@@ -1,7 +1,6 @@
 import { QueryClient } from '@tanstack/query-core';
 import { createCollection } from '@tanstack/db';
 import { queryCollectionOptions } from '@tanstack/query-db-collection';
-import { startOfflineExecutor, IndexedDBAdapter } from '@tanstack/offline-transactions';
 import { github, getConfig } from './github';
 import { settingsStore } from './settings-store';
 import {
@@ -90,7 +89,7 @@ export const cardsCollection = createCollection(
   }),
 );
 
-// Card States Collection (read from GitHub, write via offline transactions)
+// Card States Collection (read from GitHub, write directly)
 export const cardStatesCollection = createCollection(
   queryCollectionOptions({
     queryKey: ['cardStates'],
@@ -128,108 +127,116 @@ export const cardStatesCollection = createCollection(
   }),
 );
 
-// Offline Executor for durable mutations
-export const offlineExecutor = startOfflineExecutor({
-  collections: {
-    cardStates: cardStatesCollection,
-  },
-  storage: new IndexedDBAdapter('flash-cards', 'offline-transactions'),
-  mutationFns: {
-    syncReview: async ({ transaction }) => {
-      const config = getConfig();
+// Pending writes queue for background GitHub sync
+interface PendingWrite {
+  deckName: string;
+  cardId: string;
+  state: CardState;
+  commitMessage: string;
+}
+let pendingWrites: PendingWrite[] = [];
+let isWriting = false;
 
-      // Group mutations by deck
-      const byDeck = new Map<string, Array<{ cardId: string; state: CardState; message: string }>>();
+// Process pending writes in background
+async function processPendingWrites(): Promise<void> {
+  if (isWriting || pendingWrites.length === 0) return;
+  isWriting = true;
 
-      for (const mutation of transaction.mutations) {
-        const row = mutation.modified as unknown as CardStateRow & { commitMessage?: string };
-        const list = byDeck.get(row.deckName) || [];
-        list.push({
-          cardId: row.cardId,
-          state: row.state,
-          message: (row as any).commitMessage || `review: ${row.cardId}`,
-        });
-        byDeck.set(row.deckName, list);
+  const config = getConfig();
+
+  // Group by deck for efficiency
+  const byDeck = new Map<string, PendingWrite[]>();
+  for (const write of pendingWrites) {
+    const list = byDeck.get(write.deckName) || [];
+    list.push(write);
+    byDeck.set(write.deckName, list);
+  }
+  pendingWrites = [];
+
+  for (const [deckName, writes] of byDeck) {
+    try {
+      // Get current state.json
+      let allStates: Record<string, CardState> = {};
+      let sha: string | undefined;
+
+      try {
+        const result = await github.readFile(config, `${deckName}/state.json`);
+        allStates = JSON.parse(result.content);
+        sha = result.sha;
+      } catch {
+        // File doesn't exist yet
       }
 
-      // Write each deck's state.json
-      for (const [deckName, reviews] of byDeck) {
-        // Get current state
-        let currentState: Record<string, CardState> = {};
-        let sha: string | undefined;
-
-        try {
-          const result = await github.readFile(config, `${deckName}/state.json`);
-          currentState = JSON.parse(result.content);
-          sha = result.sha;
-        } catch {
-          // File doesn't exist, will create
-        }
-
-        // Apply reviews sequentially (each gets its own commit)
-        for (const review of reviews) {
-          currentState[review.cardId] = review.state;
-          const content = JSON.stringify(currentState, null, 2);
-          sha = await github.writeFile(config, `${deckName}/state.json`, content, sha, review.message);
-        }
+      // Apply all pending writes for this deck
+      for (const write of writes) {
+        allStates[write.cardId] = write.state;
       }
 
-      // Invalidate queries to refetch
-      queryClient.invalidateQueries({ queryKey: ['cardStates'] });
-    },
-  },
-  onLeadershipChange: (isLeader) => {
-    if (!isLeader) {
-      console.log('Flash Cards: Running in online-only mode (another tab is leader)');
+      // Write back to GitHub (single commit for all reviews in this deck)
+      const lastWrite = writes[writes.length - 1];
+      await github.writeFile(
+        config,
+        `${deckName}/state.json`,
+        JSON.stringify(allStates, null, 2),
+        sha,
+        writes.length === 1 ? lastWrite.commitMessage : `review: ${writes.length} cards`,
+      );
+    } catch (err) {
+      console.error('Failed to write to GitHub:', err);
+      // Re-queue failed writes
+      pendingWrites.push(...writes);
     }
-  },
-});
+  }
 
-// Review a card - creates an offline transaction
-export async function reviewCard(
+  isWriting = false;
+
+  // If more writes queued while processing, continue
+  if (pendingWrites.length > 0) {
+    processPendingWrites();
+  }
+}
+
+// Local state cache for optimistic updates (since queryCollection doesn't allow direct writes)
+const localStateCache = new Map<string, CardState>();
+
+// Review a card - updates local cache immediately, queues GitHub write
+export function reviewCard(
   deckName: string,
   cardId: string,
   rating: Grade,
-): Promise<CardState> {
-  // Get current state
-  const existingRow = cardStatesCollection.get(`${deckName}/${cardId}`);
-  const currentState = existingRow?.state ?? createNewCardState();
+): CardState {
+  const key = `${deckName}/${cardId}`;
 
-  // Calculate new state
+  // Get current state from local cache first, then collection
+  const cachedState = localStateCache.get(key);
+  const collectionRow = cardStatesCollection.get(key);
+  const currentState = cachedState ?? collectionRow?.state ?? createNewCardState();
+
+  // Calculate new state using FSRS
   const newState = fsrsReview(currentState, rating);
   const commitMessage = `review: ${cardId} (${ratingName(rating)}) — next due ${newState.due.split('T')[0]}`;
 
-  // Create offline transaction
-  const tx = offlineExecutor.createOfflineTransaction({
-    mutationFnName: 'syncReview',
-    autoCommit: false,
-  });
+  // Update local cache immediately (optimistic update)
+  localStateCache.set(key, newState);
 
-  tx.mutate(() => {
-    if (existingRow) {
-      cardStatesCollection.update(`${deckName}/${cardId}`, (draft) => {
-        draft.state = newState;
-        (draft as any).commitMessage = commitMessage;
-      });
-    } else {
-      cardStatesCollection.insert({
-        id: `${deckName}/${cardId}`,
-        deckName,
-        cardId,
-        state: newState,
-        commitMessage,
-      } as CardStateRow & { commitMessage: string });
-    }
-  });
+  // Queue GitHub write for background processing
+  pendingWrites.push({ deckName, cardId, state: newState, commitMessage });
 
-  await tx.commit();
+  // Start background processing (non-blocking)
+  processPendingWrites();
 
   return newState;
 }
 
-// Get card state (reads from collection, with fallback to new state)
+// Get card state (reads from local cache first, then collection, with fallback to new state)
 export function getCardState(deckName: string, cardId: string): CardState {
-  const row = cardStatesCollection.get(`${deckName}/${cardId}`);
+  const key = `${deckName}/${cardId}`;
+  // Check local cache first (for optimistic updates)
+  const cachedState = localStateCache.get(key);
+  if (cachedState) return cachedState;
+
+  // Then check collection
+  const row = cardStatesCollection.get(key);
   return row?.state ?? createNewCardState();
 }
 
@@ -239,10 +246,9 @@ export async function refreshData(): Promise<void> {
   await queryClient.invalidateQueries({ queryKey: ['cardStates'] });
 }
 
-// Get pending transaction count
-export async function getPendingCount(): Promise<number> {
-  const outbox = await offlineExecutor.peekOutbox();
-  return outbox.length;
+// Get pending count
+export function getPendingCount(): number {
+  return pendingWrites.length;
 }
 
 // Check if online

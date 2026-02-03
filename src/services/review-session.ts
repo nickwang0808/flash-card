@@ -118,6 +118,7 @@ export interface ReviewSessionState {
   answerRevealed: boolean;
   done: number;
   total: number;
+  version: number; // Incremented on each change to ensure React detects updates
 }
 
 let session: ReviewSessionState | null = null;
@@ -168,6 +169,7 @@ export const reviewSession = {
       answerRevealed: false,
       done: 0,
       total: ordered.length,
+      version: 0,
     };
     notify();
   },
@@ -180,8 +182,13 @@ export const reviewSession = {
     const currentIds = new Set(session.cards.map((c) => c.id));
     const additional = allNew.filter((c) => !currentIds.has(c.id)).slice(0, batch);
 
-    session.cards.push(...additional);
-    session.total = session.cards.length;
+    const newCards = [...session.cards, ...additional];
+    session = {
+      ...session,
+      cards: newCards,
+      total: newCards.length,
+      version: session.version + 1,
+    };
     notify();
   },
 
@@ -196,32 +203,40 @@ export const reviewSession = {
 
   showAnswer(): void {
     if (!session) return;
-    session.answerRevealed = true;
+    session = { ...session, answerRevealed: true, version: session.version + 1 };
     notify();
   },
 
-  async rate(rating: Grade): Promise<void> {
+  rate(rating: Grade): void {
     if (!session) return;
     const card = this.getCurrentCard();
     if (!card) return;
 
-    const state = await reviewCard(deckName, card.id, rating);
+    const state = reviewCard(deckName, card.id, rating);
 
     // Track new card usage
     if (state.reps === 1) {
       incrementNewCardCount(1);
     }
 
-    session.done++;
-    session.currentIndex++;
-    session.answerRevealed = false;
+    session = {
+      ...session,
+      done: session.done + 1,
+      currentIndex: session.currentIndex + 1,
+      answerRevealed: false,
+      version: session.version + 1,
+    };
     notify();
   },
 
   skip(): void {
     if (!session) return;
-    session.currentIndex++;
-    session.answerRevealed = false;
+    session = {
+      ...session,
+      currentIndex: session.currentIndex + 1,
+      answerRevealed: false,
+      version: session.version + 1,
+    };
     notify();
   },
 

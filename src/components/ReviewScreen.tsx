@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { reviewSession } from '../services/review-session';
-import { getPendingCount } from '../services/collections';
+import { reviewSession, ReviewSessionState } from '../services/review-session';
 import { Rating } from '../utils/fsrs';
 
 interface Props {
@@ -9,33 +8,29 @@ interface Props {
 }
 
 export function ReviewScreen({ deck, onBack }: Props) {
-  const [, forceUpdate] = useState(0);
-  const [rating, setRating] = useState(false);
-  const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<ReviewSessionState | null>(null);
 
   useEffect(() => {
-    const unsub = reviewSession.subscribe(() => forceUpdate((n) => n + 1));
+    // Subscribe to changes - use arrow function to always get latest state
+    const unsub = reviewSession.subscribe(() => {
+      setState(reviewSession.getState());
+    });
+
+    // Start session
     setLoading(true);
-    reviewSession.start(deck).then(() => setLoading(false));
+    reviewSession.start(deck).then(() => {
+      setState(reviewSession.getState());
+      setLoading(false);
+    });
+
     return unsub;
   }, [deck]);
 
-  useEffect(() => {
-    const updatePending = async () => {
-      const count = await getPendingCount();
-      setPendingCount(count);
-    };
-    updatePending();
-  });
+  const card = state ? reviewSession.getCurrentCard() : null;
 
-  const state = reviewSession.getState();
-  const card = reviewSession.getCurrentCard();
-
-  async function handleRate(r: typeof Rating.Again | typeof Rating.Hard | typeof Rating.Good | typeof Rating.Easy) {
-    setRating(true);
-    await reviewSession.rate(r);
-    setRating(false);
+  function handleRate(r: typeof Rating.Again | typeof Rating.Hard | typeof Rating.Good | typeof Rating.Easy) {
+    reviewSession.rate(r);
   }
 
   function handleEnd() {
@@ -58,9 +53,6 @@ export function ReviewScreen({ deck, onBack }: Props) {
         <p className="text-muted-foreground">
           Reviewed {state.done} card{state.done !== 1 ? 's' : ''}
         </p>
-        {pendingCount > 0 && (
-          <p className="text-xs text-orange-500">{pendingCount} reviews pending sync</p>
-        )}
         <div className="flex gap-2">
           <button
             onClick={() => reviewSession.addMoreNewCards()}
@@ -149,29 +141,25 @@ export function ReviewScreen({ deck, onBack }: Props) {
         <div className="grid grid-cols-4 gap-2 mt-8 pb-4">
           <button
             onClick={() => handleRate(Rating.Again)}
-            disabled={rating}
-            className="rounded-md bg-red-500/10 text-red-500 border border-red-500/20 px-2 py-3 text-sm font-medium hover:bg-red-500/20 disabled:opacity-50"
+            className="rounded-md bg-red-500/10 text-red-500 border border-red-500/20 px-2 py-3 text-sm font-medium hover:bg-red-500/20"
           >
             Again
           </button>
           <button
             onClick={() => handleRate(Rating.Hard)}
-            disabled={rating}
-            className="rounded-md bg-orange-500/10 text-orange-500 border border-orange-500/20 px-2 py-3 text-sm font-medium hover:bg-orange-500/20 disabled:opacity-50"
+            className="rounded-md bg-orange-500/10 text-orange-500 border border-orange-500/20 px-2 py-3 text-sm font-medium hover:bg-orange-500/20"
           >
             Hard
           </button>
           <button
             onClick={() => handleRate(Rating.Good)}
-            disabled={rating}
-            className="rounded-md bg-green-500/10 text-green-500 border border-green-500/20 px-2 py-3 text-sm font-medium hover:bg-green-500/20 disabled:opacity-50"
+            className="rounded-md bg-green-500/10 text-green-500 border border-green-500/20 px-2 py-3 text-sm font-medium hover:bg-green-500/20"
           >
             Good
           </button>
           <button
             onClick={() => handleRate(Rating.Easy)}
-            disabled={rating}
-            className="rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20 px-2 py-3 text-sm font-medium hover:bg-blue-500/20 disabled:opacity-50"
+            className="rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20 px-2 py-3 text-sm font-medium hover:bg-blue-500/20"
           >
             Easy
           </button>
