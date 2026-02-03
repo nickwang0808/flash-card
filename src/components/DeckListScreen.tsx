@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
-import {
-  cardsCollection,
-  cardStatesCollection,
-} from '../services/collections';
-import { isNew, isDue, type CardState } from '../utils/fsrs';
+import { useLiveQuery } from '@tanstack/react-db';
+import { cardsCollection } from '../services/collections';
+import { useDeck } from '../hooks/useDeck';
 
 interface Props {
   onSelectDeck: (deck: string) => void;
@@ -11,16 +9,43 @@ interface Props {
   onSettings: () => void;
 }
 
-interface DeckInfo {
-  name: string;
-  dueCount: number;
-  newCount: number;
+// DeckRow component that uses useDeck for counts
+function DeckRow({
+  deckName,
+  onSelect,
+}: {
+  deckName: string;
+  onSelect: () => void;
+}) {
+  const { newRemaining, dueRemaining } = useDeck(deckName);
+
+  return (
+    <button
+      onClick={onSelect}
+      className="w-full text-left rounded-lg border border-border p-4 hover:bg-accent transition-colors"
+    >
+      <div className="font-medium">{deckName}</div>
+      <div className="text-sm text-muted-foreground mt-1">
+        <span className="text-blue-500">{dueRemaining} due</span>
+        {' · '}
+        <span className="text-green-500">{newRemaining} new</span>
+      </div>
+    </button>
+  );
 }
 
 export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
   const [online, setOnline] = useState(navigator.onLine);
-  const [loading, setLoading] = useState(true);
-  const [decks, setDecks] = useState<DeckInfo[]>([]);
+
+  // Get unique deck names from cards collection
+  const { data: cards, isLoading } = useLiveQuery(
+    (q) => q.from({ cards: cardsCollection }),
+    [],
+  );
+
+  const deckNames = cards
+    ? [...new Set(cards.map((card) => card.deckName))]
+    : [];
 
   useEffect(() => {
     const handleOnline = () => setOnline(true);
@@ -33,59 +58,7 @@ export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
     };
   }, []);
 
-  useEffect(() => {
-    async function loadDecks() {
-      setLoading(true);
-
-      // Wait for collections to be ready
-      const cards = await cardsCollection.toArrayWhenReady();
-      const states = await cardStatesCollection.toArrayWhenReady();
-
-      // Build state map
-      const stateMap = new Map<string, CardState>();
-      for (const row of states) {
-        stateMap.set(row.id, row.state);
-      }
-
-      // Compute deck info
-      const deckMap = new Map<string, DeckInfo>();
-
-      for (const card of cards) {
-        const deckName = card.deckName;
-        const cardId = card.id.split('/')[1];
-
-        if (!deckMap.has(deckName)) {
-          deckMap.set(deckName, { name: deckName, dueCount: 0, newCount: 0 });
-        }
-        const deck = deckMap.get(deckName)!;
-
-        // Check forward card
-        const forwardState = stateMap.get(`${deckName}/${cardId}`);
-        if (!forwardState || isNew(forwardState)) {
-          deck.newCount++;
-        } else if (isDue(forwardState)) {
-          deck.dueCount++;
-        }
-
-        // Check reverse card if reversible
-        if (card.reversible) {
-          const reverseState = stateMap.get(`${deckName}/${cardId}:reverse`);
-          if (!reverseState || isNew(reverseState)) {
-            deck.newCount++;
-          } else if (isDue(reverseState)) {
-            deck.dueCount++;
-          }
-        }
-      }
-
-      setDecks(Array.from(deckMap.values()));
-      setLoading(false);
-    }
-
-    loadDecks();
-  }, []);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-muted-foreground">Loading decks...</p>
@@ -119,22 +92,15 @@ export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
       </div>
 
       <div className="space-y-3">
-        {decks.map((deck) => (
-          <button
-            key={deck.name}
-            onClick={() => onSelectDeck(deck.name)}
-            className="w-full text-left rounded-lg border border-border p-4 hover:bg-accent transition-colors"
-          >
-            <div className="font-medium">{deck.name}</div>
-            <div className="text-sm text-muted-foreground mt-1">
-              <span className="text-blue-500">{deck.dueCount} due</span>
-              {' · '}
-              <span className="text-green-500">{deck.newCount} new</span>
-            </div>
-          </button>
+        {deckNames.map((deckName) => (
+          <DeckRow
+            key={deckName}
+            deckName={deckName}
+            onSelect={() => onSelectDeck(deckName)}
+          />
         ))}
 
-        {decks.length === 0 && (
+        {deckNames.length === 0 && (
           <p className="text-center text-muted-foreground py-8">
             No decks found. Add directories with cards.json to your repo.
           </p>

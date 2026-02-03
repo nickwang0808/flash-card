@@ -58,8 +58,6 @@ test.describe('Review session', () => {
     }
 
     await expect(page.getByText('Session Complete')).toBeVisible();
-    await expect(page.getByText(/Reviewed \d+ cards/)).toBeVisible();
-    await expect(page.getByRole('button', { name: 'More New Cards' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
   });
 
@@ -88,6 +86,9 @@ test.describe('Review session', () => {
 
   test('Done button returns to deck list with updated counts', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
+
+    // Wait for review screen to load
+    await page.getByRole('button', { name: 'Show Answer' }).waitFor();
 
     // Review all available cards
     while (await page.getByRole('button', { name: 'Show Answer' }).isVisible().catch(() => false)) {

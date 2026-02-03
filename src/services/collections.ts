@@ -3,13 +3,7 @@ import { createCollection } from '@tanstack/db';
 import { queryCollectionOptions } from '@tanstack/query-db-collection';
 import { github, getConfig } from './github';
 import { settingsStore } from './settings-store';
-import {
-  type CardState,
-  createNewCardState,
-  reviewCard as fsrsReview,
-  ratingName,
-  type Grade,
-} from '../utils/fsrs';
+import { type CardState } from '../utils/fsrs';
 
 // Types
 export interface CardData {
@@ -90,7 +84,7 @@ export const cardsCollection = createCollection(
   }),
 );
 
-// Card States Collection (read from GitHub, write directly)
+// Card States Collection (read from GitHub, write with onUpdate handler)
 export const cardStatesCollection = createCollection(
   queryCollectionOptions({
     queryKey: ['cardStates'],
@@ -125,131 +119,98 @@ export const cardStatesCollection = createCollection(
     },
     queryClient,
     getKey: (item) => item.id,
+
+    // Optimistic updates applied instantly, this syncs to GitHub
+    onUpdate: async ({ transaction }) => {
+      const config = getConfig();
+
+      // Group mutations by deck
+      const byDeck = new Map<string, Array<{ cardId: string; state: CardState }>>();
+      for (const m of transaction.mutations) {
+        const [deckName, cardId] = (m.key as string).split('/');
+        const list = byDeck.get(deckName) || [];
+        list.push({ cardId, state: m.modified.state });
+        byDeck.set(deckName, list);
+      }
+
+      // Write each deck's state.json to GitHub
+      for (const [deckName, updates] of byDeck) {
+        let existing: Record<string, CardState> = {};
+        let sha: string | undefined;
+
+        try {
+          const result = await github.readFile(config, `${deckName}/state.json`);
+          existing = JSON.parse(result.content);
+          sha = result.sha;
+        } catch {
+          // file doesn't exist yet
+        }
+
+        for (const { cardId, state } of updates) {
+          existing[cardId] = state;
+        }
+
+        await github.writeFile(
+          config,
+          `${deckName}/state.json`,
+          JSON.stringify(existing, null, 2),
+          sha,
+          `review: ${updates.length} card(s)`,
+        );
+      }
+
+      return { refetch: false };
+    },
+
+    // Handle inserts for new card states
+    onInsert: async ({ transaction }) => {
+      const config = getConfig();
+
+      // Group mutations by deck
+      const byDeck = new Map<string, Array<{ cardId: string; state: CardState }>>();
+      for (const m of transaction.mutations) {
+        const [deckName, cardId] = (m.key as string).split('/');
+        const list = byDeck.get(deckName) || [];
+        list.push({ cardId, state: m.modified.state });
+        byDeck.set(deckName, list);
+      }
+
+      // Write each deck's state.json to GitHub
+      for (const [deckName, updates] of byDeck) {
+        let existing: Record<string, CardState> = {};
+        let sha: string | undefined;
+
+        try {
+          const result = await github.readFile(config, `${deckName}/state.json`);
+          existing = JSON.parse(result.content);
+          sha = result.sha;
+        } catch {
+          // file doesn't exist yet
+        }
+
+        for (const { cardId, state } of updates) {
+          existing[cardId] = state;
+        }
+
+        await github.writeFile(
+          config,
+          `${deckName}/state.json`,
+          JSON.stringify(existing, null, 2),
+          sha,
+          `review: ${updates.length} card(s)`,
+        );
+      }
+
+      return { refetch: false };
+    },
   }),
 );
 
-// Pending writes queue for background GitHub sync
-interface PendingWrite {
-  deckName: string;
-  cardId: string;
-  state: CardState;
-  commitMessage: string;
-}
-let pendingWrites: PendingWrite[] = [];
-let isWriting = false;
-
-// Process pending writes in background
-async function processPendingWrites(): Promise<void> {
-  if (isWriting || pendingWrites.length === 0) return;
-  isWriting = true;
-
-  const config = getConfig();
-
-  // Group by deck for efficiency
-  const byDeck = new Map<string, PendingWrite[]>();
-  for (const write of pendingWrites) {
-    const list = byDeck.get(write.deckName) || [];
-    list.push(write);
-    byDeck.set(write.deckName, list);
-  }
-  pendingWrites = [];
-
-  for (const [deckName, writes] of byDeck) {
-    try {
-      // Get current state.json
-      let allStates: Record<string, CardState> = {};
-      let sha: string | undefined;
-
-      try {
-        const result = await github.readFile(config, `${deckName}/state.json`);
-        allStates = JSON.parse(result.content);
-        sha = result.sha;
-      } catch {
-        // File doesn't exist yet
-      }
-
-      // Apply all pending writes for this deck
-      for (const write of writes) {
-        allStates[write.cardId] = write.state;
-      }
-
-      // Write back to GitHub (single commit for all reviews in this deck)
-      const lastWrite = writes[writes.length - 1];
-      await github.writeFile(
-        config,
-        `${deckName}/state.json`,
-        JSON.stringify(allStates, null, 2),
-        sha,
-        writes.length === 1 ? lastWrite.commitMessage : `review: ${writes.length} cards`,
-      );
-    } catch (err) {
-      console.error('Failed to write to GitHub:', err);
-      // Re-queue failed writes
-      pendingWrites.push(...writes);
-    }
-  }
-
-  isWriting = false;
-
-  // If more writes queued while processing, continue
-  if (pendingWrites.length > 0) {
-    processPendingWrites();
-  }
-}
-
-// Local state cache for optimistic updates (since queryCollection doesn't allow direct writes)
-const localStateCache = new Map<string, CardState>();
-
-// Review a card - updates local cache immediately, queues GitHub write
-export function reviewCard(
-  deckName: string,
-  cardId: string,
-  rating: Grade,
-): CardState {
-  const key = `${deckName}/${cardId}`;
-
-  // Get current state from local cache first, then collection
-  const cachedState = localStateCache.get(key);
-  const collectionRow = cardStatesCollection.get(key);
-  const currentState = cachedState ?? collectionRow?.state ?? createNewCardState();
-
-  // Calculate new state using FSRS
-  const newState = fsrsReview(currentState, rating);
-  const commitMessage = `review: ${cardId} (${ratingName(rating)}) — next due ${newState.due.split('T')[0]}`;
-
-  // Update local cache immediately (optimistic update)
-  localStateCache.set(key, newState);
-
-  // Queue GitHub write for background processing
-  pendingWrites.push({ deckName, cardId, state: newState, commitMessage });
-
-  // Start background processing (non-blocking)
-  processPendingWrites();
-
-  return newState;
-}
-
-// Get card state (reads from local cache first, then collection, with fallback to new state)
-export function getCardState(deckName: string, cardId: string): CardState {
-  const key = `${deckName}/${cardId}`;
-  // Check local cache first (for optimistic updates)
-  const cachedState = localStateCache.get(key);
-  if (cachedState) return cachedState;
-
-  // Then check collection
-  const row = cardStatesCollection.get(key);
-  return row?.state ?? createNewCardState();
-}
 
 // Refresh all data from GitHub
 export async function refreshData(): Promise<void> {
   await queryClient.invalidateQueries({ queryKey: ['cards'] });
   await queryClient.invalidateQueries({ queryKey: ['cardStates'] });
-}
-
-// Get pending count
-export function getPendingCount(): number {
-  return pendingWrites.length;
 }
 
 // Check if online

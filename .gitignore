@@ -10,3 +10,5 @@ playwright-report/
 .claude/settings.local.json
 .serena/
 .idea/
+nultsconfig.tsbuildinfo
+nul

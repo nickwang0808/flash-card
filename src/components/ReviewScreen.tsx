@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
-import { reviewSession, ReviewSessionState } from '../services/review-session';
-import { Rating } from '../utils/fsrs';
+import { useState } from 'react';
+import { useDeck } from '../hooks/useDeck';
+import { cardStatesCollection } from '../services/collections';
+import { Rating, reviewCard as fsrsReview, createNewCardState, type Grade } from '../utils/fsrs';
 
 interface Props {
   deck: string;
@@ -8,37 +9,56 @@ interface Props {
 }
 
 export function ReviewScreen({ deck, onBack }: Props) {
-  const [loading, setLoading] = useState(true);
-  const [state, setState] = useState<ReviewSessionState | null>(null);
+  const { currentCard, isLoading, deck: deckCards } = useDeck(deck);
+  const [answerRevealed, setAnswerRevealed] = useState(false);
+  const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    // Subscribe to changes - use arrow function to always get latest state
-    const unsub = reviewSession.subscribe(() => {
-      setState(reviewSession.getState());
-    });
+  // Filter out cards that were reviewed this session (in case optimistic update is slow)
+  const actualCurrentCard = currentCard && !reviewedIds.has(currentCard.id) ? currentCard :
+    deckCards.find(c => !reviewedIds.has(c.id) && (c.isNew || (c.due && c.due <= new Date()))) ?? null;
 
-    // Start session
-    setLoading(true);
-    reviewSession.start(deck).then(() => {
-      setState(reviewSession.getState());
-      setLoading(false);
-    });
+  function rate(rating: Grade) {
+    if (!actualCurrentCard) return;
 
-    return unsub;
-  }, [deck]);
+    // For new cards, create initial state first
+    const currentState = actualCurrentCard.state ?? createNewCardState();
+    const newState = fsrsReview(currentState, rating);
 
-  const card = state ? reviewSession.getCurrentCard() : null;
+    // Override due for Again/Hard (in-session rescheduling)
+    if (rating === Rating.Again) {
+      newState.due = new Date(Date.now() + 60_000).toISOString();
+    } else if (rating === Rating.Hard) {
+      newState.due = new Date(Date.now() + 5 * 60_000).toISOString();
+    }
 
-  function handleRate(r: typeof Rating.Again | typeof Rating.Hard | typeof Rating.Good | typeof Rating.Easy) {
-    reviewSession.rate(r);
+    // Check if this card state exists in collection
+    const existingState = cardStatesCollection.get(actualCurrentCard.id);
+
+    if (existingState) {
+      // Update existing state - use callback to modify draft
+      cardStatesCollection.update(actualCurrentCard.id, (draft) => {
+        draft.state = newState;
+      });
+    } else {
+      // Insert new state for first-time reviewed cards
+      cardStatesCollection.insert({
+        id: actualCurrentCard.id,
+        deckName: actualCurrentCard.deckName,
+        cardId: actualCurrentCard.cardId,
+        state: newState,
+      });
+    }
+
+    // Track this card as reviewed (for immediate UI feedback)
+    // For Again/Hard, don't add to reviewed set so it can reappear
+    if (rating !== Rating.Again && rating !== Rating.Hard) {
+      setReviewedIds(prev => new Set([...prev, actualCurrentCard.id]));
+    }
+
+    setAnswerRevealed(false);
   }
 
-  function handleEnd() {
-    reviewSession.end();
-    onBack();
-  }
-
-  if (loading || !state) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-muted-foreground">Loading cards...</p>
@@ -46,48 +66,43 @@ export function ReviewScreen({ deck, onBack }: Props) {
     );
   }
 
-  if (reviewSession.isComplete()) {
+  const totalToday = deckCards.length;
+
+  if (!actualCurrentCard) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 gap-4">
         <h2 className="text-xl font-bold">Session Complete</h2>
         <p className="text-muted-foreground">
-          Reviewed {state.done} card{state.done !== 1 ? 's' : ''}
+          Reviewed {reviewedIds.size} card{reviewedIds.size !== 1 ? 's' : ''} this session
         </p>
-        <div className="flex gap-2">
-          <button
-            onClick={() => reviewSession.addMoreNewCards()}
-            className="rounded-md border border-input px-4 py-2 text-sm hover:bg-accent"
-          >
-            More New Cards
-          </button>
-          <button
-            onClick={handleEnd}
-            className="rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90"
-          >
-            Done
-          </button>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          {totalToday} cards scheduled for today
+        </p>
+        <button
+          onClick={onBack}
+          className="rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90"
+        >
+          Done
+        </button>
       </div>
     );
   }
 
-  if (!card) return null;
-
-  const cardState = reviewSession.getCardState(deck, card.id);
-  const isNewCard = cardState.reps === 0;
+  // Calculate progress
+  const reviewed = reviewedIds.size;
 
   return (
     <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <button
-          onClick={handleEnd}
+          onClick={onBack}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
           End Session
         </button>
         <span className="text-sm text-muted-foreground">
-          {state.done + 1} / {state.total}
+          {reviewed + 1} / {totalToday}
         </span>
       </div>
 
@@ -95,40 +110,40 @@ export function ReviewScreen({ deck, onBack }: Props) {
       <div className="w-full h-1.5 bg-secondary rounded-full mb-8">
         <div
           className="h-full bg-primary rounded-full transition-all"
-          style={{ width: `${(state.done / state.total) * 100}%` }}
+          style={{ width: `${(reviewed / totalToday) * 100}%` }}
         />
       </div>
 
       {/* Card */}
       <div className="flex-1 flex flex-col items-center justify-center gap-6">
-        {isNewCard && (
+        {actualCurrentCard.isNew && (
           <span className="text-xs font-medium text-green-500 uppercase tracking-wider">
             New
           </span>
         )}
 
         <div className="text-center">
-          <p className="text-3xl font-bold">{card.source}</p>
-          {card.isReverse && (
+          <p className="text-3xl font-bold">{actualCurrentCard.source}</p>
+          {actualCurrentCard.isReverse && (
             <p className="text-xs text-muted-foreground mt-1">reverse</p>
           )}
         </div>
 
-        {state.answerRevealed ? (
+        {answerRevealed ? (
           <div className="text-center space-y-3 animate-in fade-in">
-            <p className="text-xl">{card.translation}</p>
-            {card.example && (
+            <p className="text-xl">{actualCurrentCard.translation}</p>
+            {actualCurrentCard.example && (
               <p className="text-sm text-muted-foreground italic">
-                {card.example}
+                {actualCurrentCard.example}
               </p>
             )}
-            {card.notes && (
-              <p className="text-sm text-muted-foreground">{card.notes}</p>
+            {actualCurrentCard.notes && (
+              <p className="text-sm text-muted-foreground">{actualCurrentCard.notes}</p>
             )}
           </div>
         ) : (
           <button
-            onClick={() => reviewSession.showAnswer()}
+            onClick={() => setAnswerRevealed(true)}
             className="rounded-md border border-input px-6 py-3 text-sm font-medium hover:bg-accent"
           >
             Show Answer
@@ -137,28 +152,28 @@ export function ReviewScreen({ deck, onBack }: Props) {
       </div>
 
       {/* Rating buttons */}
-      {state.answerRevealed && (
+      {answerRevealed && (
         <div className="grid grid-cols-4 gap-2 mt-8 pb-4">
           <button
-            onClick={() => handleRate(Rating.Again)}
+            onClick={() => rate(Rating.Again)}
             className="rounded-md bg-red-500/10 text-red-500 border border-red-500/20 px-2 py-3 text-sm font-medium hover:bg-red-500/20"
           >
             Again
           </button>
           <button
-            onClick={() => handleRate(Rating.Hard)}
+            onClick={() => rate(Rating.Hard)}
             className="rounded-md bg-orange-500/10 text-orange-500 border border-orange-500/20 px-2 py-3 text-sm font-medium hover:bg-orange-500/20"
           >
             Hard
           </button>
           <button
-            onClick={() => handleRate(Rating.Good)}
+            onClick={() => rate(Rating.Good)}
             className="rounded-md bg-green-500/10 text-green-500 border border-green-500/20 px-2 py-3 text-sm font-medium hover:bg-green-500/20"
           >
             Good
           </button>
           <button
-            onClick={() => handleRate(Rating.Easy)}
+            onClick={() => rate(Rating.Easy)}
             className="rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20 px-2 py-3 text-sm font-medium hover:bg-blue-500/20"
           >
             Easy

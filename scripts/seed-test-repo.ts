@@ -119,20 +119,31 @@ async function seed(): Promise<void> {
     'seed test data'
   );
 
+  // Write empty state.json
+  await writeFile(
+    'spanish-vocab/state.json',
+    JSON.stringify({}, null, 2),
+    'seed: create empty state'
+  );
+
   console.log('\n✓ Seed complete! 5 cards + 1 reversible (6 total reviewable)');
 }
 
 async function reset(): Promise<void> {
   console.log(`\nResetting ${REPO_URL}...\n`);
 
-  // Delete state.json if it exists
-  await deleteFile('spanish-vocab/state.json', 'reset: clear review state');
-
   // Re-seed cards to ensure clean state
   await writeFile(
     'spanish-vocab/cards.json',
     JSON.stringify(SEED_CARDS, null, 2),
     'reset: restore seed data'
+  );
+
+  // Reset state.json to empty
+  await writeFile(
+    'spanish-vocab/state.json',
+    JSON.stringify({}, null, 2),
+    'reset: clear review state'
   );
 
   console.log('\n✓ Reset complete! All cards are now new again.');

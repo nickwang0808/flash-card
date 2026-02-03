@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getPendingCount, getCommits, refreshData } from '../services/collections';
+import { getCommits, refreshData } from '../services/collections';
 
 interface Props {
   onBack: () => void;
@@ -10,7 +10,6 @@ export function SyncScreen({ onBack }: Props) {
   const [status, setStatus] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [log, setLog] = useState<Array<{ message: string; sha: string; date: string }>>([]);
-  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     loadInfo();
@@ -31,8 +30,6 @@ export function SyncScreen({ onBack }: Props) {
     } catch {
       // offline or error
     }
-    const count = await getPendingCount();
-    setPendingCount(count);
   }
 
   async function handleRefresh() {
@@ -64,11 +61,8 @@ export function SyncScreen({ onBack }: Props) {
           <span className={`w-2 h-2 rounded-full ${online ? 'bg-green-500' : 'bg-red-500'}`} />
           <span className="text-sm">{online ? 'Online' : 'Offline'}</span>
         </div>
-        {pendingCount > 0 && (
-          <p className="text-xs text-orange-500">{pendingCount} reviews pending sync</p>
-        )}
         <p className="text-xs text-muted-foreground">
-          Pending reviews sync automatically when online. Use Refresh to pull latest data from GitHub.
+          Reviews sync to GitHub automatically. Use Refresh to pull latest data from GitHub.
         </p>
         {status && (
           <p className="text-sm text-muted-foreground">{status}</p>
