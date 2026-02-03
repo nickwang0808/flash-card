@@ -106,12 +106,14 @@ test.describe('Review session', () => {
 
     let foundReverse = false;
     for (let i = 0; i < 6; i++) {
-      const reverseLabel = page.getByText('reverse');
+      // Wait for card to render
+      await page.getByRole('button', { name: 'Show Answer' }).waitFor();
+      const reverseLabel = page.locator('p.text-xs', { hasText: 'reverse' });
       if (await reverseLabel.isVisible().catch(() => false)) {
         foundReverse = true;
         await expect(page.locator('p.text-3xl')).toContainText('cat');
         await page.getByRole('button', { name: 'Show Answer' }).click();
-        await expect(page.getByText('gato')).toBeVisible();
+        await expect(page.locator('p.text-xl')).toContainText('gato');
         break;
       }
       await page.getByRole('button', { name: 'Show Answer' }).click();
