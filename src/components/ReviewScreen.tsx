@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { reviewSession } from '../services/review-session';
-import { cardStore } from '../services/card-store';
-import { syncManager } from '../services/sync-manager';
+import { getPendingCount } from '../services/collections';
 import { Rating } from '../utils/fsrs';
 
 interface Props {
@@ -12,12 +11,23 @@ interface Props {
 export function ReviewScreen({ deck, onBack }: Props) {
   const [, forceUpdate] = useState(0);
   const [rating, setRating] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsub = reviewSession.subscribe(() => forceUpdate((n) => n + 1));
-    reviewSession.start(deck);
+    setLoading(true);
+    reviewSession.start(deck).then(() => setLoading(false));
     return unsub;
   }, [deck]);
+
+  useEffect(() => {
+    const updatePending = async () => {
+      const count = await getPendingCount();
+      setPendingCount(count);
+    };
+    updatePending();
+  });
 
   const state = reviewSession.getState();
   const card = reviewSession.getCurrentCard();
@@ -33,16 +43,15 @@ export function ReviewScreen({ deck, onBack }: Props) {
     onBack();
   }
 
-  if (!state) {
+  if (loading || !state) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+        <p className="text-muted-foreground">Loading cards...</p>
       </div>
     );
   }
 
   if (reviewSession.isComplete()) {
-    const pendingCount = syncManager.getPendingCount();
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 gap-4">
         <h2 className="text-xl font-bold">Session Complete</h2>
@@ -72,7 +81,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
 
   if (!card) return null;
 
-  const cardState = cardStore.getState(deck, card.id);
+  const cardState = reviewSession.getCardState(deck, card.id);
   const isNewCard = cardState.reps === 0;
 
   return (

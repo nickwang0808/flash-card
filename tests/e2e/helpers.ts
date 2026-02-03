@@ -11,8 +11,15 @@ export { E2E_REPO_URL, E2E_TOKEN };
 export async function wipeAppData(page: Page) {
   await page.goto('http://localhost:5173');
   await page.waitForLoadState('networkidle');
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     localStorage.clear();
+    // Clear IndexedDB for offline-transactions
+    const dbs = await indexedDB.databases();
+    for (const db of dbs) {
+      if (db.name) {
+        indexedDB.deleteDatabase(db.name);
+      }
+    }
   });
   await page.reload();
   await page.waitForLoadState('networkidle');
@@ -28,8 +35,15 @@ export async function cloneTestRepo(page: Page) {
   await page.waitForLoadState('networkidle');
 
   // Clear any previous state
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     localStorage.clear();
+    // Clear IndexedDB for offline-transactions
+    const dbs = await indexedDB.databases();
+    for (const db of dbs) {
+      if (db.name) {
+        indexedDB.deleteDatabase(db.name);
+      }
+    }
   });
   await page.reload();
   await page.waitForLoadState('networkidle');
@@ -44,23 +58,22 @@ export async function cloneTestRepo(page: Page) {
 }
 
 /**
- * Reads the pending review count from localStorage.
+ * Gets pending transaction count from the UI (displayed in various screens).
+ * Since offline-transactions uses IndexedDB which is harder to query directly,
+ * we rely on the UI showing the pending count.
  */
-export async function getPendingCount(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const raw = localStorage.getItem('flash-card-pending-reviews');
-    if (!raw) return 0;
-    return JSON.parse(raw).length;
-  });
+export async function getPendingCountFromUI(page: Page): Promise<number> {
+  // Look for the "X pending" text in the UI
+  const pendingText = await page.locator('text=/\\d+ pending/').textContent();
+  if (!pendingText) return 0;
+  const match = pendingText.match(/(\d+) pending/);
+  return match ? parseInt(match[1], 10) : 0;
 }
 
 /**
- * Reads state from the pending reviews queue in localStorage.
+ * Check if pending reviews message is visible.
  */
-export async function getPendingReviews(page: Page): Promise<any[]> {
-  return page.evaluate(() => {
-    const raw = localStorage.getItem('flash-card-pending-reviews');
-    if (!raw) return [];
-    return JSON.parse(raw);
-  });
+export async function hasPendingReviewsVisible(page: Page): Promise<boolean> {
+  const pendingLocator = page.locator('text=/\\d+ reviews? pending sync/');
+  return pendingLocator.isVisible().catch(() => false);
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { syncManager } from '../services/sync-manager';
+import { getPendingCount, getCommits, refreshData } from '../services/collections';
 
 interface Props {
   onBack: () => void;
@@ -7,11 +7,10 @@ interface Props {
 
 export function SyncScreen({ onBack }: Props) {
   const [online, setOnline] = useState(navigator.onLine);
-  const [lastSync, setLastSync] = useState(syncManager.getLastSyncTime());
   const [status, setStatus] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [log, setLog] = useState<Array<{ message: string; sha: string; date: string }>>([]);
-  const [pendingCount, setPendingCount] = useState(syncManager.getPendingCount());
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     loadInfo();
@@ -27,25 +26,25 @@ export function SyncScreen({ onBack }: Props) {
 
   async function loadInfo() {
     try {
-      const commits = await syncManager.getCommits(10);
+      const commits = await getCommits(10);
       setLog(commits);
     } catch {
       // offline or error
     }
-    setPendingCount(syncManager.getPendingCount());
+    const count = await getPendingCount();
+    setPendingCount(count);
   }
 
-  async function handleSync() {
+  async function handleRefresh() {
     setLoading(true);
-    setStatus('Syncing...');
-    const result = await syncManager.sync();
-    if (result.status === 'ok') {
-      setStatus('Synced successfully');
-    } else {
-      setStatus(`Error: ${result.message}`);
+    setStatus('Refreshing...');
+    try {
+      await refreshData();
+      setStatus('Refreshed successfully');
+      await loadInfo();
+    } catch (e: any) {
+      setStatus(`Error: ${e.message}`);
     }
-    setLastSync(syncManager.getLastSyncTime());
-    await loadInfo();
     setLoading(false);
   }
 
@@ -65,14 +64,12 @@ export function SyncScreen({ onBack }: Props) {
           <span className={`w-2 h-2 rounded-full ${online ? 'bg-green-500' : 'bg-red-500'}`} />
           <span className="text-sm">{online ? 'Online' : 'Offline'}</span>
         </div>
-        {lastSync && (
-          <p className="text-xs text-muted-foreground">
-            Last sync: {new Date(lastSync).toLocaleString()}
-          </p>
-        )}
         {pendingCount > 0 && (
           <p className="text-xs text-orange-500">{pendingCount} reviews pending sync</p>
         )}
+        <p className="text-xs text-muted-foreground">
+          Pending reviews sync automatically when online. Use Refresh to pull latest data from GitHub.
+        </p>
         {status && (
           <p className="text-sm text-muted-foreground">{status}</p>
         )}
@@ -81,11 +78,11 @@ export function SyncScreen({ onBack }: Props) {
       {/* Actions */}
       <div className="flex gap-2 mb-8">
         <button
-          onClick={handleSync}
+          onClick={handleRefresh}
           disabled={loading || !online}
           className="flex-1 rounded-md bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
         >
-          Sync
+          Refresh
         </button>
       </div>
 

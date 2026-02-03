@@ -14,6 +14,12 @@
     "validate:schema": "vitest run tests/unit/schema-validation.test.ts"
   },
   "dependencies": {
+    "@octokit/rest": "^22.0.1",
+    "@tanstack/db": "^0.5.25",
+    "@tanstack/offline-transactions": "^1.0.15",
+    "@tanstack/query-core": "^5.90.20",
+    "@tanstack/query-db-collection": "^1.0.22",
+    "@tanstack/react-db": "^0.1.69",
     "@tanstack/react-query": "^5.90.20",
     "clsx": "^2.1.1",
     "react": "^18.3.1",

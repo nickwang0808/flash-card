@@ -1,12 +1,27 @@
-import { cardStore, type ReviewableCard } from './card-store';
+import {
+  cardsCollection,
+  cardStatesCollection,
+  reviewCard,
+  getCardState,
+} from './collections';
 import { settingsStore } from './settings-store';
-import { type Grade } from '../utils/fsrs';
+import { type Grade, isDue, isNew } from '../utils/fsrs';
 
 const NEW_CARD_COUNT_KEY = 'flash-card-new-count';
 
 interface NewCardTracker {
   date: string;
   count: number;
+}
+
+export interface ReviewableCard {
+  id: string; // e.g. "hola" or "hola:reverse"
+  deckName: string;
+  source: string;
+  translation: string;
+  example?: string;
+  notes?: string;
+  isReverse: boolean;
 }
 
 function getTodayKey(): string {
@@ -42,6 +57,61 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+// Get all reviewable cards for a deck (including reverse cards)
+async function getReviewableCards(deckName: string): Promise<ReviewableCard[]> {
+  // Wait for cards to be loaded from GitHub
+  const cards = await cardsCollection.toArrayWhenReady();
+  const deckCards = cards.filter((c) => c.deckName === deckName);
+  const result: ReviewableCard[] = [];
+
+  for (const card of deckCards) {
+    const cardId = card.id.split('/')[1]; // Remove deck prefix
+    result.push({
+      id: cardId,
+      deckName,
+      source: card.source,
+      translation: card.translation,
+      example: card.example,
+      notes: card.notes,
+      isReverse: false,
+    });
+
+    if (card.reversible) {
+      result.push({
+        id: `${cardId}:reverse`,
+        deckName,
+        source: card.translation,
+        translation: card.source,
+        example: card.example,
+        notes: card.notes,
+        isReverse: true,
+      });
+    }
+  }
+
+  return result;
+}
+
+async function getDueCards(deckName: string): Promise<ReviewableCard[]> {
+  const cards = await getReviewableCards(deckName);
+  // Also wait for states to be ready
+  await cardStatesCollection.toArrayWhenReady();
+  return cards.filter((c) => {
+    const state = getCardState(deckName, c.id);
+    return !state.suspended && !isNew(state) && isDue(state);
+  });
+}
+
+async function getNewCards(deckName: string): Promise<ReviewableCard[]> {
+  const cards = await getReviewableCards(deckName);
+  // Also wait for states to be ready
+  await cardStatesCollection.toArrayWhenReady();
+  return cards.filter((c) => {
+    const state = getCardState(deckName, c.id);
+    return !state.suspended && isNew(state);
+  });
+}
+
 export interface ReviewSessionState {
   cards: ReviewableCard[];
   currentIndex: number;
@@ -66,15 +136,15 @@ export const reviewSession = {
     };
   },
 
-  start(deck: string): void {
+  async start(deck: string): Promise<void> {
     deckName = deck;
     const settings = settingsStore.get();
     const limit = settings.newCardsPerDay;
     const usedToday = getNewCardCount();
     const newBudget = Math.max(0, limit - usedToday);
 
-    const dueCards = shuffle(cardStore.getDueCards(deck));
-    const newCards = shuffle(cardStore.getNewCards(deck)).slice(0, newBudget);
+    const dueCards = shuffle(await getDueCards(deck));
+    const newCards = shuffle(await getNewCards(deck)).slice(0, newBudget);
 
     // Interleave: 1 new card per 5 due cards
     const ordered: ReviewableCard[] = [];
@@ -102,11 +172,11 @@ export const reviewSession = {
     notify();
   },
 
-  addMoreNewCards(): void {
+  async addMoreNewCards(): Promise<void> {
     if (!session) return;
     const settings = settingsStore.get();
     const batch = settings.newCardsPerDay;
-    const allNew = shuffle(cardStore.getNewCards(deckName));
+    const allNew = shuffle(await getNewCards(deckName));
     const currentIds = new Set(session.cards.map((c) => c.id));
     const additional = allNew.filter((c) => !currentIds.has(c.id)).slice(0, batch);
 
@@ -135,7 +205,7 @@ export const reviewSession = {
     const card = this.getCurrentCard();
     if (!card) return;
 
-    const state = cardStore.review(deckName, card.id, rating);
+    const state = await reviewCard(deckName, card.id, rating);
 
     // Track new card usage
     if (state.reps === 1) {
@@ -171,4 +241,7 @@ export const reviewSession = {
   getDeckName(): string {
     return deckName;
   },
+
+  // Expose these for components that need them
+  getCardState,
 };

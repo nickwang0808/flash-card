@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { settingsStore, type Settings } from '../services/settings-store';
-import { queryClient } from '../services/query-client';
+import { queryClient } from '../services/collections';
 
 interface Props {
   onBack: () => void;

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { settingsStore } from '../services/settings-store';
-import { githubApi, parseRepoUrl } from '../services/github-api';
+import { github, parseRepoUrl } from '../services/github';
 
 interface Props {
   onComplete: () => void;
@@ -25,7 +25,7 @@ export function AuthScreen({ onComplete }: Props) {
       const { owner, repo } = parseRepoUrl(url);
       const config = { owner, repo, token };
 
-      const valid = await githubApi.validateRepo(config);
+      const valid = await github.validateRepo(config);
       if (!valid) {
         setError('Cannot access repository. Check your URL and token.');
         setLoading(false);
@@ -33,7 +33,7 @@ export function AuthScreen({ onComplete }: Props) {
       }
 
       setStatus('Checking deck structure...');
-      const entries = await githubApi.listDirectory(config, '');
+      const entries = await github.listDirectory(config, '');
       const dirs = entries.filter(e => e.type === 'dir' && !e.name.startsWith('.'));
 
       if (dirs.length === 0) {
@@ -46,7 +46,7 @@ export function AuthScreen({ onComplete }: Props) {
       let foundDeck = false;
       for (const dir of dirs) {
         try {
-          await githubApi.readFile(config, `${dir.name}/cards.json`);
+          await github.readFile(config, `${dir.name}/cards.json`);
           foundDeck = true;
           break;
         } catch {

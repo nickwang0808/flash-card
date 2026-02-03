@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
-import { syncManager } from '../services/sync-manager';
-import { useDecks } from '../hooks/use-decks';
+import { useLiveQuery } from '@tanstack/react-db';
+import {
+  cardsCollection,
+  cardStatesCollection,
+  getPendingCount,
+} from '../services/collections';
+import { isNew, isDue } from '../utils/fsrs';
 
 interface Props {
   onSelectDeck: (deck: string) => void;
@@ -8,13 +13,42 @@ interface Props {
   onSettings: () => void;
 }
 
+interface DeckInfo {
+  name: string;
+  dueCount: number;
+  newCount: number;
+}
+
 export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
-  const { data: decks, isLoading: loading, refetch } = useDecks();
-  const [syncStatus, setSyncStatus] = useState<string>('');
   const [online, setOnline] = useState(navigator.onLine);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  // Get all cards
+  const { data: cards, isLoading: cardsLoading } = useLiveQuery((q) =>
+    q.from({ cards: cardsCollection }).select(({ cards }) => ({
+      id: cards.id,
+      deckName: cards.deckName,
+      reversible: cards.reversible,
+    })),
+  );
+
+  // Get all card states
+  const { data: states, isLoading: statesLoading } = useLiveQuery((q) =>
+    q.from({ states: cardStatesCollection }).select(({ states }) => ({
+      id: states.id,
+      deckName: states.deckName,
+      cardId: states.cardId,
+      state: states.state,
+    })),
+  );
 
   useEffect(() => {
-    setSyncStatus(syncManager.getStatus());
+    const updatePending = async () => {
+      const count = await getPendingCount();
+      setPendingCount(count);
+    };
+    updatePending();
+
     const handleOnline = () => setOnline(true);
     const handleOffline = () => setOnline(false);
     window.addEventListener('online', handleOnline);
@@ -25,20 +59,61 @@ export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
     };
   }, []);
 
-  async function handleSync() {
-    setSyncStatus('syncing...');
-    const result = await syncManager.sync();
-    if (result.status === 'ok') {
-      await refetch();
-      setSyncStatus('synced');
-    } else {
-      setSyncStatus(`error: ${result.message}`);
+  const loading = cardsLoading || statesLoading;
+
+  // Compute deck info
+  const decks: DeckInfo[] = [];
+  console.log('DeckList cards:', cards?.length, cards);
+  console.log('DeckList states:', states?.length, states);
+  if (cards && cards.length > 0) {
+    const deckNames = new Set(cards.map((c) => c.deckName));
+    const stateMap = new Map((states || []).map((s) => [s.id, s.state]));
+    console.log('DeckList deckNames:', [...deckNames]);
+    console.log('DeckList stateMap keys:', [...stateMap.keys()]);
+
+    for (const name of deckNames) {
+      const deckCards = cards.filter((c) => c.deckName === name);
+      console.log(`DeckList ${name} deckCards:`, deckCards.length, deckCards);
+      let dueCount = 0;
+      let newCount = 0;
+
+      for (const card of deckCards) {
+        const cardId = card.id.split('/')[1];
+        console.log(`DeckList checking card: ${card.id} -> cardId: ${cardId}`);
+
+        // Check forward card
+        const stateKey = `${name}/${cardId}`;
+        const forwardState = stateMap.get(stateKey);
+        console.log(`DeckList forwardState for ${stateKey}:`, forwardState);
+        if (!forwardState || isNew(forwardState)) {
+          newCount++;
+          console.log(`DeckList ${cardId}: counted as new (newCount=${newCount})`);
+        } else if (isDue(forwardState)) {
+          dueCount++;
+          console.log(`DeckList ${cardId}: counted as due (dueCount=${dueCount})`);
+        }
+
+        // Check reverse card if reversible
+        if (card.reversible) {
+          const reverseKey = `${name}/${cardId}:reverse`;
+          const reverseState = stateMap.get(reverseKey);
+          console.log(`DeckList reverseState for ${reverseKey}:`, reverseState);
+          if (!reverseState || isNew(reverseState)) {
+            newCount++;
+            console.log(`DeckList ${cardId}:reverse: counted as new (newCount=${newCount})`);
+          } else if (isDue(reverseState)) {
+            dueCount++;
+            console.log(`DeckList ${cardId}:reverse: counted as due (dueCount=${dueCount})`);
+          }
+        }
+      }
+
+      console.log(`DeckList pushing deck: ${name} with due=${dueCount}, new=${newCount}`);
+      decks.push({ name, dueCount, newCount });
     }
   }
 
-  const pendingCount = syncManager.getPendingCount();
-
-  if (loading) {
+  if (loading || (cards && cards.length === 0)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-muted-foreground">Loading decks...</p>
@@ -70,11 +145,10 @@ export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
         <span className={`w-2 h-2 rounded-full ${online ? 'bg-green-500' : 'bg-red-500'}`} />
         <span>{online ? 'Online' : 'Offline'}</span>
         {pendingCount > 0 && <span>· {pendingCount} pending</span>}
-        {syncStatus && <span>· {syncStatus}</span>}
       </div>
 
       <div className="space-y-3">
-        {decks?.map((deck) => (
+        {decks.map((deck) => (
           <button
             key={deck.name}
             onClick={() => onSelectDeck(deck.name)}
@@ -89,20 +163,11 @@ export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
           </button>
         ))}
 
-        {(!decks || decks.length === 0) && (
+        {decks.length === 0 && (
           <p className="text-center text-muted-foreground py-8">
             No decks found. Add directories with cards.json to your repo.
           </p>
         )}
-      </div>
-
-      <div className="mt-6 text-center">
-        <button
-          onClick={handleSync}
-          className="rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90"
-        >
-          Sync Now
-        </button>
       </div>
     </div>
   );

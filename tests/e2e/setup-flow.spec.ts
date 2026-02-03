@@ -32,7 +32,6 @@ test.describe('Setup flow', () => {
 
     await expect(page.getByRole('button', { name: 'Sync', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Sync Now' })).toBeVisible();
   });
 
   test('shows online status indicator', async ({ page }) => {
