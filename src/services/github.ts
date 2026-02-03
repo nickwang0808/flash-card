@@ -5,6 +5,7 @@ export interface GitHubConfig {
   owner: string;
   repo: string;
   token: string;
+  branch?: string; // Optional branch, defaults to repo's default branch
 }
 
 export function parseRepoUrl(url: string): { owner: string; repo: string } {
@@ -16,7 +17,7 @@ export function parseRepoUrl(url: string): { owner: string; repo: string } {
 export function getConfig(): GitHubConfig {
   const s = settingsStore.get();
   const { owner, repo } = parseRepoUrl(s.repoUrl);
-  return { owner, repo, token: s.token };
+  return { owner, repo, token: s.token, branch: s.branch };
 }
 
 export function createOctokit(token?: string): Octokit {
@@ -43,6 +44,7 @@ export const github = {
       owner: config.owner,
       repo: config.repo,
       path,
+      ...(config.branch ? { ref: config.branch } : {}),
     });
     if (!Array.isArray(data)) return [];
     return data.map((item) => ({ name: item.name, type: item.type }));
@@ -57,6 +59,7 @@ export const github = {
       owner: config.owner,
       repo: config.repo,
       path,
+      ...(config.branch ? { ref: config.branch } : {}),
     });
 
     if (Array.isArray(data) || data.type !== 'file' || !('content' in data)) {
@@ -88,6 +91,7 @@ export const github = {
       message,
       content: encoded,
       ...(sha ? { sha } : {}),
+      ...(config.branch ? { branch: config.branch } : {}),
     });
 
     return data.content?.sha ?? '';
@@ -102,11 +106,49 @@ export const github = {
       owner: config.owner,
       repo: config.repo,
       per_page: limit,
+      ...(config.branch ? { sha: config.branch } : {}),
     });
     return data.map((c) => ({
       message: c.commit.message,
       sha: c.sha.slice(0, 7),
       date: c.commit.committer?.date ?? '',
     }));
+  },
+
+  // Branch management for testing
+  async createBranch(
+    config: GitHubConfig,
+    branchName: string,
+    fromBranch: string = 'main',
+  ): Promise<void> {
+    const octokit = new Octokit({ auth: config.token });
+
+    // Get the SHA of the source branch
+    const { data: refData } = await octokit.git.getRef({
+      owner: config.owner,
+      repo: config.repo,
+      ref: `heads/${fromBranch}`,
+    });
+
+    // Create the new branch
+    await octokit.git.createRef({
+      owner: config.owner,
+      repo: config.repo,
+      ref: `refs/heads/${branchName}`,
+      sha: refData.object.sha,
+    });
+  },
+
+  async deleteBranch(config: GitHubConfig, branchName: string): Promise<void> {
+    const octokit = new Octokit({ auth: config.token });
+    try {
+      await octokit.git.deleteRef({
+        owner: config.owner,
+        repo: config.repo,
+        ref: `heads/${branchName}`,
+      });
+    } catch {
+      // Ignore errors (branch might not exist)
+    }
   },
 };

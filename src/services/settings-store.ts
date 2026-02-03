@@ -4,6 +4,7 @@ export interface Settings {
   newCardsPerDay: number;
   reviewOrder: 'random' | 'oldest-first' | 'deck-grouped';
   theme: 'light' | 'dark' | 'system';
+  branch?: string; // Optional branch for testing isolation
 }
 
 const STORAGE_KEY = 'flash-card-settings';
