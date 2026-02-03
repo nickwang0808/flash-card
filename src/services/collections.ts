@@ -7,6 +7,9 @@ import { githubService } from './github-service';
 
 // FlashCard: content + FSRS state in one structure
 export interface FlashCard {
+  /**
+   * Primary key
+   */
   source: string;        // also serves as key
   translation: string;
   example?: string;
@@ -19,12 +22,6 @@ export interface FlashCard {
   reverseState?: Card;  // translation → source (only if reversible)
 }
 
-// Deck: just a name
-export interface Deck {
-  name: string;
-}
-
-// Query Client
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -34,7 +31,6 @@ export const queryClient = new QueryClient({
   },
 });
 
-// Decks collection
 export const decksCollection = createCollection(
   queryCollectionOptions({
     queryKey: ['decks'],
