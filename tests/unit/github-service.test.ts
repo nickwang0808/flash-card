@@ -62,7 +62,7 @@ describe('githubService.updateCards batching', () => {
       content: '{}',
       sha: 'abc123',
     });
-    vi.mocked(github.writeFile).mockResolvedValue(undefined);
+    vi.mocked(github.writeFile).mockResolvedValue('new-sha-123');
   });
 
   afterEach(() => {
