@@ -134,9 +134,12 @@ test.describe('Settings screen', () => {
 
     await expect(page.getByText(/New cards per day: 5/)).toBeVisible();
 
+    // TanStack DB stores as { "s:settings": { versionKey, data: {...} } }
     const stored = await page.evaluate(() => {
       const raw = localStorage.getItem('flash-card-settings');
-      return raw ? JSON.parse(raw).newCardsPerDay : null;
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed['s:settings']?.data?.newCardsPerDay ?? null;
     });
     expect(stored).toBe(5);
   });
@@ -178,13 +181,13 @@ test.describe('New card daily limit', () => {
   });
 
   test('respects new cards per day setting', async ({ page }) => {
-
     await page.getByRole('button', { name: 'Settings' }).click();
     await page.getByRole('slider').fill('2');
     await page.getByRole('button', { name: 'Back' }).click();
 
     await page.getByText('spanish-vocab').click();
 
-    await expect(page.getByText(/1 \/ 2/)).toBeVisible();
+    // With limit of 2, should show "2 remaining" (only 2 new cards allowed)
+    await expect(page.getByText('2 remaining')).toBeVisible();
   });
 });
