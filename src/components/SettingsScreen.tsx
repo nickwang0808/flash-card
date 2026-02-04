@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { settingsStore, type Settings } from '../services/settings-store';
+import { useSettings } from '../hooks/useSettings';
 import { queryClient } from '../services/collections';
 
 interface Props {
@@ -8,32 +7,15 @@ interface Props {
 }
 
 export function SettingsScreen({ onBack, onLogout }: Props) {
-  const [settings, setSettings] = useState<Settings>(settingsStore.get());
-
-  function update(partial: Partial<Settings>) {
-    settingsStore.set(partial);
-    setSettings(settingsStore.get());
-
-    // Apply theme immediately
-    if (partial.theme) {
-      document.documentElement.classList.remove('dark');
-      if (partial.theme === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else if (partial.theme === 'system') {
-        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-          document.documentElement.classList.add('dark');
-        }
-      }
-    }
-  }
+  const { settings, update, clear } = useSettings();
 
   function handleLogout() {
     if (!confirm('Clear all local data and log out?')) return;
-    settingsStore.clear();
     localStorage.removeItem('flash-card-pending-reviews');
     localStorage.removeItem('flash-card-new-count');
     localStorage.removeItem('flash-card-last-sync');
     queryClient.clear();
+    clear();
     onLogout();
   }
 
@@ -76,7 +58,7 @@ export function SettingsScreen({ onBack, onLogout }: Props) {
           <label className="block text-sm font-medium mb-1">Review order</label>
           <select
             value={settings.reviewOrder}
-            onChange={(e) => update({ reviewOrder: e.target.value as Settings['reviewOrder'] })}
+            onChange={(e) => update({ reviewOrder: e.target.value as typeof settings.reviewOrder })}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="random">Random</option>

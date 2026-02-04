@@ -1,15 +1,15 @@
 import { useLiveQuery } from '@tanstack/react-db';
 import { getCardsCollection, type FlashCard } from '../services/collections';
-import { settingsStore } from '../services/settings-store';
+import { useSettings } from './useSettings';
 
 export type StudyItem = FlashCard & { isReverse: boolean };
 
 export function useDeck(deckName: string) {
+  const { settings } = useSettings();
+  const newCardsLimit = settings.newCardsPerDay;
+
   const endOfDay = new Date();
   endOfDay.setHours(23, 59, 59, 999);
-
-  const settings = settingsStore.get();
-  const newCardsLimit = settings.newCardsPerDay;
 
   const collection = getCardsCollection(deckName);
   const { data: cards, isLoading } = useLiveQuery(

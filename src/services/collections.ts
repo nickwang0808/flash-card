@@ -2,24 +2,20 @@ import { QueryClient } from '@tanstack/query-core';
 import { createCollection, type Collection } from '@tanstack/db';
 import { queryCollectionOptions } from '@tanstack/query-db-collection';
 import { type Card } from 'ts-fsrs';
-import { github, getConfig } from './github';
+import { github } from './github';
 import { githubService } from './github-service';
 
 // FlashCard: content + FSRS state in one structure
 export interface FlashCard {
-  /**
-   * Primary key
-   */
-  source: string;        // also serves as key
+  source: string;
   translation: string;
   example?: string;
   notes?: string;
   tags?: string[];
   created: string;
   reversible?: boolean;
-  // FSRS states (undefined = not yet reviewed)
-  state?: Card;         // source → translation
-  reverseState?: Card;  // translation → source (only if reversible)
+  state?: Card;
+  reverseState?: Card;
 }
 
 export const queryClient = new QueryClient({
@@ -82,6 +78,6 @@ export async function refreshData(): Promise<void> {
 
 // Get commits from GitHub
 export async function getCommits(limit: number = 10) {
-  const config = getConfig();
+  const config = githubService.getConfig();
   return github.getCommits(config, limit);
 }

@@ -1,27 +1,16 @@
 import { Octokit } from '@octokit/rest';
-import { settingsStore } from './settings-store';
 
 export interface GitHubConfig {
   owner: string;
   repo: string;
   token: string;
-  branch?: string; // Optional branch, defaults to repo's default branch
+  branch?: string;
 }
 
 export function parseRepoUrl(url: string): { owner: string; repo: string } {
   const match = url.match(/github\.com\/([^/]+)\/([^/.]+)/);
   if (!match) throw new Error('Invalid GitHub repository URL');
   return { owner: match[1], repo: match[2] };
-}
-
-export function getConfig(): GitHubConfig {
-  const s = settingsStore.get();
-  const { owner, repo } = parseRepoUrl(s.repoUrl);
-  return { owner, repo, token: s.token, branch: s.branch };
-}
-
-export function createOctokit(token?: string): Octokit {
-  return new Octokit({ auth: token ?? settingsStore.get().token });
 }
 
 export const github = {
@@ -115,22 +104,17 @@ export const github = {
     }));
   },
 
-  // Branch management for testing
   async createBranch(
     config: GitHubConfig,
     branchName: string,
     fromBranch: string = 'main',
   ): Promise<void> {
     const octokit = new Octokit({ auth: config.token });
-
-    // Get the SHA of the source branch
     const { data: refData } = await octokit.git.getRef({
       owner: config.owner,
       repo: config.repo,
       ref: `heads/${fromBranch}`,
     });
-
-    // Create the new branch
     await octokit.git.createRef({
       owner: config.owner,
       repo: config.repo,

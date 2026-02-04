@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { settingsStore } from '../services/settings-store';
+import { useSettings } from '../hooks/useSettings';
 import { github, parseRepoUrl } from '../services/github';
 
 interface Props {
@@ -7,6 +7,7 @@ interface Props {
 }
 
 export function AuthScreen({ onComplete }: Props) {
+  const { update } = useSettings();
   const [repoUrl, setRepoUrl] = useState('');
   const [token, setToken] = useState('');
   const [status, setStatus] = useState('');
@@ -60,7 +61,7 @@ export function AuthScreen({ onComplete }: Props) {
         return;
       }
 
-      settingsStore.set({ repoUrl: url, token });
+      update({ repoUrl: url, token });
       setStatus('Done!');
       onComplete();
     } catch (e: any) {

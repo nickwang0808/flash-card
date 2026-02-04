@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
-import { settingsStore } from '../services/settings-store';
+import { useEffect } from 'react';
+import { useSettings } from '../hooks/useSettings';
 import { AuthScreen } from './AuthScreen';
 import { DeckListScreen } from './DeckListScreen';
 import { ReviewScreen } from './ReviewScreen';
 import { SyncScreen } from './SyncScreen';
 import { SettingsScreen } from './SettingsScreen';
+import { useState } from 'react';
 
 type Screen =
   | { name: 'auth' }
@@ -14,21 +15,33 @@ type Screen =
   | { name: 'settings' };
 
 export function App() {
-  const [screen, setScreen] = useState<Screen>(
-    settingsStore.isConfigured() ? { name: 'deck-list' } : { name: 'auth' },
-  );
+  const { settings, isConfigured, isLoading } = useSettings();
+  const [screen, setScreen] = useState<Screen>({ name: 'auth' });
 
+  // Set initial screen based on config
   useEffect(() => {
-    const settings = settingsStore.get();
+    if (!isLoading) {
+      setScreen(isConfigured ? { name: 'deck-list' } : { name: 'auth' });
+    }
+  }, [isLoading, isConfigured]);
+
+  // Apply theme
+  useEffect(() => {
+    document.documentElement.classList.remove('dark');
     if (settings.theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else if (settings.theme === 'system') {
-      const mq = window.matchMedia('(prefers-color-scheme: dark)');
-      if (mq.matches) document.documentElement.classList.add('dark');
+      if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.documentElement.classList.add('dark');
+      }
     }
-  }, []);
+  }, [settings.theme]);
 
   const navigate = (s: Screen) => setScreen(s);
+
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
 
   switch (screen.name) {
     case 'auth':

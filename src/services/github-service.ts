@@ -1,7 +1,19 @@
 import { type Card } from 'ts-fsrs';
-import { github, getConfig } from './github';
-import { settingsStore } from './settings-store';
+import { github, parseRepoUrl, type GitHubConfig } from './github';
+import { settingsCollection, defaultSettings } from '../hooks/useSettings';
 import type { FlashCard } from './collections';
+
+// Get config from settings collection
+function getConfig(): GitHubConfig {
+  const settings = settingsCollection.state.get('settings') ?? defaultSettings;
+  const { owner, repo } = parseRepoUrl(settings.repoUrl);
+  return { owner, repo, token: settings.token, branch: settings.branch };
+}
+
+function isConfigured(): boolean {
+  const settings = settingsCollection.state.get('settings') ?? defaultSettings;
+  return settings.repoUrl.length > 0 && settings.token.length > 0;
+}
 
 // JSON representation of Card (dates as strings)
 interface CardStateJSON {
@@ -25,8 +37,8 @@ interface FlashCardJSON {
   tags?: string[];
   created: string;
   reversible?: boolean;
-  state?: CardStateJSON;         // source → translation
-  reverseState?: CardStateJSON;  // translation → source
+  state?: CardStateJSON;
+  reverseState?: CardStateJSON;
 }
 
 function parseCardState(json: CardStateJSON): Card {
@@ -51,15 +63,10 @@ function serializeCardState(card: Card): CardStateJSON {
   };
 }
 
-function isConfigured(): boolean {
-  return settingsStore.isConfigured();
-}
-
-
 export const githubService = {
-  /**
-   * List all decks (directories containing cards.json).
-   */
+  getConfig,
+  isConfigured,
+
   async listDecks(): Promise<string[]> {
     if (!isConfigured()) return [];
 
@@ -72,7 +79,6 @@ export const githubService = {
       for (const entry of entries) {
         if (entry.type === 'dir') {
           try {
-            // Check if directory has cards.json
             await github.readFile(config, `${entry.name}/cards.json`);
             decks.push(entry.name);
           } catch {
@@ -87,9 +93,6 @@ export const githubService = {
     }
   },
 
-  /**
-   * Get cards with content + state for a specific deck.
-   */
   async getCards(deckName: string): Promise<FlashCard[]> {
     if (!isConfigured()) return [];
 
@@ -115,9 +118,6 @@ export const githubService = {
     }
   },
 
-  /**
-   * Update cards (content + state) for a specific deck.
-   */
   async updateCards(deckName: string, cards: FlashCard[]): Promise<void> {
     const config = getConfig();
 
