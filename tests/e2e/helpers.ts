@@ -110,14 +110,20 @@ export async function cloneTestRepo(page: Page, branch?: string) {
   await page.waitForSelector('text=spanish-vocab', { timeout: 30000 });
 
   // If a branch is specified, update settings to use it
+  // TanStack DB localStorage format: { "s:settings": { versionKey: "...", data: {...} } }
   if (branch) {
     await page.evaluate((branchName) => {
       const settingsKey = 'flash-card-settings';
       const raw = localStorage.getItem(settingsKey);
       if (raw) {
-        const settings = JSON.parse(raw);
-        settings.branch = branchName;
-        localStorage.setItem(settingsKey, JSON.stringify(settings));
+        const stored = JSON.parse(raw);
+        // TanStack DB stores as { "s:settings": { versionKey, data } }
+        const key = 's:settings';
+        if (stored[key] && stored[key].data) {
+          stored[key].data.branch = branchName;
+          stored[key].versionKey = crypto.randomUUID();
+          localStorage.setItem(settingsKey, JSON.stringify(stored));
+        }
       }
     }, branch);
     // Reload to pick up the branch setting

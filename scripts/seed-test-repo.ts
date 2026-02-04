@@ -4,7 +4,7 @@
  *
  * Usage:
  *   npx tsx scripts/seed-test-repo.ts seed    # Seed with test data
- *   npx tsx scripts/seed-test-repo.ts reset   # Reset to clean state (removes state.json)
+ *   npx tsx scripts/seed-test-repo.ts reset   # Reset to clean state (no FSRS state)
  *   npx tsx scripts/seed-test-repo.ts status  # Show current state
  */
 
@@ -30,24 +30,32 @@ function parseRepoUrl(url: string): { owner: string; repo: string } {
 const { owner, repo } = parseRepoUrl(REPO_URL);
 const octokit = new Octokit({ auth: TOKEN });
 
+// FlashCard schema - matches FlashCardJSON in github-service.ts
+// Cards with state: null are "new" cards
 const SEED_CARDS = {
   hola: {
     source: 'hola',
     translation: 'hello',
     example: '¡Hola! ¿Cómo estás?',
     created: '2024-01-01T00:00:00Z',
+    state: null,
+    reverseState: null,
   },
   gracias: {
     source: 'gracias',
     translation: 'thank you',
     example: 'Muchas gracias por tu ayuda.',
     created: '2024-01-01T00:00:00Z',
+    state: null,
+    reverseState: null,
   },
   agua: {
     source: 'agua',
     translation: 'water',
     example: 'Necesito un vaso de agua.',
     created: '2024-01-01T00:00:00Z',
+    state: null,
+    reverseState: null,
   },
   gato: {
     source: 'gato',
@@ -55,12 +63,16 @@ const SEED_CARDS = {
     notes: 'Common pet',
     created: '2024-01-01T00:00:00Z',
     reversible: true,
+    state: null,
+    reverseState: null,
   },
   perro: {
     source: 'perro',
     translation: 'dog',
     notes: 'Common pet',
     created: '2024-01-01T00:00:00Z',
+    state: null,
+    reverseState: null,
   },
 };
 
@@ -112,19 +124,15 @@ async function deleteFile(path: string, message: string): Promise<boolean> {
 async function seed(): Promise<void> {
   console.log(`\nSeeding ${REPO_URL}...\n`);
 
-  // Write cards.json
+  // Write cards.json (state is embedded per-card, undefined = new)
   await writeFile(
     'spanish-vocab/cards.json',
     JSON.stringify(SEED_CARDS, null, 2),
     'seed test data'
   );
 
-  // Write empty state.json
-  await writeFile(
-    'spanish-vocab/state.json',
-    JSON.stringify({}, null, 2),
-    'seed: create empty state'
-  );
+  // Delete old state.json if it exists (legacy cleanup)
+  await deleteFile('spanish-vocab/state.json', 'cleanup: remove legacy state.json');
 
   console.log('\n✓ Seed complete! 5 cards + 1 reversible (6 total reviewable)');
 }
@@ -132,19 +140,15 @@ async function seed(): Promise<void> {
 async function reset(): Promise<void> {
   console.log(`\nResetting ${REPO_URL}...\n`);
 
-  // Re-seed cards to ensure clean state
+  // Re-seed cards without any FSRS state (all new)
   await writeFile(
     'spanish-vocab/cards.json',
     JSON.stringify(SEED_CARDS, null, 2),
-    'reset: restore seed data'
+    'reset: restore seed data (all cards new)'
   );
 
-  // Reset state.json to empty
-  await writeFile(
-    'spanish-vocab/state.json',
-    JSON.stringify({}, null, 2),
-    'reset: clear review state'
-  );
+  // Delete old state.json if it exists (legacy cleanup)
+  await deleteFile('spanish-vocab/state.json', 'cleanup: remove legacy state.json');
 
   console.log('\n✓ Reset complete! All cards are now new again.');
 }
@@ -162,32 +166,23 @@ async function status(): Promise<void> {
     if (!Array.isArray(data) && 'content' in data) {
       const content = Buffer.from(data.content, 'base64').toString('utf8');
       const cards = JSON.parse(content);
-      console.log(`Cards: ${Object.keys(cards).length} cards in spanish-vocab/cards.json`);
-      console.log(`  - ${Object.keys(cards).join(', ')}`);
-    }
-  } catch {
-    console.log('Cards: spanish-vocab/cards.json not found');
-  }
+      const cardList = Object.values(cards) as any[];
+      const reviewed = cardList.filter((c) => c.state).length;
+      const newCards = cardList.filter((c) => !c.state).length;
 
-  // Check state.json
-  try {
-    const { data } = await octokit.repos.getContent({
-      owner,
-      repo,
-      path: 'spanish-vocab/state.json',
-    });
-    if (!Array.isArray(data) && 'content' in data) {
-      const content = Buffer.from(data.content, 'base64').toString('utf8');
-      const states = JSON.parse(content);
-      const reviewed = Object.keys(states).length;
-      console.log(`State: ${reviewed} cards have been reviewed`);
-      for (const [cardId, state] of Object.entries(states)) {
-        const s = state as any;
-        console.log(`  - ${cardId}: ${s.reps} reps, due ${s.due?.split('T')[0] || 'unknown'}`);
+      console.log(`Cards: ${cardList.length} cards in spanish-vocab/cards.json`);
+      console.log(`  - ${newCards} new, ${reviewed} reviewed`);
+
+      for (const card of cardList) {
+        if (card.state) {
+          console.log(`  - ${card.source}: ${card.state.reps} reps, due ${card.state.due?.split('T')[0] || 'unknown'}`);
+        } else {
+          console.log(`  - ${card.source}: new${card.reversible ? ' (reversible)' : ''}`);
+        }
       }
     }
   } catch {
-    console.log('State: No reviews yet (state.json not found)');
+    console.log('Cards: spanish-vocab/cards.json not found');
   }
 
   // Show recent commits

@@ -13,9 +13,9 @@ export interface FlashCard {
   notes?: string;
   tags?: string[];
   created: string;
-  reversible?: boolean;
-  state?: Card;
-  reverseState?: Card;
+  reversible: boolean;
+  state: Card | null;
+  reverseState: Card | null;
 }
 
 export const queryClient = new QueryClient({

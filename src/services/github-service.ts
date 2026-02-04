@@ -16,29 +16,15 @@ function isConfigured(): boolean {
 }
 
 // JSON representation of Card (dates as strings)
-interface CardStateJSON {
+interface CardStateJSON extends Omit<Card, 'due' | 'last_review'> {
   due: string;
-  stability: number;
-  difficulty: number;
-  elapsed_days: number;
-  scheduled_days: number;
-  reps: number;
-  lapses: number;
-  state: number;
   last_review?: string;
 }
 
 // JSON representation of FlashCard in storage
-interface FlashCardJSON {
-  source: string;
-  translation: string;
-  example?: string;
-  notes?: string;
-  tags?: string[];
-  created: string;
-  reversible?: boolean;
-  state?: CardStateJSON;
-  reverseState?: CardStateJSON;
+interface FlashCardJSON extends Omit<FlashCard, 'state' | 'reverseState'> {
+  state: CardStateJSON | null;
+  reverseState: CardStateJSON | null;
 }
 
 function parseCardState(json: CardStateJSON): Card {
@@ -110,8 +96,8 @@ export const githubService = {
         tags: card.tags,
         created: card.created,
         reversible: card.reversible,
-        state: card.state ? parseCardState(card.state) : undefined,
-        reverseState: card.reverseState ? parseCardState(card.reverseState) : undefined,
+        state: card.state ? parseCardState(card.state) : null,
+        reverseState: card.reverseState ? parseCardState(card.reverseState) : null,
       }));
     } catch {
       return [];
@@ -141,8 +127,8 @@ export const githubService = {
         tags: card.tags,
         created: card.created,
         reversible: card.reversible,
-        state: card.state ? serializeCardState(card.state) : undefined,
-        reverseState: card.reverseState ? serializeCardState(card.reverseState) : undefined,
+        state: card.state ? serializeCardState(card.state) : null,
+        reverseState: card.reverseState ? serializeCardState(card.reverseState) : null,
       };
     }
 
