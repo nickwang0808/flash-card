@@ -16,6 +16,7 @@ export interface FlashCard {
   reversible: boolean;
   state: Card | null;
   reverseState: Card | null;
+  suspended?: boolean;
 }
 
 export const queryClient = new QueryClient({

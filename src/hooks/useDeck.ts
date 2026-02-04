@@ -73,13 +73,16 @@ export function computeStudyItems(
   const dueForward: StudyItem[] = [];
   const dueReverse: StudyItem[] = [];
 
+  // Filter out suspended cards
+  const activeCards = cards.filter(card => !card.suspended);
+
   // Count already-introduced cards toward limit
   const introducedCount = introducedToday.size;
   const remainingNewSlots = Math.max(0, newCardsLimit - introducedCount);
   let newSlotsUsed = 0;
 
   // First pass: collect forward directions
-  for (const card of cards) {
+  for (const card of activeCards) {
     if (!card.state) {
       const isIntroduced = introducedToday.has(card.source);
       if (isIntroduced || newSlotsUsed < remainingNewSlots) {
@@ -92,7 +95,7 @@ export function computeStudyItems(
   }
 
   // Second pass: collect reverse directions
-  for (const card of cards) {
+  for (const card of activeCards) {
     if (card.reversible) {
       const reverseKey = `${card.source}:reverse`;
       if (!card.reverseState) {
@@ -199,11 +202,19 @@ export function useDeck(deckName: string) {
     rateCard(collection, studyItem, rating);
   }
 
+  function suspend() {
+    if (!studyItem) return;
+    collection.update(studyItem.source, (draft) => {
+      draft.suspended = true;
+    });
+  }
+
   return {
     isLoading,
     currentCard,
     remaining: allItems.length,
     rate,
+    suspend,
     // Expose for testing/advanced use
     newItems,
     dueItems,

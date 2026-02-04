@@ -8,7 +8,7 @@ interface Props {
 }
 
 export function ReviewScreen({ deck, onBack }: Props) {
-  const { currentCard, remaining, rate, isLoading } = useDeck(deck);
+  const { currentCard, remaining, rate, suspend, isLoading } = useDeck(deck);
   const [answerRevealed, setAnswerRevealed] = useState(false);
 
   function handleRate(rating: Grade) {
@@ -49,9 +49,18 @@ export function ReviewScreen({ deck, onBack }: Props) {
         >
           End Session
         </button>
-        <span className="text-sm text-muted-foreground">
-          {remaining} remaining
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={suspend}
+            className="text-sm text-muted-foreground hover:text-foreground"
+            title="Suspend this card permanently"
+          >
+            Suspend
+          </button>
+          <span className="text-sm text-muted-foreground">
+            {remaining} remaining
+          </span>
+        </div>
       </div>
 
       {/* Card */}
