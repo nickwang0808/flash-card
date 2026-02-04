@@ -82,13 +82,13 @@ describe('githubService.updateCards batching', () => {
       expect(github.writeFile).not.toHaveBeenCalled();
     });
 
-    it('writes after 5 second delay', async () => {
+    it('writes after 2 second delay', async () => {
       const card = createFlashCard('hello');
 
       githubService.updateCards('test-deck', [card]);
 
-      // Advance time by 5 seconds
-      await vi.advanceTimersByTimeAsync(5000);
+      // Advance time by 2 seconds
+      await vi.advanceTimersByTimeAsync(2000);
 
       expect(github.writeFile).toHaveBeenCalledTimes(1);
     });
@@ -99,19 +99,19 @@ describe('githubService.updateCards batching', () => {
 
       githubService.updateCards('test-deck', [card1]);
 
-      // Wait 3 seconds (not enough to trigger flush)
-      await vi.advanceTimersByTimeAsync(3000);
+      // Wait 1 second (not enough to trigger flush)
+      await vi.advanceTimersByTimeAsync(1000);
       expect(github.writeFile).not.toHaveBeenCalled();
 
       // Another update resets the timer
       githubService.updateCards('test-deck', [card2]);
 
-      // Wait another 3 seconds (6 total, but only 3 since last update)
-      await vi.advanceTimersByTimeAsync(3000);
+      // Wait another 1 second (2 total, but only 1 since last update)
+      await vi.advanceTimersByTimeAsync(1000);
       expect(github.writeFile).not.toHaveBeenCalled();
 
-      // Wait remaining 2 seconds to complete the 5s window
-      await vi.advanceTimersByTimeAsync(2000);
+      // Wait remaining 1 second to complete the 2s window
+      await vi.advanceTimersByTimeAsync(1000);
       expect(github.writeFile).toHaveBeenCalledTimes(1);
     });
   });
@@ -126,7 +126,7 @@ describe('githubService.updateCards batching', () => {
       githubService.updateCards('test-deck', [card2]);
       githubService.updateCards('test-deck', [card3]);
 
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(2000);
 
       // Only one write call
       expect(github.writeFile).toHaveBeenCalledTimes(1);
@@ -150,7 +150,7 @@ describe('githubService.updateCards batching', () => {
       githubService.updateCards('test-deck', [card2]);
       githubService.updateCards('test-deck', [card3]);
 
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(2000);
 
       const writtenContent = JSON.parse(
         vi.mocked(github.writeFile).mock.calls[0][2]
@@ -170,7 +170,7 @@ describe('githubService.updateCards batching', () => {
 
       githubService.updateCards('test-deck', cards);
 
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(2000);
 
       const writtenContent = JSON.parse(
         vi.mocked(github.writeFile).mock.calls[0][2]
@@ -187,7 +187,7 @@ describe('githubService.updateCards batching', () => {
       githubService.updateCards('spanish', [spanishCard]);
       githubService.updateCards('french', [frenchCard]);
 
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(2000);
 
       // Two separate writes
       expect(github.writeFile).toHaveBeenCalledTimes(2);
@@ -215,20 +215,20 @@ describe('githubService.updateCards batching', () => {
 
       githubService.updateCards('spanish', [card1]);
 
-      // Wait 3 seconds
-      await vi.advanceTimersByTimeAsync(3000);
+      // Wait 1 second
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Start french deck (has its own timer)
       githubService.updateCards('french', [card2]);
 
-      // Wait 2 more seconds - spanish should flush (5s total)
-      await vi.advanceTimersByTimeAsync(2000);
+      // Wait 1 more second - spanish should flush (2s total)
+      await vi.advanceTimersByTimeAsync(1000);
 
       expect(github.writeFile).toHaveBeenCalledTimes(1);
       expect(vi.mocked(github.writeFile).mock.calls[0][1]).toContain('spanish');
 
-      // Wait 3 more seconds - french should flush
-      await vi.advanceTimersByTimeAsync(3000);
+      // Wait 1 more second - french should flush
+      await vi.advanceTimersByTimeAsync(1000);
 
       expect(github.writeFile).toHaveBeenCalledTimes(2);
     });
@@ -255,7 +255,7 @@ describe('githubService.updateCards batching', () => {
       const newCard = createFlashCard('new-card');
       githubService.updateCards('test-deck', [newCard]);
 
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(2000);
 
       const writtenContent = JSON.parse(
         vi.mocked(github.writeFile).mock.calls[0][2]
@@ -287,7 +287,7 @@ describe('githubService.updateCards batching', () => {
       });
       githubService.updateCards('test-deck', [updatedCard]);
 
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(2000);
 
       const writtenContent = JSON.parse(
         vi.mocked(github.writeFile).mock.calls[0][2]
@@ -304,7 +304,7 @@ describe('githubService.updateCards batching', () => {
 
       githubService.updateCards('test-deck', [createFlashCard('test')]);
 
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(2000);
 
       expect(github.writeFile).toHaveBeenCalledWith(
         expect.any(Object),
@@ -321,7 +321,7 @@ describe('githubService.updateCards batching', () => {
       const cards = [createFlashCard('hello'), createFlashCard('world')];
       githubService.updateCards('spanish', cards);
 
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(2000);
 
       const commitMessage = vi.mocked(github.writeFile).mock.calls[0][4];
       expect(commitMessage).toContain('spanish');
@@ -333,7 +333,7 @@ describe('githubService.updateCards batching', () => {
   describe('edge cases', () => {
     it('handles empty pending updates gracefully', async () => {
       // This shouldn't happen in practice, but ensure no errors
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(2000);
       expect(github.writeFile).not.toHaveBeenCalled();
     });
 
@@ -342,7 +342,7 @@ describe('githubService.updateCards batching', () => {
 
       githubService.updateCards('new-deck', [createFlashCard('first-card')]);
 
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(2000);
 
       // Should still write, with undefined SHA (creates new file)
       expect(github.writeFile).toHaveBeenCalledWith(
