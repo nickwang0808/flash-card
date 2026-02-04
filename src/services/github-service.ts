@@ -4,7 +4,7 @@ import { github, parseRepoUrl, type GitHubConfig } from './github';
 import { settingsCollection, defaultSettings } from '../hooks/useSettings';
 import type { FlashCard } from './collections';
 
-const BATCH_DELAY_MS = 5000;
+const BATCH_DELAY_MS = 2000;
 
 // Accumulator: pending card updates per deck
 const pendingUpdates = new Map<string, Map<string, FlashCard>>();

@@ -6,6 +6,8 @@ import {
   computeNewState,
   rateCard,
   useDeck,
+  getIntroducedToday,
+  markAsIntroduced,
   type StudyItem,
 } from '../../src/hooks/useDeck';
 import type { FlashCard } from '../../src/services/collections';
@@ -56,6 +58,70 @@ function createPastState(daysAgo: number): Card {
   past.setDate(past.getDate() - daysAgo);
   return { ...card, due: past, reps: 1 };
 }
+
+// ============================================================================
+// localStorage Helper Tests
+// ============================================================================
+
+describe('localStorage helpers', () => {
+  const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
+
+  beforeEach(() => {
+    // Clear all localStorage entries with our prefix
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(STORAGE_KEY_PREFIX)) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+  });
+
+  describe('getIntroducedToday', () => {
+    it('returns empty set when no data exists', () => {
+      const result = getIntroducedToday();
+      expect(result.size).toBe(0);
+    });
+
+    it('returns stored cards as a set', () => {
+      const todayKey = STORAGE_KEY_PREFIX + new Date().toISOString().split('T')[0];
+      localStorage.setItem(todayKey, JSON.stringify(['card1', 'card2']));
+
+      const result = getIntroducedToday();
+      expect(result.size).toBe(2);
+      expect(result.has('card1')).toBe(true);
+      expect(result.has('card2')).toBe(true);
+    });
+  });
+
+  describe('markAsIntroduced', () => {
+    it('adds a new card to localStorage', () => {
+      markAsIntroduced('new-card');
+
+      const result = getIntroducedToday();
+      expect(result.has('new-card')).toBe(true);
+    });
+
+    it('does not duplicate existing cards', () => {
+      markAsIntroduced('card1');
+      markAsIntroduced('card1');
+
+      const result = getIntroducedToday();
+      expect(result.size).toBe(1);
+    });
+
+    it('handles reverse card keys with :reverse suffix', () => {
+      markAsIntroduced('hello');
+      markAsIntroduced('hello:reverse');
+
+      const result = getIntroducedToday();
+      expect(result.size).toBe(2);
+      expect(result.has('hello')).toBe(true);
+      expect(result.has('hello:reverse')).toBe(true);
+    });
+  });
+});
 
 // ============================================================================
 // Pure Function Tests: computeStudyItems
@@ -264,6 +330,100 @@ describe('computeStudyItems', () => {
       const { newItems } = computeStudyItems(cards, 10, endOfDay);
 
       expect(newItems.map((i) => i.source)).toEqual(['a', 'b', 'c']);
+    });
+  });
+
+  describe('introducedToday tracking', () => {
+    const endOfDay = getEndOfDay();
+
+    it('counts already-introduced cards toward limit', () => {
+      const cards = [
+        createFlashCard('one'),
+        createFlashCard('two'),
+        createFlashCard('three'),
+        createFlashCard('four'),
+      ];
+      // Simulate 2 cards already introduced today
+      const introducedToday = new Set(['one', 'two']);
+
+      const { newItems } = computeStudyItems(cards, 3, endOfDay, introducedToday);
+
+      // Limit is 3, 2 already introduced, so only 1 new slot remains
+      // Should include: one (introduced), two (introduced), three (new slot)
+      expect(newItems).toHaveLength(3);
+      expect(newItems.map((i) => i.source)).toEqual(['one', 'two', 'three']);
+    });
+
+    it('includes already-introduced cards even if over limit', () => {
+      const cards = [
+        createFlashCard('one'),
+        createFlashCard('two'),
+        createFlashCard('three'),
+      ];
+      // 3 cards already introduced, but limit is 2
+      const introducedToday = new Set(['one', 'two', 'three']);
+
+      const { newItems } = computeStudyItems(cards, 2, endOfDay, introducedToday);
+
+      // All 3 should be included because they were already introduced
+      expect(newItems).toHaveLength(3);
+    });
+
+    it('does not include new cards when limit reached by introduced cards', () => {
+      const cards = [
+        createFlashCard('introduced-a'),
+        createFlashCard('introduced-b'),
+        createFlashCard('not-introduced'),
+      ];
+      const introducedToday = new Set(['introduced-a', 'introduced-b']);
+
+      const { newItems } = computeStudyItems(cards, 2, endOfDay, introducedToday);
+
+      // Limit is 2, both slots filled by introduced cards
+      expect(newItems).toHaveLength(2);
+      expect(newItems.map((i) => i.source)).toEqual(['introduced-a', 'introduced-b']);
+    });
+
+    it('tracks reverse cards separately with :reverse suffix', () => {
+      const cards = [
+        createFlashCard('hello', { reversible: true }),
+      ];
+      // Only the reverse was introduced
+      const introducedToday = new Set(['hello:reverse']);
+
+      const { newItems } = computeStudyItems(cards, 1, endOfDay, introducedToday);
+
+      // Limit is 1, reverse is introduced (counts toward limit)
+      // Forward gets the remaining 0 slots, so only reverse shows
+      // Wait - let me reconsider: introducedCount = 1, remainingNewSlots = 0
+      // Forward: not introduced, 0 < 0 = false, not included
+      // Reverse: is introduced, included
+      expect(newItems).toHaveLength(1);
+      expect(newItems[0].isReverse).toBe(true);
+    });
+
+    it('handles empty introducedToday set', () => {
+      const cards = [
+        createFlashCard('one'),
+        createFlashCard('two'),
+      ];
+      const introducedToday = new Set<string>();
+
+      const { newItems } = computeStudyItems(cards, 10, endOfDay, introducedToday);
+
+      expect(newItems).toHaveLength(2);
+    });
+
+    it('works with default empty set when not provided', () => {
+      const cards = [
+        createFlashCard('one'),
+        createFlashCard('two'),
+      ];
+
+      // Call without introducedToday parameter
+      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+
+      expect(newItems).toHaveLength(2);
     });
   });
 
@@ -540,10 +700,21 @@ import { useSettings } from '../../src/hooks/useSettings';
 describe('useDeck hook', () => {
   let mockCollection: { update: ReturnType<typeof vi.fn> };
   let mockCards: FlashCard[];
+  const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
 
   beforeEach(() => {
     mockCollection = { update: vi.fn() };
     mockCards = [];
+
+    // Clear localStorage entries for introduced cards
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(STORAGE_KEY_PREFIX)) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
 
     vi.mocked(getCardsCollection).mockReturnValue(mockCollection as any);
     vi.mocked(useSettings).mockReturnValue({
@@ -954,9 +1125,21 @@ describe('useDeck hook', () => {
 
 describe('Study Session Flow', () => {
   let mockCollection: { update: ReturnType<typeof vi.fn> };
+  const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
 
   beforeEach(() => {
     mockCollection = { update: vi.fn() };
+
+    // Clear localStorage entries for introduced cards
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(STORAGE_KEY_PREFIX)) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+
     vi.mocked(getCardsCollection).mockReturnValue(mockCollection as any);
     vi.mocked(useSettings).mockReturnValue({
       settings: { newCardsPerDay: 10 },

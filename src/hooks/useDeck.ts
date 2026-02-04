@@ -1,8 +1,52 @@
 import { useLiveQuery } from '@tanstack/react-db';
+import { useEffect } from 'react';
 import { fsrs, createEmptyCard, type Grade, type Card } from 'ts-fsrs';
 import { getCardsCollection, type FlashCard } from '../services/collections';
 import { useSettings } from './useSettings';
 import type { Collection } from '@tanstack/db';
+
+// localStorage helpers for tracking introduced new cards
+const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
+
+function getTodayKey(): string {
+  return STORAGE_KEY_PREFIX + new Date().toISOString().split('T')[0];
+}
+
+export function getIntroducedToday(): Set<string> {
+  const key = getTodayKey();
+  const stored = localStorage.getItem(key);
+  return new Set(stored ? JSON.parse(stored) : []);
+}
+
+export function markAsIntroduced(source: string): void {
+  const key = getTodayKey();
+  const introduced = getIntroducedToday();
+  if (introduced.has(source)) return; // Already tracked
+  introduced.add(source);
+  localStorage.setItem(key, JSON.stringify([...introduced]));
+}
+
+// Run once on module load to clean up entries older than 3 days
+function cleanupOldEntries(): void {
+  const threeDaysAgo = new Date();
+  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+  const cutoffDate = threeDaysAgo.toISOString().split('T')[0];
+
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith(STORAGE_KEY_PREFIX)) {
+      const dateStr = key.replace(STORAGE_KEY_PREFIX, '');
+      if (dateStr < cutoffDate) {
+        keysToRemove.push(key);
+      }
+    }
+  }
+  keysToRemove.forEach(key => localStorage.removeItem(key));
+}
+
+// Cleanup on load
+cleanupOldEntries();
 
 export type StudyItem = FlashCard & { isReverse: boolean };
 
@@ -20,16 +64,25 @@ export interface CurrentCard {
 export function computeStudyItems(
   cards: FlashCard[],
   newCardsLimit: number,
-  endOfDay: Date
+  endOfDay: Date,
+  introducedToday: Set<string> = new Set()
 ): { newItems: StudyItem[]; dueItems: StudyItem[] } {
   const newItems: StudyItem[] = [];
   const dueItems: StudyItem[] = [];
 
+  // Count already-introduced cards toward limit
+  const introducedCount = introducedToday.size;
+  const remainingNewSlots = Math.max(0, newCardsLimit - introducedCount);
+  let newSlotsUsed = 0;
+
   for (const card of cards) {
     // Normal direction (source → translation)
     if (!card.state) {
-      if (newItems.length < newCardsLimit) {
+      // Card is new - check if already introduced or if we have slots
+      const isIntroduced = introducedToday.has(card.source);
+      if (isIntroduced || newSlotsUsed < remainingNewSlots) {
         newItems.push({ ...card, isReverse: false });
+        if (!isIntroduced) newSlotsUsed++;
       }
     } else if (card.state.due <= endOfDay) {
       dueItems.push({ ...card, isReverse: false });
@@ -37,9 +90,12 @@ export function computeStudyItems(
 
     // Reverse direction (translation → source)
     if (card.reversible) {
+      const reverseKey = `${card.source}:reverse`;
       if (!card.reverseState) {
-        if (newItems.length < newCardsLimit) {
+        const isIntroduced = introducedToday.has(reverseKey);
+        if (isIntroduced || newSlotsUsed < remainingNewSlots) {
           newItems.push({ ...card, isReverse: true });
+          if (!isIntroduced) newSlotsUsed++;
         }
       } else if (card.reverseState.due <= endOfDay) {
         dueItems.push({ ...card, isReverse: true });
@@ -91,15 +147,31 @@ export function useDeck(deckName: string) {
     [deckName]
   );
 
+  const introducedToday = getIntroducedToday();
+
   const { newItems, dueItems } = computeStudyItems(
     cards ?? [],
     newCardsLimit,
-    endOfDay
+    endOfDay,
+    introducedToday
   );
 
   // New cards first, then due cards
   const allItems = [...newItems, ...dueItems];
   const studyItem = allItems[0] ?? null;
+
+  // Mark current card as introduced when first shown
+  useEffect(() => {
+    if (!studyItem) return;
+    
+    const isNew = studyItem.isReverse ? !studyItem.reverseState : !studyItem.state;
+    if (!isNew) return;
+    
+    const key = studyItem.isReverse 
+      ? `${studyItem.source}:reverse` 
+      : studyItem.source;
+    markAsIntroduced(key);
+  }, [studyItem?.source, studyItem?.isReverse, studyItem?.state, studyItem?.reverseState]);
 
   // Compute current card display info
   const currentCard: CurrentCard | null = studyItem
