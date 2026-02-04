@@ -32,49 +32,54 @@ const octokit = new Octokit({ auth: TOKEN });
 
 // FlashCard schema - matches FlashCardJSON in github-service.ts
 // Cards with state: null are "new" cards
-const SEED_CARDS = {
-  hola: {
-    source: 'hola',
-    translation: 'hello',
-    example: '¡Hola! ¿Cómo estás?',
+const SEED_CARDS: Record<string, any> = {};
+
+const VOCAB_DATA = [
+  { source: 'hola', translation: 'hello', example: '¡Hola! ¿Cómo estás?' },
+  { source: 'gracias', translation: 'thank you', example: 'Muchas gracias por tu ayuda.' },
+  { source: 'agua', translation: 'water', example: 'Necesito un vaso de agua.' },
+  { source: 'gato', translation: 'cat', notes: 'Common pet', reversible: true },
+  { source: 'perro', translation: 'dog', notes: 'Common pet' },
+  { source: 'casa', translation: 'house', example: 'Mi casa es grande.' },
+  { source: 'libro', translation: 'book', example: 'Estoy leyendo un libro.' },
+  { source: 'comida', translation: 'food', example: 'La comida está deliciosa.' },
+  { source: 'tiempo', translation: 'time/weather', example: '¿Qué tiempo hace hoy?' },
+  { source: 'amigo', translation: 'friend', example: 'Él es mi mejor amigo.', reversible: true },
+  { source: 'trabajo', translation: 'work', example: 'Voy al trabajo cada día.' },
+  { source: 'dinero', translation: 'money', example: 'No tengo mucho dinero.' },
+  { source: 'ciudad', translation: 'city', example: 'Madrid es una ciudad bonita.' },
+  { source: 'coche', translation: 'car', example: 'Mi coche es rojo.' },
+  { source: 'mesa', translation: 'table', example: 'El libro está en la mesa.' },
+  { source: 'silla', translation: 'chair', example: 'Siéntate en la silla.' },
+  { source: 'ventana', translation: 'window', example: 'Abre la ventana, por favor.' },
+  { source: 'puerta', translation: 'door', example: 'Cierra la puerta.' },
+  { source: 'calle', translation: 'street', example: 'Vivo en esta calle.' },
+  { source: 'mañana', translation: 'morning/tomorrow', example: 'Nos vemos mañana.' },
+  { source: 'noche', translation: 'night', example: 'Buenas noches.' },
+  { source: 'día', translation: 'day', example: '¿Qué día es hoy?' },
+  { source: 'año', translation: 'year', example: 'El año tiene doce meses.' },
+  { source: 'mes', translation: 'month', example: 'Este mes es enero.' },
+  { source: 'semana', translation: 'week', example: 'La semana tiene siete días.' },
+  { source: 'hora', translation: 'hour', example: '¿Qué hora es?' },
+  { source: 'minuto', translation: 'minute', example: 'Espera un minuto.' },
+  { source: 'segundo', translation: 'second', example: 'Vuelvo en un segundo.' },
+  { source: 'nombre', translation: 'name', example: '¿Cuál es tu nombre?', reversible: true },
+  { source: 'familia', translation: 'family', example: 'Mi familia es pequeña.' },
+];
+
+// Generate SEED_CARDS from VOCAB_DATA
+for (const item of VOCAB_DATA) {
+  SEED_CARDS[item.source] = {
+    source: item.source,
+    translation: item.translation,
+    example: item.example,
+    notes: item.notes,
     created: '2024-01-01T00:00:00Z',
+    reversible: item.reversible ?? false,
     state: null,
     reverseState: null,
-  },
-  gracias: {
-    source: 'gracias',
-    translation: 'thank you',
-    example: 'Muchas gracias por tu ayuda.',
-    created: '2024-01-01T00:00:00Z',
-    state: null,
-    reverseState: null,
-  },
-  agua: {
-    source: 'agua',
-    translation: 'water',
-    example: 'Necesito un vaso de agua.',
-    created: '2024-01-01T00:00:00Z',
-    state: null,
-    reverseState: null,
-  },
-  gato: {
-    source: 'gato',
-    translation: 'cat',
-    notes: 'Common pet',
-    created: '2024-01-01T00:00:00Z',
-    reversible: true,
-    state: null,
-    reverseState: null,
-  },
-  perro: {
-    source: 'perro',
-    translation: 'dog',
-    notes: 'Common pet',
-    created: '2024-01-01T00:00:00Z',
-    state: null,
-    reverseState: null,
-  },
-};
+  };
+}
 
 async function getFileSha(path: string): Promise<string | null> {
   try {
@@ -134,7 +139,8 @@ async function seed(): Promise<void> {
   // Delete old state.json if it exists (legacy cleanup)
   await deleteFile('spanish-vocab/state.json', 'cleanup: remove legacy state.json');
 
-  console.log('\n✓ Seed complete! 5 cards + 1 reversible (6 total reviewable)');
+  const reversibleCount = VOCAB_DATA.filter(v => v.reversible).length;
+  console.log(`\n✓ Seed complete! ${VOCAB_DATA.length} cards (${reversibleCount} reversible, ${VOCAB_DATA.length + reversibleCount} total reviewable)`);
 }
 
 async function reset(): Promise<void> {
