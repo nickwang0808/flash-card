@@ -137,7 +137,7 @@ export const githubService = {
       `${deckName}/cards.json`,
       JSON.stringify(existing, null, 2),
       sha,
-      `update: ${cards.length} card(s)`,
+      `review: ${deckName} - ${cards.map(c => c.source).join(', ')}`,
     );
   },
 };
