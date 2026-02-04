@@ -180,6 +180,8 @@ export const githubService = {
     for (const card of cards) {
       pending.set(card.source, card); // Latest update wins
     }
-    return getDebouncedFlush(deckName)();
+    // Fire-and-forget: trigger debounce but don't wait for it
+    // This allows TanStack DB to proceed while batching happens in background
+    getDebouncedFlush(deckName)();
   },
 };

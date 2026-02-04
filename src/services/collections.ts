@@ -54,8 +54,7 @@ export function getCardsCollection(deckName: string): Collection<FlashCard, stri
 
         onUpdate: async ({ transaction }) => {
           const updates = transaction.mutations.map((m) => m.modified as FlashCard);
-          // Don't await - let debounce handle batching, optimistic state handles UI
-          githubService.updateCards(deckName, updates);
+          await githubService.updateCards(deckName, updates);
           return { refetch: false };
         },
 
