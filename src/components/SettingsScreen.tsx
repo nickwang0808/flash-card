@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { queryClient } from '../services/collections';
 
@@ -8,6 +9,10 @@ interface Props {
 
 export function SettingsScreen({ onBack, onLogout }: Props) {
   const { settings, update, clear } = useSettings();
+  const [editingRepo, setEditingRepo] = useState(false);
+  const [editingToken, setEditingToken] = useState(false);
+  const [repoUrl, setRepoUrl] = useState(settings.repoUrl);
+  const [token, setToken] = useState('');
 
   function handleLogout() {
     if (!confirm('Clear all local data and log out?')) return;
@@ -30,12 +35,99 @@ export function SettingsScreen({ onBack, onLogout }: Props) {
       </div>
 
       <div className="space-y-6">
-        {/* Repo URL (read-only) */}
+        {/* Repository URL */}
         <div>
           <label className="block text-sm font-medium mb-1">Repository</label>
-          <p className="text-sm text-muted-foreground break-all">
-            {settings.repoUrl || 'Not configured'}
-          </p>
+          {editingRepo ? (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={repoUrl}
+                onChange={(e) => setRepoUrl(e.target.value)}
+                placeholder="owner/repo"
+                className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+              <button
+                onClick={() => {
+                  update({ repoUrl });
+                  setEditingRepo(false);
+                }}
+                className="rounded-md bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => {
+                  setRepoUrl(settings.repoUrl);
+                  setEditingRepo(false);
+                }}
+                className="rounded-md border border-input px-3 py-2 text-sm font-medium hover:bg-accent"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground break-all">
+                {settings.repoUrl || 'Not configured'}
+              </p>
+              <button
+                onClick={() => setEditingRepo(true)}
+                className="text-sm text-primary hover:underline ml-2"
+              >
+                Edit
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Personal Access Token */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Personal Access Token</label>
+          {editingToken ? (
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="ghp_xxxxxxxxxxxx"
+                className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+              <button
+                onClick={() => {
+                  if (token) {
+                    update({ token });
+                  }
+                  setToken('');
+                  setEditingToken(false);
+                }}
+                className="rounded-md bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => {
+                  setToken('');
+                  setEditingToken(false);
+                }}
+                className="rounded-md border border-input px-3 py-2 text-sm font-medium hover:bg-accent"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                {settings.token ? '••••••••••••••••' : 'Not configured'}
+              </p>
+              <button
+                onClick={() => setEditingToken(true)}
+                className="text-sm text-primary hover:underline ml-2"
+              >
+                Edit
+              </button>
+            </div>
+          )}
         </div>
 
         {/* New cards per day */}
