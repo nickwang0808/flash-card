@@ -235,12 +235,12 @@ describe('computeStudyItems', () => {
       ];
       const { newItems } = computeStudyItems(cards, 3, endOfDay);
 
-      // one-forward, one-reverse, two-forward (limit reached)
+      // All forwards first, then reverses (limit of 3 reached)
       expect(newItems).toHaveLength(3);
       expect(newItems.map((i) => `${i.source}-${i.isReverse}`)).toEqual([
         'one-false',
-        'one-true',
         'two-false',
+        'one-true',
       ]);
     });
 

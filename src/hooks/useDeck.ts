@@ -61,49 +61,57 @@ export interface CurrentCard {
 }
 
 // Pure function to compute study items from cards
+// Forward and reverse directions are kept separate to avoid showing them back-to-back
 export function computeStudyItems(
   cards: FlashCard[],
   newCardsLimit: number,
   endOfDay: Date,
   introducedToday: Set<string> = new Set()
 ): { newItems: StudyItem[]; dueItems: StudyItem[] } {
-  const newItems: StudyItem[] = [];
-  const dueItems: StudyItem[] = [];
+  const newForward: StudyItem[] = [];
+  const newReverse: StudyItem[] = [];
+  const dueForward: StudyItem[] = [];
+  const dueReverse: StudyItem[] = [];
 
   // Count already-introduced cards toward limit
   const introducedCount = introducedToday.size;
   const remainingNewSlots = Math.max(0, newCardsLimit - introducedCount);
   let newSlotsUsed = 0;
 
+  // First pass: collect forward directions
   for (const card of cards) {
-    // Normal direction (source → translation)
     if (!card.state) {
-      // Card is new - check if already introduced or if we have slots
       const isIntroduced = introducedToday.has(card.source);
       if (isIntroduced || newSlotsUsed < remainingNewSlots) {
-        newItems.push({ ...card, isReverse: false });
+        newForward.push({ ...card, isReverse: false });
         if (!isIntroduced) newSlotsUsed++;
       }
     } else if (card.state.due <= endOfDay) {
-      dueItems.push({ ...card, isReverse: false });
+      dueForward.push({ ...card, isReverse: false });
     }
+  }
 
-    // Reverse direction (translation → source)
+  // Second pass: collect reverse directions
+  for (const card of cards) {
     if (card.reversible) {
       const reverseKey = `${card.source}:reverse`;
       if (!card.reverseState) {
         const isIntroduced = introducedToday.has(reverseKey);
         if (isIntroduced || newSlotsUsed < remainingNewSlots) {
-          newItems.push({ ...card, isReverse: true });
+          newReverse.push({ ...card, isReverse: true });
           if (!isIntroduced) newSlotsUsed++;
         }
       } else if (card.reverseState.due <= endOfDay) {
-        dueItems.push({ ...card, isReverse: true });
+        dueReverse.push({ ...card, isReverse: true });
       }
     }
   }
 
-  return { newItems, dueItems };
+  // Combine: all forwards first, then all reverses
+  return {
+    newItems: [...newForward, ...newReverse],
+    dueItems: [...dueForward, ...dueReverse],
+  };
 }
 
 // Pure function to compute new FSRS state after rating
