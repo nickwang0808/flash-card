@@ -54,7 +54,17 @@ export function getCardsCollection(deckName: string): Collection<FlashCard, stri
 
         onUpdate: async ({ transaction }) => {
           const updates = transaction.mutations.map((m) => m.modified as FlashCard);
-          await githubService.updateCards(deckName, updates);
+
+          // Immediately persist to local synced store (confirms optimistic state)
+          collection.utils.writeBatch(() => {
+            updates.forEach((item) => {
+              collection.utils.writeUpdate(item);
+            });
+          });
+
+          // Queue GitHub sync in background (debounced, fire-and-forget)
+          githubService.updateCards(deckName, updates);
+
           return { refetch: false };
         },
 
