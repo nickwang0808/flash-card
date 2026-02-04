@@ -100,7 +100,7 @@ describe('computeStudyItems', () => {
       const todayDue = new Date();
       todayDue.setHours(12, 0, 0, 0); // noon today
       const cards = [createFlashCard('hello', { state: createDueState(todayDue) })];
-      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { dueItems } = computeStudyItems(cards, 10, endOfDay);
 
       expect(dueItems).toHaveLength(1);
     });
@@ -866,11 +866,11 @@ describe('useDeck hook', () => {
       });
 
       const updater = mockCollection.update.mock.calls[0][1];
-      const draft = { state: null, reverseState: null };
+      const draft: { state: Card | null; reverseState: Card | null } = { state: null, reverseState: null };
       updater(draft);
 
       expect(draft.state).not.toBeNull();
-      expect(draft.state.reps).toBe(1);
+      expect(draft.state!.reps).toBe(1);
       expect(draft.reverseState).toBeNull();
     });
 
@@ -897,11 +897,11 @@ describe('useDeck hook', () => {
       });
 
       const updater = mockCollection.update.mock.calls[0][1];
-      const draft = { state: createFutureState(5), reverseState: null };
+      const draft: { state: Card | null; reverseState: Card | null } = { state: createFutureState(5), reverseState: null };
       updater(draft);
 
       expect(draft.reverseState).not.toBeNull();
-      expect(draft.reverseState.reps).toBe(1);
+      expect(draft.reverseState!.reps).toBe(1);
     });
   });
 
@@ -1091,13 +1091,13 @@ describe('Study Session Flow', () => {
 
     // Simulate the state update - Easy schedules for future
     const updater = mockCollection.update.mock.calls[0][1];
-    const draft = { state: null, reverseState: null };
+    const draft: { state: Card | null; reverseState: Card | null } = { state: null, reverseState: null };
     updater(draft);
 
     // Verify the due date is in the future (beyond end of today)
     const endOfToday = new Date();
     endOfToday.setHours(23, 59, 59, 999);
-    expect(draft.state.due.getTime()).toBeGreaterThan(endOfToday.getTime());
+    expect(draft.state!.due.getTime()).toBeGreaterThan(endOfToday.getTime());
 
     // Update mock with new state
     const updatedCards = [{ ...createFlashCard('test-card'), state: draft.state }];
@@ -1234,11 +1234,11 @@ describe('Study Session Flow', () => {
     });
 
     const updater2 = mockCollection.update.mock.calls[1][1];
-    const draft2 = { state: draft1.state, reverseState: null };
+    const draft2: { state: Card | null; reverseState: Card | null } = { state: draft1.state, reverseState: null };
     updater2(draft2);
 
     // Verify reps increased
-    expect(draft2.state.reps).toBe(2);
+    expect(draft2.state!.reps).toBe(2);
 
     cards = [{ ...createFlashCard('test-card'), state: draft2.state }];
     vi.mocked(useLiveQuery).mockReturnValue({

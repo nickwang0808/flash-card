@@ -16,7 +16,7 @@ export const mockGithub = {
     throw new Error(`File not found: ${path}`);
   }),
 
-  writeFile: vi.fn().mockImplementation(async (_config: any, path: string, content: string, sha: string | undefined, _message: string) => {
+  writeFile: vi.fn().mockImplementation(async (_config: any, path: string, content: string, _sha: string | undefined, _message: string) => {
     const newSha = `sha-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     files[path] = { content, sha: newSha };
     return newSha;
