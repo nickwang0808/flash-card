@@ -58,14 +58,14 @@ export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-dvh flex items-center justify-center">
         <p className="text-muted-foreground">Loading decks...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen p-4 max-w-md mx-auto">
+    <div className="min-h-dvh p-4 max-w-md mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold">Decks</h1>
         <div className="flex gap-2">

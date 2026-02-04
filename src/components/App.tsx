@@ -40,7 +40,7 @@ export function App() {
   const navigate = (s: Screen) => setScreen(s);
 
   if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    return <div className="min-h-dvh flex items-center justify-center">Loading...</div>;
   }
 
   switch (screen.name) {

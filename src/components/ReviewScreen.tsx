@@ -18,7 +18,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-dvh flex items-center justify-center">
         <p className="text-muted-foreground">Loading cards...</p>
       </div>
     );
@@ -26,7 +26,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
 
   if (!currentCard) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4 gap-4">
+      <div className="min-h-dvh flex flex-col items-center justify-center p-4 gap-4">
         <h2 className="text-xl font-bold">Session Complete</h2>
         <p className="text-muted-foreground">No more cards to review today.</p>
         <button
@@ -40,7 +40,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
   }
 
   return (
-    <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto">
+    <div className="min-h-dvh flex flex-col p-4 max-w-md mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <button
