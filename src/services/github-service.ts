@@ -1,7 +1,21 @@
 import { type Card } from 'ts-fsrs';
+import pDebounce from 'p-debounce';
 import { github, parseRepoUrl, type GitHubConfig } from './github';
 import { settingsCollection, defaultSettings } from '../hooks/useSettings';
 import type { FlashCard } from './collections';
+
+const BATCH_DELAY_MS = 5000;
+
+// Accumulator: pending card updates per deck
+const pendingUpdates = new Map<string, Map<string, FlashCard>>();
+
+// Get or create pending updates map for a deck
+function getPendingUpdates(deckName: string): Map<string, FlashCard> {
+  if (!pendingUpdates.has(deckName)) {
+    pendingUpdates.set(deckName, new Map());
+  }
+  return pendingUpdates.get(deckName)!;
+}
 
 // Get config from settings collection
 function getConfig(): GitHubConfig {
@@ -47,6 +61,63 @@ function serializeCardState(card: Card): CardStateJSON {
     state: card.state,
     last_review: card.last_review?.toISOString(),
   };
+}
+
+// Core write function (not debounced)
+async function writeCardsToGitHub(deckName: string): Promise<void> {
+  const pending = pendingUpdates.get(deckName);
+  if (!pending || pending.size === 0) return;
+
+  const cards = Array.from(pending.values());
+  pending.clear();
+
+  const config = getConfig();
+
+  let existing: Record<string, FlashCardJSON> = {};
+  let sha: string | undefined;
+
+  try {
+    const result = await github.readFile(config, `${deckName}/cards.json`);
+    existing = JSON.parse(result.content);
+    sha = result.sha;
+  } catch {
+    // file doesn't exist yet
+  }
+
+  for (const card of cards) {
+    existing[card.source] = {
+      source: card.source,
+      translation: card.translation,
+      example: card.example,
+      notes: card.notes,
+      tags: card.tags,
+      created: card.created,
+      reversible: card.reversible,
+      state: card.state ? serializeCardState(card.state) : null,
+      reverseState: card.reverseState ? serializeCardState(card.reverseState) : null,
+    };
+  }
+
+  await github.writeFile(
+    config,
+    `${deckName}/cards.json`,
+    JSON.stringify(existing, null, 2),
+    sha,
+    `review: ${deckName} - ${cards.map(c => c.source).join(', ')}`,
+  );
+}
+
+// Debounced flush per deck (created lazily)
+const debouncedFlushers = new Map<string, () => Promise<void>>();
+
+function getDebouncedFlush(deckName: string): () => Promise<void> {
+  if (!debouncedFlushers.has(deckName)) {
+    debouncedFlushers.set(
+      deckName,
+      pDebounce(() => writeCardsToGitHub(deckName), BATCH_DELAY_MS)
+    );
+  }
+    return debouncedFlushers.get(deckName)!;
 }
 
 export const githubService = {
@@ -105,39 +176,10 @@ export const githubService = {
   },
 
   async updateCards(deckName: string, cards: FlashCard[]): Promise<void> {
-    const config = getConfig();
-
-    let existing: Record<string, FlashCardJSON> = {};
-    let sha: string | undefined;
-
-    try {
-      const result = await github.readFile(config, `${deckName}/cards.json`);
-      existing = JSON.parse(result.content);
-      sha = result.sha;
-    } catch {
-      // file doesn't exist yet
-    }
-
+    const pending = getPendingUpdates(deckName);
     for (const card of cards) {
-      existing[card.source] = {
-        source: card.source,
-        translation: card.translation,
-        example: card.example,
-        notes: card.notes,
-        tags: card.tags,
-        created: card.created,
-        reversible: card.reversible,
-        state: card.state ? serializeCardState(card.state) : null,
-        reverseState: card.reverseState ? serializeCardState(card.reverseState) : null,
-      };
+      pending.set(card.source, card); // Latest update wins
     }
-
-    await github.writeFile(
-      config,
-      `${deckName}/cards.json`,
-      JSON.stringify(existing, null, 2),
-      sha,
-      `review: ${deckName} - ${cards.map(c => c.source).join(', ')}`,
-    );
+    return getDebouncedFlush(deckName)();
   },
 };
