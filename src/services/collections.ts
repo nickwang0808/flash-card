@@ -1,9 +1,25 @@
 import { QueryClient } from '@tanstack/query-core';
-import { createCollection, type Collection } from '@tanstack/db';
+import { createCollection, localStorageCollectionOptions, type Collection } from '@tanstack/db';
 import { queryCollectionOptions } from '@tanstack/query-db-collection';
 import { type Card } from 'ts-fsrs';
 import { github } from './github';
 import { githubService } from './github-service';
+
+// Stored version of ReviewLog with serialized dates
+export interface StoredReviewLog {
+  id: string;                  // cardSource:direction:timestamp
+  cardSource: string;
+  isReverse: boolean;
+  rating: number;              // Rating enum value
+  state: number;               // State enum value
+  due: string;                 // ISO date
+  stability: number;
+  difficulty: number;
+  elapsed_days: number;
+  last_elapsed_days: number;
+  scheduled_days: number;
+  review: string;              // ISO date
+}
 
 // FlashCard: content + FSRS state in one structure
 export interface FlashCard {
@@ -92,3 +108,11 @@ export async function getCommits(limit: number = 10) {
   const config = githubService.getConfig();
   return github.getCommits(config, limit);
 }
+
+// ReviewLogs collection for undo functionality
+export const reviewLogsCollection = createCollection<StoredReviewLog, string>(
+  localStorageCollectionOptions({
+    storageKey: 'flash-card-review-logs',
+    getKey: (item) => item.id,
+  }),
+);

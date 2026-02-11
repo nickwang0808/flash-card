@@ -8,7 +8,7 @@ interface Props {
 }
 
 export function ReviewScreen({ deck, onBack }: Props) {
-  const { currentCard, remaining, rate, suspend, isLoading } = useDeck(deck);
+  const { currentCard, remaining, rate, suspend, undo, canUndo, isLoading } = useDeck(deck);
   const [answerRevealed, setAnswerRevealed] = useState(false);
 
   function handleRate(rating: Grade) {
@@ -50,6 +50,15 @@ export function ReviewScreen({ deck, onBack }: Props) {
           End Session
         </button>
         <div className="flex items-center gap-3">
+          {canUndo && (
+            <button
+              onClick={undo}
+              className="text-sm text-muted-foreground hover:text-foreground"
+              title="Undo last rating"
+            >
+              Undo
+            </button>
+          )}
           <button
             onClick={suspend}
             className="text-sm text-muted-foreground hover:text-foreground"

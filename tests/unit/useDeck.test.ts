@@ -493,7 +493,7 @@ describe('computeNewState', () => {
 
   describe('new card (null state)', () => {
     it('creates state from null', () => {
-      const newState = computeNewState(null, Rating.Good, now);
+      const { card: newState } = computeNewState(null, Rating.Good, now);
 
       expect(newState.reps).toBe(1);
       expect(newState.due.getTime()).toBeGreaterThan(now.getTime());
@@ -503,7 +503,7 @@ describe('computeNewState', () => {
       const ratings: Grade[] = [Rating.Again, Rating.Hard, Rating.Good, Rating.Easy];
 
       for (const rating of ratings) {
-        const state = computeNewState(null, rating, now);
+        const { card: state } = computeNewState(null, rating, now);
         expect(state.reps).toBeGreaterThanOrEqual(0);
         expect(state.due).toBeInstanceOf(Date);
       }
@@ -512,10 +512,10 @@ describe('computeNewState', () => {
 
   describe('rating intervals', () => {
     it('Again produces shortest interval', () => {
-      const again = computeNewState(null, Rating.Again, now);
-      const hard = computeNewState(null, Rating.Hard, now);
-      const good = computeNewState(null, Rating.Good, now);
-      const easy = computeNewState(null, Rating.Easy, now);
+      const { card: again } = computeNewState(null, Rating.Again, now);
+      const { card: hard } = computeNewState(null, Rating.Hard, now);
+      const { card: good } = computeNewState(null, Rating.Good, now);
+      const { card: easy } = computeNewState(null, Rating.Easy, now);
 
       expect(again.due.getTime()).toBeLessThanOrEqual(hard.due.getTime());
       expect(hard.due.getTime()).toBeLessThanOrEqual(good.due.getTime());
@@ -523,21 +523,21 @@ describe('computeNewState', () => {
     });
 
     it('Easy produces longest interval', () => {
-      const again = computeNewState(null, Rating.Again, now);
-      const easy = computeNewState(null, Rating.Easy, now);
+      const { card: again } = computeNewState(null, Rating.Again, now);
+      const { card: easy } = computeNewState(null, Rating.Easy, now);
 
       expect(easy.due.getTime()).toBeGreaterThan(again.due.getTime());
     });
 
     it('Again on new card is due very soon (within minutes)', () => {
-      const state = computeNewState(null, Rating.Again, now);
+      const { card: state } = computeNewState(null, Rating.Again, now);
       const diffMinutes = (state.due.getTime() - now.getTime()) / (1000 * 60);
 
       expect(diffMinutes).toBeLessThan(60); // Within an hour
     });
 
     it('Easy on new card is due in days', () => {
-      const state = computeNewState(null, Rating.Easy, now);
+      const { card: state } = computeNewState(null, Rating.Easy, now);
       const diffDays = (state.due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
 
       expect(diffDays).toBeGreaterThan(1);
@@ -546,24 +546,24 @@ describe('computeNewState', () => {
 
   describe('updating existing state', () => {
     it('increments reps on each review', () => {
-      let state = computeNewState(null, Rating.Good, now);
+      let { card: state } = computeNewState(null, Rating.Good, now);
       expect(state.reps).toBe(1);
 
-      state = computeNewState(state, Rating.Good, new Date(state.due.getTime() + 1000));
+      ({ card: state } = computeNewState(state, Rating.Good, new Date(state.due.getTime() + 1000)));
       expect(state.reps).toBe(2);
 
-      state = computeNewState(state, Rating.Good, new Date(state.due.getTime() + 1000));
+      ({ card: state } = computeNewState(state, Rating.Good, new Date(state.due.getTime() + 1000)));
       expect(state.reps).toBe(3);
     });
 
     it('maintains learning progress with Good ratings', () => {
-      let state = computeNewState(null, Rating.Good, now);
+      let { card: state } = computeNewState(null, Rating.Good, now);
       const intervals: number[] = [];
 
       for (let i = 0; i < 5; i++) {
         const nextReview = new Date(state.due.getTime() + 1000);
         const prevDue = state.due;
-        state = computeNewState(state, Rating.Good, nextReview);
+        ({ card: state } = computeNewState(state, Rating.Good, nextReview));
         intervals.push(state.due.getTime() - prevDue.getTime());
       }
 
@@ -575,7 +575,7 @@ describe('computeNewState', () => {
 
   describe('state validity', () => {
     it('returns valid Card object with all required fields', () => {
-      const state = computeNewState(null, Rating.Good, now);
+      const { card: state } = computeNewState(null, Rating.Good, now);
 
       // Verify all FSRS Card fields are present and valid
       expect(state.due).toBeInstanceOf(Date);
@@ -592,7 +592,7 @@ describe('computeNewState', () => {
       const ratings: Grade[] = [Rating.Again, Rating.Hard, Rating.Good, Rating.Easy];
 
       for (const rating of ratings) {
-        const state = computeNewState(null, rating, now);
+        const { card: state } = computeNewState(null, rating, now);
         expect(state.due).toBeInstanceOf(Date);
         expect(isNaN(state.due.getTime())).toBe(false);
       }
@@ -601,14 +601,14 @@ describe('computeNewState', () => {
 
   describe('Hard and Good behavior on new cards', () => {
     it('Good on new card may still be due today (learning phase)', () => {
-      const state = computeNewState(null, Rating.Good, now);
+      const { card: state } = computeNewState(null, Rating.Good, now);
       // FSRS Good on new card typically schedules for ~10 minutes, still within today
       // This is the expected behavior - card stays in session for learning
       expect(state.reps).toBe(1);
     });
 
     it('Hard on new card schedules for very short interval', () => {
-      const state = computeNewState(null, Rating.Hard, now);
+      const { card: state } = computeNewState(null, Rating.Hard, now);
       const diffMinutes = (state.due.getTime() - now.getTime()) / (1000 * 60);
 
       // Hard should schedule for a short interval (typically ~5 minutes)
@@ -625,13 +625,14 @@ describe('rateCard', () => {
   it('calls collection.update with correct key', () => {
     const mockUpdate = vi.fn();
     const mockCollection = { update: mockUpdate } as any;
+    const mockLogsCollection = { insert: vi.fn() } as any;
 
     const card: StudyItem = {
       ...createFlashCard('hello'),
       isReverse: false,
     };
 
-    rateCard(mockCollection, card, Rating.Good);
+    rateCard(mockCollection, mockLogsCollection, card, Rating.Good);
 
     expect(mockUpdate).toHaveBeenCalledWith('hello', expect.any(Function));
   });
@@ -639,13 +640,14 @@ describe('rateCard', () => {
   it('updates forward state for non-reverse card', () => {
     const mockUpdate = vi.fn();
     const mockCollection = { update: mockUpdate } as any;
+    const mockLogsCollection = { insert: vi.fn() } as any;
 
     const card: StudyItem = {
       ...createFlashCard('hello'),
       isReverse: false,
     };
 
-    rateCard(mockCollection, card, Rating.Good);
+    rateCard(mockCollection, mockLogsCollection, card, Rating.Good);
 
     // Get the updater function and test it
     const updater = mockUpdate.mock.calls[0][1];
@@ -659,13 +661,14 @@ describe('rateCard', () => {
   it('updates reverse state for reverse card', () => {
     const mockUpdate = vi.fn();
     const mockCollection = { update: mockUpdate } as any;
+    const mockLogsCollection = { insert: vi.fn() } as any;
 
     const card: StudyItem = {
       ...createFlashCard('hello', { reversible: true }),
       isReverse: true,
     };
 
-    rateCard(mockCollection, card, Rating.Good);
+    rateCard(mockCollection, mockLogsCollection, card, Rating.Good);
 
     const updater = mockUpdate.mock.calls[0][1];
     const draft = { state: null, reverseState: null };
@@ -673,6 +676,26 @@ describe('rateCard', () => {
 
     expect(draft.state).toBeNull();
     expect(draft.reverseState).not.toBeNull();
+  });
+
+  it('inserts a review log when rating', () => {
+    const mockUpdate = vi.fn();
+    const mockCollection = { update: mockUpdate } as any;
+    const mockInsert = vi.fn();
+    const mockLogsCollection = { insert: mockInsert } as any;
+
+    const card: StudyItem = {
+      ...createFlashCard('hello'),
+      isReverse: false,
+    };
+
+    rateCard(mockCollection, mockLogsCollection, card, Rating.Good);
+
+    expect(mockInsert).toHaveBeenCalledTimes(1);
+    const insertedLog = mockInsert.mock.calls[0][0];
+    expect(insertedLog.cardSource).toBe('hello');
+    expect(insertedLog.isReverse).toBe(false);
+    expect(insertedLog.rating).toBe(Rating.Good);
   });
 });
 
@@ -687,6 +710,7 @@ vi.mock('@tanstack/react-db', () => ({
 
 vi.mock('../../src/services/collections', () => ({
   getCardsCollection: vi.fn(),
+  reviewLogsCollection: { insert: vi.fn(), delete: vi.fn() },
 }));
 
 vi.mock('../../src/hooks/useSettings', () => ({
@@ -701,6 +725,19 @@ describe('useDeck hook', () => {
   let mockCollection: { update: ReturnType<typeof vi.fn> };
   let mockCards: FlashCard[];
   const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
+
+  // Helper to set up useLiveQuery mock for both cards and logs
+  function setupQueryMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
+    vi.mocked(useLiveQuery).mockImplementation(((_queryFn: unknown, deps: unknown[] | undefined) => {
+      // Distinguish between cards query and logs query by deps
+      if (deps && deps.length > 0 && typeof deps[0] === 'string') {
+        // Cards query has deck name in deps
+        return { data: cards, isLoading } as any;
+      }
+      // Logs query has empty deps
+      return { data: logs, isLoading } as any;
+    }) as any);
+  }
 
   beforeEach(() => {
     mockCollection = { update: vi.fn() };
@@ -723,10 +760,7 @@ describe('useDeck hook', () => {
       update: vi.fn(),
       clear: vi.fn(),
     } as any);
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: mockCards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(mockCards);
   });
 
   afterEach(() => {
@@ -735,10 +769,7 @@ describe('useDeck hook', () => {
 
   describe('loading state', () => {
     it('returns isLoading true when query is loading', () => {
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: undefined,
-        isLoading: true,
-      } as any);
+      setupQueryMock([], [], true);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -769,10 +800,7 @@ describe('useDeck hook', () => {
         createFlashCard('due-card', { state: createPastState(1) }),
         createFlashCard('new-card'),
       ];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -787,10 +815,7 @@ describe('useDeck hook', () => {
         createFlashCard('new-b'),
         createFlashCard('new-c'),
       ];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -805,10 +830,7 @@ describe('useDeck hook', () => {
   describe('currentCard display data', () => {
     it('sets front/back correctly for forward direction', () => {
       mockCards = [createFlashCard('hola', { translation: 'hello' })];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -832,10 +854,7 @@ describe('useDeck hook', () => {
           reverseState: null, // reverse is new
         }),
       ];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -858,10 +877,7 @@ describe('useDeck hook', () => {
           notes: 'Common greeting',
         }),
       ];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -871,10 +887,7 @@ describe('useDeck hook', () => {
 
     it('marks new cards as isNew true', () => {
       mockCards = [createFlashCard('new-card')];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -883,10 +896,7 @@ describe('useDeck hook', () => {
 
     it('marks reviewed cards as isNew false', () => {
       mockCards = [createFlashCard('reviewed', { state: createPastState(1) })];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -902,10 +912,7 @@ describe('useDeck hook', () => {
           reverseState: createPastState(1), // reverse was reviewed and is due
         }),
       ];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -921,10 +928,7 @@ describe('useDeck hook', () => {
           reverseState: null, // reverse never reviewed
         }),
       ];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -940,10 +944,7 @@ describe('useDeck hook', () => {
         createFlashCard('new-2'),
         createFlashCard('due-1', { state: createPastState(1) }),
       ];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -952,10 +953,7 @@ describe('useDeck hook', () => {
 
     it('counts both directions of reversible cards', () => {
       mockCards = [createFlashCard('reversible', { reversible: true })];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -976,10 +974,7 @@ describe('useDeck hook', () => {
         createFlashCard('three'),
         createFlashCard('four'),
       ];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -990,10 +985,7 @@ describe('useDeck hook', () => {
   describe('rate function', () => {
     it('calls collection.update when rating', () => {
       mockCards = [createFlashCard('test-card')];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -1009,10 +1001,7 @@ describe('useDeck hook', () => {
 
     it('does nothing when no current card', () => {
       // Empty deck
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: [],
-        isLoading: false,
-      } as any);
+      setupQueryMock([]);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -1025,10 +1014,7 @@ describe('useDeck hook', () => {
 
     it('updates forward state for non-reverse card', () => {
       mockCards = [createFlashCard('test-card')];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -1053,10 +1039,7 @@ describe('useDeck hook', () => {
           reverseState: null, // reverse is new (will be shown first as new)
         }),
       ];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -1092,10 +1075,7 @@ describe('useDeck hook', () => {
         createFlashCard('four'),
         createFlashCard('five'),
       ];
-      vi.mocked(useLiveQuery).mockReturnValue({
-        data: mockCards,
-        isLoading: false,
-      } as any);
+      setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -1127,6 +1107,19 @@ describe('Study Session Flow', () => {
   let mockCollection: { update: ReturnType<typeof vi.fn> };
   const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
 
+  // Helper to set up useLiveQuery mock for both cards and logs
+  function setupQueryMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
+    vi.mocked(useLiveQuery).mockImplementation(((_queryFn: unknown, deps: unknown[] | undefined) => {
+      // Distinguish between cards query and logs query by deps
+      if (deps && deps.length > 0 && typeof deps[0] === 'string') {
+        // Cards query has deck name in deps
+        return { data: cards, isLoading } as any;
+      }
+      // Logs query has empty deps
+      return { data: logs, isLoading } as any;
+    }) as any);
+  }
+
   beforeEach(() => {
     mockCollection = { update: vi.fn() };
 
@@ -1157,10 +1150,7 @@ describe('Study Session Flow', () => {
     // Start with 2 new cards
     let cards = [createFlashCard('card-a'), createFlashCard('card-b')];
 
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: cards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
@@ -1183,10 +1173,7 @@ describe('Study Session Flow', () => {
       { ...createFlashCard('card-a'), state: card1Draft.state },
       createFlashCard('card-b'),
     ];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: cards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(cards);
 
     rerender();
 
@@ -1208,10 +1195,7 @@ describe('Study Session Flow', () => {
       { ...createFlashCard('card-a'), state: card1Draft.state },
       { ...createFlashCard('card-b'), state: card2Draft.state },
     ];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: cards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(cards);
 
     rerender();
 
@@ -1222,10 +1206,7 @@ describe('Study Session Flow', () => {
 
   it('Again keeps card in session (due immediately)', () => {
     const cards = [createFlashCard('test-card')];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: cards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
@@ -1243,10 +1224,7 @@ describe('Study Session Flow', () => {
 
     // Card should be due immediately/very soon (within today)
     const updatedCards = [{ ...createFlashCard('test-card'), state: draft.state }];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: updatedCards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(updatedCards);
 
     rerender();
 
@@ -1258,10 +1236,7 @@ describe('Study Session Flow', () => {
 
   it('Easy removes card from session (scheduled for future)', () => {
     const cards = [createFlashCard('test-card')];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: cards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
@@ -1284,10 +1259,7 @@ describe('Study Session Flow', () => {
 
     // Update mock with new state
     const updatedCards = [{ ...createFlashCard('test-card'), state: draft.state }];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: updatedCards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(updatedCards);
 
     rerender();
 
@@ -1298,10 +1270,7 @@ describe('Study Session Flow', () => {
 
   it('handles reversible card session with both directions', () => {
     const cards = [createFlashCard('gato', { translation: 'cat', reversible: true })];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: cards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
@@ -1327,10 +1296,7 @@ describe('Study Session Flow', () => {
         reverseState: null, // still new
       },
     ];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: updatedCards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(updatedCards);
 
     rerender();
 
@@ -1343,10 +1309,7 @@ describe('Study Session Flow', () => {
 
   it('Good on new card keeps it in session (learning phase)', () => {
     const cards = [createFlashCard('test-card')];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: cards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
@@ -1369,10 +1332,7 @@ describe('Study Session Flow', () => {
     endOfToday.setHours(23, 59, 59, 999);
 
     const updatedCards = [{ ...createFlashCard('test-card'), state: draft.state }];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: updatedCards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(updatedCards);
 
     rerender();
 
@@ -1383,10 +1343,7 @@ describe('Study Session Flow', () => {
 
   it('multiple ratings update state correctly', () => {
     let cards = [createFlashCard('test-card')];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: cards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
@@ -1400,10 +1357,7 @@ describe('Study Session Flow', () => {
     updater1(draft1);
 
     cards = [{ ...createFlashCard('test-card'), state: draft1.state }];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: cards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(cards);
 
     rerender();
 
@@ -1424,10 +1378,7 @@ describe('Study Session Flow', () => {
     expect(draft2.state!.reps).toBe(2);
 
     cards = [{ ...createFlashCard('test-card'), state: draft2.state }];
-    vi.mocked(useLiveQuery).mockReturnValue({
-      data: cards,
-      isLoading: false,
-    } as any);
+    setupQueryMock(cards);
 
     rerender();
 

@@ -73,4 +73,47 @@ test.describe('Review session', () => {
 
     await expect(page.getByRole('heading', { name: 'Decks' })).toBeVisible();
   });
+
+  test('Undo button is not visible before rating a card', async ({ page }) => {
+    await page.getByText('spanish-vocab').click();
+
+    await expect(page.getByText('6 remaining')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Undo' })).not.toBeVisible();
+  });
+
+  test('Undo reverts a card rated Again back to new', async ({ page }) => {
+    await page.getByText('spanish-vocab').click();
+
+    await expect(page.getByText('6 remaining')).toBeVisible();
+
+    // Remember the front text of the first card
+    const frontText = await page.locator('p.text-3xl').textContent();
+
+    // Rate as Again — card stays in session but moves behind new items
+    await page.getByRole('button', { name: 'Show Answer' }).click();
+    await page.getByRole('button', { name: 'Again' }).click();
+
+    // Still 6 remaining (Again keeps the card)
+    await expect(page.getByText('6 remaining')).toBeVisible();
+
+    // Rate the remaining 5 new cards as Easy to clear them out
+    for (let i = 0; i < 5; i++) {
+      await page.getByRole('button', { name: 'Show Answer' }).click();
+      await page.getByRole('button', { name: 'Easy' }).click();
+    }
+
+    // Now only the Again card remains — it should reappear
+    await expect(page.getByText('1 remaining')).toBeVisible();
+    await expect(page.locator('p.text-3xl')).toHaveText(frontText!);
+
+    // Undo button should be visible since this card has a review log
+    await expect(page.getByRole('button', { name: 'Undo' })).toBeVisible();
+    await page.getByRole('button', { name: 'Undo' }).click();
+
+    // Card is still shown (undo reverts its FSRS state)
+    await expect(page.locator('p.text-3xl')).toHaveText(frontText!);
+
+    // Undo button should disappear since the log was removed
+    await expect(page.getByRole('button', { name: 'Undo' })).not.toBeVisible();
+  });
 });
