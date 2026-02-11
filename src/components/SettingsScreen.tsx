@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useSettings } from '../hooks/useSettings';
+import { useAuth } from '../hooks/useAuth';
 import { destroyDatabase } from '../services/rxdb';
 
 interface Props {
@@ -9,13 +10,13 @@ interface Props {
 
 export function SettingsScreen({ onBack, onLogout }: Props) {
   const { settings, update, clear } = useSettings();
+  const { signOut } = useAuth();
   const [editingRepo, setEditingRepo] = useState(false);
-  const [editingToken, setEditingToken] = useState(false);
   const [repoUrl, setRepoUrl] = useState(settings.repoUrl);
-  const [token, setToken] = useState('');
 
   async function handleLogout() {
     if (!confirm('Clear all local data and log out?')) return;
+    await signOut();
     localStorage.removeItem('flash-card-pending-reviews');
     localStorage.removeItem('flash-card-new-count');
     localStorage.removeItem('flash-card-last-sync');
@@ -81,53 +82,12 @@ export function SettingsScreen({ onBack, onLogout }: Props) {
           )}
         </div>
 
-        {/* Personal Access Token */}
+        {/* GitHub Auth */}
         <div>
-          <label className="block text-sm font-medium mb-1">Personal Access Token</label>
-          {editingToken ? (
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="ghp_xxxxxxxxxxxx"
-                className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
-              />
-              <button
-                onClick={() => {
-                  if (token) {
-                    update({ token });
-                  }
-                  setToken('');
-                  setEditingToken(false);
-                }}
-                className="rounded-md bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => {
-                  setToken('');
-                  setEditingToken(false);
-                }}
-                className="rounded-md border border-input px-3 py-2 text-sm font-medium hover:bg-accent"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                {settings.token ? '••••••••••••••••' : 'Not configured'}
-              </p>
-              <button
-                onClick={() => setEditingToken(true)}
-                className="text-sm text-primary hover:underline ml-2"
-              >
-                Edit
-              </button>
-            </div>
-          )}
+          <label className="block text-sm font-medium mb-1">GitHub</label>
+          <p className="text-sm text-muted-foreground">
+            Connected via GitHub OAuth
+          </p>
         </div>
 
         {/* New cards per day */}

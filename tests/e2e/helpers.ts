@@ -78,8 +78,9 @@ export async function wipeAppData(page: Page) {
 }
 
 /**
- * Connects to the real GitHub test repo via the auth screen,
- * ending up on the deck list with seeded data.
+ * Connects to the real GitHub test repo by injecting settings directly
+ * into localStorage (bypasses OAuth screen), ending up on the deck list
+ * with seeded data.
  * Optionally uses a specific branch for test isolation.
  */
 export async function cloneTestRepo(page: Page, branch?: string) {
@@ -90,7 +91,6 @@ export async function cloneTestRepo(page: Page, branch?: string) {
   // Clear any previous state
   await page.evaluate(async () => {
     localStorage.clear();
-    // Clear IndexedDB for offline-transactions
     const dbs = await indexedDB.databases();
     for (const db of dbs) {
       if (db.name) {
@@ -98,38 +98,32 @@ export async function cloneTestRepo(page: Page, branch?: string) {
       }
     }
   });
+
+  // Inject settings directly into localStorage (TanStack DB format)
+  await page.evaluate(
+    ({ repoUrl, token, branchName }) => {
+      const settings: Record<string, unknown> = {
+        's:settings': {
+          versionKey: crypto.randomUUID(),
+          data: {
+            id: 'settings',
+            repoUrl,
+            token,
+            newCardsPerDay: 10,
+            reviewOrder: 'random',
+            theme: 'system',
+            ...(branchName ? { branch: branchName } : {}),
+          },
+        },
+      };
+      localStorage.setItem('flash-card-settings', JSON.stringify(settings));
+    },
+    { repoUrl: E2E_REPO_URL, token: E2E_TOKEN, branchName: branch },
+  );
+
+  // Reload to pick up injected settings and trigger initial sync
   await page.reload();
-  await page.waitForLoadState('networkidle');
-
-  // Should be on auth screen
-  await page.getByPlaceholder(/github.com/i).fill(E2E_REPO_URL);
-  await page.getByPlaceholder(/ghp_/).fill(E2E_TOKEN);
-  await page.getByRole('button', { name: /connect/i }).click();
-
-  // Wait for API fetch to complete and deck list to appear
   await page.waitForSelector('text=spanish-vocab', { timeout: 30000 });
-
-  // If a branch is specified, update settings to use it
-  // TanStack DB localStorage format: { "s:settings": { versionKey: "...", data: {...} } }
-  if (branch) {
-    await page.evaluate((branchName) => {
-      const settingsKey = 'flash-card-settings';
-      const raw = localStorage.getItem(settingsKey);
-      if (raw) {
-        const stored = JSON.parse(raw);
-        // TanStack DB stores as { "s:settings": { versionKey, data } }
-        const key = 's:settings';
-        if (stored[key] && stored[key].data) {
-          stored[key].data.branch = branchName;
-          stored[key].versionKey = crypto.randomUUID();
-          localStorage.setItem(settingsKey, JSON.stringify(stored));
-        }
-      }
-    }, branch);
-    // Reload to pick up the branch setting
-    await page.reload();
-    await page.waitForSelector('text=spanish-vocab', { timeout: 30000 });
-  }
 }
 
 /**

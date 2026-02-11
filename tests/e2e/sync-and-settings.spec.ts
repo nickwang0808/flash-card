@@ -158,7 +158,7 @@ test.describe('Settings screen', () => {
     await page.getByRole('button', { name: 'Logout' }).click();
 
     await expect(page.getByRole('heading', { name: 'Flash Cards' })).toBeVisible();
-    await expect(page.getByPlaceholder(/github.com/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /sign in with github/i })).toBeVisible();
 
     const hasSettings = await page.evaluate(() =>
       localStorage.getItem('flash-card-settings'),

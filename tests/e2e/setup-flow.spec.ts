@@ -19,9 +19,7 @@ test.describe('Setup flow', () => {
 
     await expect(page.getByRole('heading', { name: 'Flash Cards' })).toBeVisible();
     await expect(page.getByText('Git-backed spaced repetition')).toBeVisible();
-    await expect(page.getByPlaceholder(/github.com/i)).toBeVisible();
-    await expect(page.getByPlaceholder(/ghp_/)).toBeVisible();
-    await expect(page.getByRole('button', { name: /connect/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /sign in with github/i })).toBeVisible();
   });
 
   test('connecting to test repo shows deck list', async ({ page }) => {
