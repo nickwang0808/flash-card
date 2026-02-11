@@ -56,8 +56,11 @@ export const github = {
       throw new Error(`Not a file: ${path}`);
     }
 
-    // Decode base64 content from the standard getContent response
-    const text = atob(meta.content!.replace(/\n/g, ''));
+    // Decode base64 content with proper UTF-8 handling
+    // atob() only handles Latin-1, so we convert to bytes then decode as UTF-8
+    const binary = atob(meta.content!.replace(/\n/g, ''));
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    const text = new TextDecoder().decode(bytes);
     return { content: text, sha: meta.sha };
   },
 
