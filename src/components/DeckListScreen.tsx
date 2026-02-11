@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLiveQuery } from '@tanstack/react-db';
-import { decksCollection } from '../services/collections';
+import { getDecksCollection } from '../services/collections';
 import { useDeck } from '../hooks/useDeck';
 
 interface Props {
@@ -38,6 +38,7 @@ export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
   const [online, setOnline] = useState(navigator.onLine);
 
   // Get deck names from decks collection
+  const decksCollection = getDecksCollection();
   const { data: decks, isLoading } = useLiveQuery(
     (q) => q.from({ decks: decksCollection }),
     [],

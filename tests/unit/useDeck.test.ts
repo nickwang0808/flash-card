@@ -25,9 +25,13 @@ function createFlashCard(
     reversible?: boolean;
     example?: string;
     notes?: string;
+    deckName?: string;
   } = {}
 ): FlashCard {
+  const deckName = opts.deckName ?? 'test-deck';
   return {
+    id: `${deckName}|${source}`,
+    deckName,
     source,
     translation: opts.translation ?? `${source}-translation`,
     tags: [],
@@ -622,7 +626,7 @@ describe('computeNewState', () => {
 // ============================================================================
 
 describe('rateCard', () => {
-  it('calls collection.update with correct key', () => {
+  it('calls collection.update with correct composite key', () => {
     const mockUpdate = vi.fn();
     const mockCollection = { update: mockUpdate } as any;
     const mockLogsCollection = { insert: vi.fn() } as any;
@@ -634,7 +638,7 @@ describe('rateCard', () => {
 
     rateCard(mockCollection, mockLogsCollection, card, Rating.Good);
 
-    expect(mockUpdate).toHaveBeenCalledWith('hello', expect.any(Function));
+    expect(mockUpdate).toHaveBeenCalledWith('test-deck|hello', expect.any(Function));
   });
 
   it('updates forward state for non-reverse card', () => {
@@ -711,6 +715,14 @@ vi.mock('@tanstack/react-db', () => ({
 vi.mock('../../src/services/collections', () => ({
   getCardsCollection: vi.fn(),
   reviewLogsCollection: { insert: vi.fn(), delete: vi.fn() },
+}));
+
+vi.mock('../../src/services/replication', () => ({
+  parseCardState: vi.fn((json: any) => ({
+    ...json,
+    due: new Date(json.due),
+    last_review: json.last_review ? new Date(json.last_review) : undefined,
+  })),
 }));
 
 vi.mock('../../src/hooks/useSettings', () => ({
@@ -994,7 +1006,7 @@ describe('useDeck hook', () => {
       });
 
       expect(mockCollection.update).toHaveBeenCalledWith(
-        'test-card',
+        'test-deck|test-card',
         expect.any(Function)
       );
     });
@@ -1085,10 +1097,10 @@ describe('useDeck hook', () => {
   });
 
   describe('deck name handling', () => {
-    it('passes deck name to getCardsCollection', () => {
+    it('calls getCardsCollection without parameters', () => {
       renderHook(() => useDeck('my-spanish-deck'));
 
-      expect(getCardsCollection).toHaveBeenCalledWith('my-spanish-deck');
+      expect(getCardsCollection).toHaveBeenCalledWith();
     });
 
     it('passes deck name to useLiveQuery dependencies', () => {

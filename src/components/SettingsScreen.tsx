@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSettings } from '../hooks/useSettings';
-import { queryClient } from '../services/collections';
+import { destroyDatabase } from '../services/rxdb';
 
 interface Props {
   onBack: () => void;
@@ -14,12 +14,12 @@ export function SettingsScreen({ onBack, onLogout }: Props) {
   const [repoUrl, setRepoUrl] = useState(settings.repoUrl);
   const [token, setToken] = useState('');
 
-  function handleLogout() {
+  async function handleLogout() {
     if (!confirm('Clear all local data and log out?')) return;
     localStorage.removeItem('flash-card-pending-reviews');
     localStorage.removeItem('flash-card-new-count');
     localStorage.removeItem('flash-card-last-sync');
-    queryClient.clear();
+    await destroyDatabase();
     clear();
     onLogout();
   }

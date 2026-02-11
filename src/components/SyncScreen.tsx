@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getCommits, refreshData } from '../services/collections';
+import { getCommits } from '../services/collections';
+import { runSync } from '../services/replication';
 
 interface Props {
   onBack: () => void;
@@ -32,12 +33,12 @@ export function SyncScreen({ onBack }: Props) {
     }
   }
 
-  async function handleRefresh() {
+  async function handleSync() {
     setLoading(true);
-    setStatus('Refreshing...');
+    setStatus('Syncing...');
     try {
-      await refreshData();
-      setStatus('Refreshed successfully');
+      await runSync();
+      setStatus('Synced successfully');
       await loadInfo();
     } catch (e: any) {
       setStatus(`Error: ${e.message}`);
@@ -62,7 +63,7 @@ export function SyncScreen({ onBack }: Props) {
           <span className="text-sm">{online ? 'Online' : 'Offline'}</span>
         </div>
         <p className="text-xs text-muted-foreground">
-          Reviews sync to GitHub automatically. Use Refresh to pull latest data from GitHub.
+          Reviews are saved locally. Use Sync to push changes to GitHub and pull the latest data.
         </p>
         {status && (
           <p className="text-sm text-muted-foreground">{status}</p>
@@ -72,11 +73,11 @@ export function SyncScreen({ onBack }: Props) {
       {/* Actions */}
       <div className="flex gap-2 mb-8">
         <button
-          onClick={handleRefresh}
+          onClick={handleSync}
           disabled={loading || !online}
           className="flex-1 rounded-md bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
         >
-          Refresh
+          Sync
         </button>
       </div>
 

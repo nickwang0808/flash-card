@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { fsrs, createEmptyCard, type Grade, type Card, type ReviewLog, type Rating, type State } from 'ts-fsrs';
 import { getCardsCollection, reviewLogsCollection, type FlashCard, type StoredReviewLog } from '../services/collections';
 import { useSettings } from './useSettings';
+import { parseCardState } from '../services/replication';
 import type { Collection } from '@tanstack/db';
 
 // localStorage helpers for tracking introduced new cards
@@ -58,6 +59,16 @@ export interface CurrentCard {
   notes?: string;
   isReverse: boolean;
   isNew: boolean;
+}
+
+// Deserialize FSRS Card dates from ISO strings to Date objects
+// RxDB stores JSON, so state.due and state.last_review come back as strings
+function deserializeCardDates(card: FlashCard): FlashCard {
+  return {
+    ...card,
+    state: card.state ? parseCardState(card.state as any) : null,
+    reverseState: card.reverseState ? parseCardState(card.reverseState as any) : null,
+  };
 }
 
 // Pure function to compute study items from cards
@@ -155,8 +166,8 @@ export function rateCard(
   };
   logsCollection.insert(storedLog);
 
-  // Update card
-  cardsCollection.update(card.source, (draft) => {
+  // Update card using composite key
+  cardsCollection.update(card.id, (draft) => {
     if (card.isReverse) {
       draft.reverseState = newState;
     } else {
@@ -172,9 +183,9 @@ export function useDeck(deckName: string) {
   const endOfDay = new Date();
   endOfDay.setHours(23, 59, 59, 999);
 
-  const collection = getCardsCollection(deckName);
-  const { data: cards, isLoading: cardsLoading } = useLiveQuery(
-    (q) => q.from({ cards: collection }),
+  const collection = getCardsCollection();
+  const { data: rawCards, isLoading: cardsLoading } = useLiveQuery(
+    (q) => q.from({ cards: collection }).where(({ cards }) => cards.deckName === deckName),
     [deckName]
   );
   const { data: logs, isLoading: logsLoading } = useLiveQuery(
@@ -185,7 +196,8 @@ export function useDeck(deckName: string) {
   const isLoading = cardsLoading || logsLoading;
 
   const introducedToday = getIntroducedToday();
-  const cardsList = cards ?? [];
+  // Deserialize FSRS dates from strings to Date objects
+  const cardsList = (rawCards ?? []).map(deserializeCardDates);
   const logsList = logs ?? [];
 
   const { newItems, dueItems } = computeStudyItems(
@@ -232,7 +244,7 @@ export function useDeck(deckName: string) {
 
   function suspend() {
     if (!studyItem) return;
-    collection.update(studyItem.source, (draft) => {
+    collection.update(studyItem.id, (draft) => {
       draft.suspended = true;
     });
   }
@@ -267,8 +279,8 @@ export function useDeck(deckName: string) {
     // Use FSRS rollback
     const previousState = fsrs().rollback(currentState, reviewLog);
 
-    // Update card state
-    collection.update(studyItem.source, (draft) => {
+    // Update card state using composite key
+    collection.update(studyItem.id, (draft) => {
       if (studyItem.isReverse) {
         draft.reverseState = previousState;
       } else {

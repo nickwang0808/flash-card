@@ -1,9 +1,9 @@
-import { QueryClient } from '@tanstack/query-core';
 import { createCollection, localStorageCollectionOptions, type Collection } from '@tanstack/db';
-import { queryCollectionOptions } from '@tanstack/query-db-collection';
+import { rxdbCollectionOptions } from '@tanstack/rxdb-db-collection';
 import { type Card } from 'ts-fsrs';
-import { github } from './github';
-import { githubService } from './github-service';
+import { github, parseRepoUrl } from './github';
+import { settingsCollection, defaultSettings } from '../hooks/useSettings';
+import { getDatabase } from './rxdb';
 
 // Stored version of ReviewLog with serialized dates
 export interface StoredReviewLog {
@@ -22,7 +22,10 @@ export interface StoredReviewLog {
 }
 
 // FlashCard: content + FSRS state in one structure
+// id and deckName are added by the RxDB layer
 export interface FlashCard {
+  id: string;                  // composite key: "deckName|source"
+  deckName: string;
   source: string;
   translation: string;
   example?: string;
@@ -35,77 +38,43 @@ export interface FlashCard {
   suspended?: boolean;
 }
 
-export const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 0,
-      retry: 1,
-    },
-  },
-});
+// Collection instances (initialized async)
+let cardsCollectionInstance: Collection<FlashCard, string> | null = null;
+let decksCollectionInstance: Collection<{ name: string }, string> | null = null;
 
-export const decksCollection = createCollection(
-  queryCollectionOptions({
-    queryKey: ['decks'],
-    queryFn: async () => {
-      const names = await githubService.listDecks();
-      return names.map((name) => ({ name }));
-    },
-    queryClient,
-    getKey: (item) => item.name,
-  }),
-);
+export async function initCollections(): Promise<void> {
+  const db = await getDatabase();
 
-// Collection cache: one collection per deck
-const deckCollections = new Map<string, Collection<FlashCard, string>>();
+  cardsCollectionInstance = createCollection(
+    rxdbCollectionOptions({
+      rxCollection: db.cards as any,
+      startSync: true,
+    }),
+  ) as unknown as Collection<FlashCard, string>;
 
-// Factory function: get or create collection for a deck
-export function getCardsCollection(deckName: string): Collection<FlashCard, string> {
-  if (!deckCollections.has(deckName)) {
-    const collection = createCollection(
-      queryCollectionOptions({
-        queryKey: ['cards', deckName],
-        queryFn: async () => githubService.getCards(deckName),
-        queryClient,
-        getKey: (item) => item.source,
-
-        onUpdate: async ({ transaction }) => {
-          const updates = transaction.mutations.map((m) => m.modified as FlashCard);
-
-          // Immediately persist to local synced store (confirms optimistic state)
-          collection.utils.writeBatch(() => {
-            updates.forEach((item) => {
-              collection.utils.writeUpdate(item);
-            });
-          });
-
-          // Queue GitHub sync in background (debounced, fire-and-forget)
-          githubService.updateCards(deckName, updates);
-
-          return { refetch: false };
-        },
-
-        onInsert: async ({ transaction }) => {
-          const inserts = transaction.mutations.map((m) => m.modified as FlashCard);
-          await githubService.updateCards(deckName, inserts);
-          return { refetch: false };
-        },
-      }),
-    );
-    deckCollections.set(deckName, collection);
-  }
-  return deckCollections.get(deckName)!;
+  decksCollectionInstance = createCollection(
+    rxdbCollectionOptions({
+      rxCollection: db.decks as any,
+      startSync: true,
+    }),
+  ) as unknown as Collection<{ name: string }, string>;
 }
 
-// Refresh all data from GitHub
-export async function refreshData(): Promise<void> {
-  await queryClient.invalidateQueries({ queryKey: ['decks'] });
-  await queryClient.invalidateQueries({ queryKey: ['cards'] });
+export function getCardsCollection(): Collection<FlashCard, string> {
+  if (!cardsCollectionInstance) throw new Error('Collections not initialized. Call initCollections() first.');
+  return cardsCollectionInstance;
+}
+
+export function getDecksCollection(): Collection<{ name: string }, string> {
+  if (!decksCollectionInstance) throw new Error('Collections not initialized. Call initCollections() first.');
+  return decksCollectionInstance;
 }
 
 // Get commits from GitHub
 export async function getCommits(limit: number = 10) {
-  const config = githubService.getConfig();
+  const settings = settingsCollection.state.get('settings') ?? defaultSettings;
+  const { owner, repo } = parseRepoUrl(settings.repoUrl);
+  const config = { owner, repo, token: settings.token, branch: settings.branch };
   return github.getCommits(config, limit);
 }
 

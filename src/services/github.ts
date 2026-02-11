@@ -44,21 +44,29 @@ export const github = {
     path: string,
   ): Promise<{ content: string; sha: string }> {
     const octokit = new Octokit({ auth: config.token });
-    const { data } = await octokit.repos.getContent({
+
+    // Get sha from metadata
+    const { data: meta } = await octokit.repos.getContent({
       owner: config.owner,
       repo: config.repo,
       path,
       ...(config.branch ? { ref: config.branch } : {}),
     });
 
-    if (Array.isArray(data) || data.type !== 'file' || !('content' in data)) {
+    if (Array.isArray(meta) || meta.type !== 'file') {
       throw new Error(`Not a file: ${path}`);
     }
 
-    const content = atob(data.content.replace(/\n/g, ''));
-    const bytes = Uint8Array.from(content, (c) => c.charCodeAt(0));
-    const decoded = new TextDecoder().decode(bytes);
-    return { content: decoded, sha: data.sha };
+    // Get content as raw string (supports up to 100MB)
+    const { data: content } = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
+      owner: config.owner,
+      repo: config.repo,
+      path,
+      ...(config.branch ? { ref: config.branch } : {}),
+      mediaType: { format: 'raw' },
+    });
+
+    return { content: content as unknown as string, sha: meta.sha };
   },
 
   async writeFile(
