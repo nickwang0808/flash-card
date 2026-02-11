@@ -66,7 +66,9 @@ export const github = {
       mediaType: { format: 'raw' },
     });
 
-    return { content: content as unknown as string, sha: meta.sha };
+    // Octokit auto-parses JSON files into objects; ensure we always return a string
+    const text = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+    return { content: text, sha: meta.sha };
   },
 
   async writeFile(

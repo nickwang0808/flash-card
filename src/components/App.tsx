@@ -77,10 +77,8 @@ export function App() {
   }
 
   function handleAuthComplete() {
-    // Trigger initial sync to populate IndexedDB from GitHub
-    runSync()
-      .catch(() => {})
-      .finally(() => navigate({ name: 'deck-list' }));
+    // Navigate to deck-list; the isConfigured useEffect will trigger sync
+    navigate({ name: 'deck-list' });
   }
 
   switch (screen.name) {

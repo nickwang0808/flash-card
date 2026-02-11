@@ -131,7 +131,6 @@ async function pullHandler(
     // Network error — return empty, will retry next sync
     return { documents: [], checkpoint: lastCheckpoint };
   }
-
   return {
     documents: allCards,
     checkpoint: allCards.length > 0 ? { done: true } : lastCheckpoint,

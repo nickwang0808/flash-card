@@ -4,7 +4,7 @@ import { fsrs, createEmptyCard, type Grade, type Card, type ReviewLog, type Rati
 import { getCardsCollection, reviewLogsCollection, type FlashCard, type StoredReviewLog } from '../services/collections';
 import { useSettings } from './useSettings';
 import { parseCardState } from '../services/replication';
-import type { Collection } from '@tanstack/db';
+import { eq, type Collection } from '@tanstack/db';
 
 // localStorage helpers for tracking introduced new cards
 const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
@@ -185,7 +185,7 @@ export function useDeck(deckName: string) {
 
   const collection = getCardsCollection();
   const { data: rawCards, isLoading: cardsLoading } = useLiveQuery(
-    (q) => q.from({ cards: collection }).where(({ cards }) => cards.deckName === deckName),
+    (q) => q.from({ cards: collection }).where(({ cards }) => eq(cards.deckName, deckName)),
     [deckName]
   );
   const { data: logs, isLoading: logsLoading } = useLiveQuery(
