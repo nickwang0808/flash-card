@@ -131,6 +131,17 @@ export const github = {
     });
   },
 
+  async listUserRepos(
+    token: string,
+  ): Promise<Array<{ full_name: string; html_url: string }>> {
+    const octokit = new Octokit({ auth: token });
+    const { data } = await octokit.repos.listForAuthenticatedUser({
+      per_page: 100,
+      sort: 'updated',
+    });
+    return data.map((r) => ({ full_name: r.full_name, html_url: r.html_url }));
+  },
+
   async deleteBranch(config: GitHubConfig, branchName: string): Promise<void> {
     const octokit = new Octokit({ auth: config.token });
     try {
