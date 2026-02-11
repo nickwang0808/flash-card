@@ -19,7 +19,7 @@ test.describe('Sync screen', () => {
 
     await expect(page.getByRole('heading', { name: 'Sync' })).toBeVisible();
     await expect(page.getByText('Online', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sync' })).toBeVisible();
   });
 
   test('shows recent commits from GitHub', async ({ page }) => {

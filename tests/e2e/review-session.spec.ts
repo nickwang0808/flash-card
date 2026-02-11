@@ -51,7 +51,9 @@ test.describe('Review session', () => {
     await page.getByText('spanish-vocab').click();
 
     // Rate all cards as Easy to complete quickly
-    while (await page.getByRole('button', { name: 'Show Answer' }).isVisible().catch(() => false)) {
+    // Wait for remaining count to change after each rating (async RxDB write)
+    for (let i = 6; i > 0; i--) {
+      await expect(page.getByText(`${i} remaining`)).toBeVisible();
       await page.getByRole('button', { name: 'Show Answer' }).click();
       await page.getByRole('button', { name: 'Easy' }).click();
     }
@@ -64,7 +66,8 @@ test.describe('Review session', () => {
     await page.getByText('spanish-vocab').click();
 
     // Complete all cards
-    while (await page.getByRole('button', { name: 'Show Answer' }).isVisible().catch(() => false)) {
+    for (let i = 6; i > 0; i--) {
+      await expect(page.getByText(`${i} remaining`)).toBeVisible();
       await page.getByRole('button', { name: 'Show Answer' }).click();
       await page.getByRole('button', { name: 'Easy' }).click();
     }
@@ -97,7 +100,9 @@ test.describe('Review session', () => {
     await expect(page.getByText('6 remaining')).toBeVisible();
 
     // Rate the remaining 5 new cards as Easy to clear them out
-    for (let i = 0; i < 5; i++) {
+    // Wait for remaining count to decrease after each (async RxDB write)
+    for (let i = 6; i >= 2; i--) {
+      await expect(page.getByText(`${i} remaining`)).toBeVisible();
       await page.getByRole('button', { name: 'Show Answer' }).click();
       await page.getByRole('button', { name: 'Easy' }).click();
     }

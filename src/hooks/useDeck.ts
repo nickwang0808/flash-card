@@ -1,10 +1,11 @@
 import { useLiveQuery } from '@tanstack/react-db';
 import { useEffect } from 'react';
 import { fsrs, createEmptyCard, type Grade, type Card, type ReviewLog, type Rating, type State } from 'ts-fsrs';
-import { getCardsCollection, reviewLogsCollection, type FlashCard, type StoredReviewLog } from '../services/collections';
+import { reviewLogsCollection, type FlashCard, type StoredReviewLog } from '../services/collections';
 import { useSettings } from './useSettings';
 import { parseCardState } from '../services/replication';
-import { eq, type Collection } from '@tanstack/db';
+import { useRxQuery } from './useRxQuery';
+import { getDatabaseSync } from '../services/rxdb';
 
 // localStorage helpers for tracking introduced new cards
 const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
@@ -139,13 +140,28 @@ export function computeNewState(
   return { card: result.card, log: result.log };
 }
 
-// Rate a card and update the collection
-export function rateCard(
-  cardsCollection: Collection<FlashCard, string>,
-  logsCollection: Collection<StoredReviewLog, string>,
+// Serialize FSRS Card for RxDB storage (Dates → ISO strings)
+// RxDB incrementalPatch can hang if the document contains native Date objects
+// in schema-free fields, so always store as plain JSON.
+function serializeFsrsCard(card: Card): Record<string, unknown> {
+  return {
+    due: card.due.toISOString(),
+    stability: card.stability,
+    difficulty: card.difficulty,
+    elapsed_days: card.elapsed_days,
+    scheduled_days: card.scheduled_days,
+    reps: card.reps,
+    lapses: card.lapses,
+    state: card.state,
+    last_review: card.last_review?.toISOString(),
+  };
+}
+
+// Rate a card and update RxDB directly
+export async function rateCard(
   card: StudyItem,
   rating: Grade
-): void {
+): Promise<void> {
   const existingState = card.isReverse ? card.reverseState : card.state;
   const { card: newState, log } = computeNewState(existingState, rating);
 
@@ -164,16 +180,19 @@ export function rateCard(
     scheduled_days: log.scheduled_days,
     review: log.review.toISOString(),
   };
-  logsCollection.insert(storedLog);
+  reviewLogsCollection.insert(storedLog);
 
-  // Update card using composite key
-  cardsCollection.update(card.id, (draft) => {
+  // Update card in RxDB directly
+  const serializedState = serializeFsrsCard(newState);
+  const db = getDatabaseSync();
+  const doc = await db.cards.findOne(card.id).exec();
+  if (doc) {
     if (card.isReverse) {
-      draft.reverseState = newState;
+      await doc.incrementalPatch({ reverseState: serializedState });
     } else {
-      draft.state = newState;
+      await doc.incrementalPatch({ state: serializedState });
     }
-  });
+  }
 }
 
 export function useDeck(deckName: string) {
@@ -183,10 +202,11 @@ export function useDeck(deckName: string) {
   const endOfDay = new Date();
   endOfDay.setHours(23, 59, 59, 999);
 
-  const collection = getCardsCollection();
-  const { data: rawCards, isLoading: cardsLoading } = useLiveQuery(
-    (q) => q.from({ cards: collection }).where(({ cards }) => eq(cards.deckName, deckName)),
-    [deckName]
+  // Query RxDB directly, bypassing the TanStack DB rxdbCollectionOptions bridge
+  const db = getDatabaseSync();
+  const { data: allCards, isLoading: cardsLoading } = useRxQuery(
+    db.cards,
+    { selector: { deckName } }
   );
   const { data: logs, isLoading: logsLoading } = useLiveQuery(
     (q) => q.from({ logs: reviewLogsCollection }),
@@ -197,7 +217,7 @@ export function useDeck(deckName: string) {
 
   const introducedToday = getIntroducedToday();
   // Deserialize FSRS dates from strings to Date objects
-  const cardsList = (rawCards ?? []).map(deserializeCardDates);
+  const cardsList = (allCards as unknown as FlashCard[]).map(deserializeCardDates);
   const logsList = logs ?? [];
 
   const { newItems, dueItems } = computeStudyItems(
@@ -239,14 +259,15 @@ export function useDeck(deckName: string) {
 
   function rate(rating: Grade) {
     if (!studyItem) return;
-    rateCard(collection, reviewLogsCollection, studyItem, rating);
+    rateCard(studyItem, rating);
   }
 
-  function suspend() {
+  async function suspend() {
     if (!studyItem) return;
-    collection.update(studyItem.id, (draft) => {
-      draft.suspended = true;
-    });
+    const doc = await db.cards.findOne(studyItem.id).exec();
+    if (doc) {
+      await doc.incrementalPatch({ suspended: true });
+    }
   }
 
   function undo() {
@@ -278,13 +299,18 @@ export function useDeck(deckName: string) {
 
     // Use FSRS rollback
     const previousState = fsrs().rollback(currentState, reviewLog);
+    const serialized = previousState.due
+      ? serializeFsrsCard(previousState)
+      : null;
 
-    // Update card state using composite key
-    collection.update(studyItem.id, (draft) => {
-      if (studyItem.isReverse) {
-        draft.reverseState = previousState;
-      } else {
-        draft.state = previousState;
+    // Update card state in RxDB directly
+    db.cards.findOne(studyItem.id).exec().then((doc) => {
+      if (doc) {
+        if (studyItem.isReverse) {
+          doc.incrementalPatch({ reverseState: serialized });
+        } else {
+          doc.incrementalPatch({ state: serialized });
+        }
       }
     });
 

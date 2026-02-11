@@ -45,7 +45,6 @@ export const github = {
   ): Promise<{ content: string; sha: string }> {
     const octokit = new Octokit({ auth: config.token });
 
-    // Get sha from metadata
     const { data: meta } = await octokit.repos.getContent({
       owner: config.owner,
       repo: config.repo,
@@ -57,17 +56,8 @@ export const github = {
       throw new Error(`Not a file: ${path}`);
     }
 
-    // Get content as raw string (supports up to 100MB)
-    const { data: content } = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
-      owner: config.owner,
-      repo: config.repo,
-      path,
-      ...(config.branch ? { ref: config.branch } : {}),
-      mediaType: { format: 'raw' },
-    });
-
-    // Octokit auto-parses JSON files into objects; ensure we always return a string
-    const text = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+    // Decode base64 content from the standard getContent response
+    const text = atob(meta.content!.replace(/\n/g, ''));
     return { content: text, sha: meta.sha };
   },
 

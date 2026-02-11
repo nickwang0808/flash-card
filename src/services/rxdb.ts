@@ -61,6 +61,7 @@ export type AppDatabase = RxDatabase<{
 }>;
 
 let dbPromise: Promise<AppDatabase> | null = null;
+let dbInstance: AppDatabase | null = null;
 
 export function getDatabase(): Promise<AppDatabase> {
   if (!dbPromise) {
@@ -77,10 +78,17 @@ export function getDatabase(): Promise<AppDatabase> {
         cards: { schema: cardsSchema },
         decks: { schema: decksSchema },
       });
+      dbInstance = db;
       return db;
     });
   }
   return dbPromise;
+}
+
+/** Returns the database synchronously. Only safe after bootstrap(). */
+export function getDatabaseSync(): AppDatabase {
+  if (!dbInstance) throw new Error('Database not initialized. Call getDatabase() first.');
+  return dbInstance;
 }
 
 export async function destroyDatabase(): Promise<void> {

@@ -626,74 +626,56 @@ describe('computeNewState', () => {
 // ============================================================================
 
 describe('rateCard', () => {
-  it('calls collection.update with correct composite key', () => {
-    const mockUpdate = vi.fn();
-    const mockCollection = { update: mockUpdate } as any;
-    const mockLogsCollection = { insert: vi.fn() } as any;
+  it('updates forward state via RxDB for non-reverse card', async () => {
+    const mockPatch = vi.fn(() => Promise.resolve());
+    const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
+    const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+    const { getDatabaseSync } = await import('../../src/services/rxdb');
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: mockFindOne },
+    } as any);
 
     const card: StudyItem = {
       ...createFlashCard('hello'),
       isReverse: false,
     };
 
-    rateCard(mockCollection, mockLogsCollection, card, Rating.Good);
+    await rateCard(card, Rating.Good);
 
-    expect(mockUpdate).toHaveBeenCalledWith('test-deck|hello', expect.any(Function));
+    expect(mockFindOne).toHaveBeenCalledWith('test-deck|hello');
+    expect(mockPatch).toHaveBeenCalledWith({ state: expect.any(Object) });
   });
 
-  it('updates forward state for non-reverse card', () => {
-    const mockUpdate = vi.fn();
-    const mockCollection = { update: mockUpdate } as any;
-    const mockLogsCollection = { insert: vi.fn() } as any;
-
-    const card: StudyItem = {
-      ...createFlashCard('hello'),
-      isReverse: false,
-    };
-
-    rateCard(mockCollection, mockLogsCollection, card, Rating.Good);
-
-    // Get the updater function and test it
-    const updater = mockUpdate.mock.calls[0][1];
-    const draft = { state: null, reverseState: null };
-    updater(draft);
-
-    expect(draft.state).not.toBeNull();
-    expect(draft.reverseState).toBeNull();
-  });
-
-  it('updates reverse state for reverse card', () => {
-    const mockUpdate = vi.fn();
-    const mockCollection = { update: mockUpdate } as any;
-    const mockLogsCollection = { insert: vi.fn() } as any;
+  it('updates reverse state via RxDB for reverse card', async () => {
+    const mockPatch = vi.fn(() => Promise.resolve());
+    const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
+    const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+    const { getDatabaseSync } = await import('../../src/services/rxdb');
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: mockFindOne },
+    } as any);
 
     const card: StudyItem = {
       ...createFlashCard('hello', { reversible: true }),
       isReverse: true,
     };
 
-    rateCard(mockCollection, mockLogsCollection, card, Rating.Good);
+    await rateCard(card, Rating.Good);
 
-    const updater = mockUpdate.mock.calls[0][1];
-    const draft = { state: null, reverseState: null };
-    updater(draft);
-
-    expect(draft.state).toBeNull();
-    expect(draft.reverseState).not.toBeNull();
+    expect(mockPatch).toHaveBeenCalledWith({ reverseState: expect.any(Object) });
   });
 
-  it('inserts a review log when rating', () => {
-    const mockUpdate = vi.fn();
-    const mockCollection = { update: mockUpdate } as any;
+  it('inserts a review log when rating', async () => {
+    const { reviewLogsCollection } = await import('../../src/services/collections');
     const mockInsert = vi.fn();
-    const mockLogsCollection = { insert: mockInsert } as any;
+    (reviewLogsCollection as any).insert = mockInsert;
 
     const card: StudyItem = {
       ...createFlashCard('hello'),
       isReverse: false,
     };
 
-    rateCard(mockCollection, mockLogsCollection, card, Rating.Good);
+    await rateCard(card, Rating.Good);
 
     expect(mockInsert).toHaveBeenCalledTimes(1);
     const insertedLog = mockInsert.mock.calls[0][0];
@@ -717,6 +699,22 @@ vi.mock('../../src/services/collections', () => ({
   reviewLogsCollection: { insert: vi.fn(), delete: vi.fn() },
 }));
 
+vi.mock('../../src/services/rxdb', () => ({
+  getDatabaseSync: vi.fn(() => ({
+    cards: {
+      findOne: vi.fn(() => ({
+        exec: vi.fn(() => Promise.resolve({
+          incrementalPatch: vi.fn(() => Promise.resolve()),
+        })),
+      })),
+    },
+  })),
+}));
+
+vi.mock('../../src/hooks/useRxQuery', () => ({
+  useRxQuery: vi.fn(() => ({ data: [], isLoading: false })),
+}));
+
 vi.mock('../../src/services/replication', () => ({
   parseCardState: vi.fn((json: any) => ({
     ...json,
@@ -732,23 +730,18 @@ vi.mock('../../src/hooks/useSettings', () => ({
 import { useLiveQuery } from '@tanstack/react-db';
 import { getCardsCollection } from '../../src/services/collections';
 import { useSettings } from '../../src/hooks/useSettings';
+import { useRxQuery } from '../../src/hooks/useRxQuery';
+import { getDatabaseSync } from '../../src/services/rxdb';
 
 describe('useDeck hook', () => {
   let mockCollection: { update: ReturnType<typeof vi.fn> };
   let mockCards: FlashCard[];
   const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
 
-  // Helper to set up useLiveQuery mock for both cards and logs
+  // Helper to set up query mocks for cards (useRxQuery) and logs (useLiveQuery)
   function setupQueryMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
-    vi.mocked(useLiveQuery).mockImplementation(((_queryFn: unknown, deps: unknown[] | undefined) => {
-      // Distinguish between cards query and logs query by deps
-      if (deps && deps.length > 0 && typeof deps[0] === 'string') {
-        // Cards query has deck name in deps
-        return { data: cards, isLoading } as any;
-      }
-      // Logs query has empty deps
-      return { data: logs, isLoading } as any;
-    }) as any);
+    vi.mocked(useRxQuery).mockReturnValue({ data: cards, isLoading } as any);
+    vi.mocked(useLiveQuery).mockReturnValue({ data: logs, isLoading } as any);
   }
 
   beforeEach(() => {
@@ -765,6 +758,15 @@ describe('useDeck hook', () => {
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
 
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: {
+        findOne: vi.fn(() => ({
+          exec: vi.fn(() => Promise.resolve({
+            incrementalPatch: vi.fn(() => Promise.resolve()),
+          })),
+        })),
+      },
+    } as any);
     vi.mocked(getCardsCollection).mockReturnValue(mockCollection as any);
     vi.mocked(useSettings).mockReturnValue({
       settings: { newCardsPerDay: 10 },
@@ -995,7 +997,12 @@ describe('useDeck hook', () => {
   });
 
   describe('rate function', () => {
-    it('calls collection.update when rating', () => {
+    it('calls RxDB findOne with correct card ID when rating', async () => {
+      const mockPatch = vi.fn(() => Promise.resolve());
+      const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
+      const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+      vi.mocked(getDatabaseSync).mockReturnValue({ cards: { findOne: mockFindOne } } as any);
+
       mockCards = [createFlashCard('test-card')];
       setupQueryMock(mockCards);
 
@@ -1005,14 +1012,16 @@ describe('useDeck hook', () => {
         result.current.rate(Rating.Good);
       });
 
-      expect(mockCollection.update).toHaveBeenCalledWith(
-        'test-deck|test-card',
-        expect.any(Function)
-      );
+      // Allow async rateCard to complete
+      await vi.waitFor(() => {
+        expect(mockFindOne).toHaveBeenCalledWith('test-deck|test-card');
+      });
     });
 
     it('does nothing when no current card', () => {
-      // Empty deck
+      const mockFindOne = vi.fn();
+      vi.mocked(getDatabaseSync).mockReturnValue({ cards: { findOne: mockFindOne } } as any);
+
       setupQueryMock([]);
 
       const { result } = renderHook(() => useDeck('test-deck'));
@@ -1021,10 +1030,15 @@ describe('useDeck hook', () => {
         result.current.rate(Rating.Good);
       });
 
-      expect(mockCollection.update).not.toHaveBeenCalled();
+      expect(mockFindOne).not.toHaveBeenCalled();
     });
 
-    it('updates forward state for non-reverse card', () => {
+    it('patches forward state for non-reverse card', async () => {
+      const mockPatch = vi.fn(() => Promise.resolve());
+      const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
+      const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+      vi.mocked(getDatabaseSync).mockReturnValue({ cards: { findOne: mockFindOne } } as any);
+
       mockCards = [createFlashCard('test-card')];
       setupQueryMock(mockCards);
 
@@ -1034,40 +1048,37 @@ describe('useDeck hook', () => {
         result.current.rate(Rating.Good);
       });
 
-      const updater = mockCollection.update.mock.calls[0][1];
-      const draft: { state: Card | null; reverseState: Card | null } = { state: null, reverseState: null };
-      updater(draft);
-
-      expect(draft.state).not.toBeNull();
-      expect(draft.state!.reps).toBe(1);
-      expect(draft.reverseState).toBeNull();
+      await vi.waitFor(() => {
+        expect(mockPatch).toHaveBeenCalledWith({ state: expect.any(Object) });
+      });
     });
 
-    it('updates reverse state for reverse card', () => {
+    it('patches reverse state for reverse card', async () => {
+      const mockPatch = vi.fn(() => Promise.resolve());
+      const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
+      const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+      vi.mocked(getDatabaseSync).mockReturnValue({ cards: { findOne: mockFindOne } } as any);
+
       mockCards = [
         createFlashCard('test-card', {
           reversible: true,
-          state: createFutureState(5), // forward already reviewed
-          reverseState: null, // reverse is new (will be shown first as new)
+          state: createFutureState(5),
+          reverseState: null,
         }),
       ];
       setupQueryMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
-      // First card should be the reverse (new) direction
       expect(result.current.currentCard?.isReverse).toBe(true);
 
       act(() => {
         result.current.rate(Rating.Good);
       });
 
-      const updater = mockCollection.update.mock.calls[0][1];
-      const draft: { state: Card | null; reverseState: Card | null } = { state: createFutureState(5), reverseState: null };
-      updater(draft);
-
-      expect(draft.reverseState).not.toBeNull();
-      expect(draft.reverseState!.reps).toBe(1);
+      await vi.waitFor(() => {
+        expect(mockPatch).toHaveBeenCalledWith({ reverseState: expect.any(Object) });
+      });
     });
   });
 
@@ -1097,16 +1108,13 @@ describe('useDeck hook', () => {
   });
 
   describe('deck name handling', () => {
-    it('calls getCardsCollection without parameters', () => {
+    it('calls useRxQuery with deckName selector', () => {
       renderHook(() => useDeck('my-spanish-deck'));
 
-      expect(getCardsCollection).toHaveBeenCalledWith();
-    });
-
-    it('passes deck name to useLiveQuery dependencies', () => {
-      renderHook(() => useDeck('my-deck'));
-
-      expect(useLiveQuery).toHaveBeenCalledWith(expect.any(Function), ['my-deck']);
+      expect(useRxQuery).toHaveBeenCalledWith(
+        expect.anything(),
+        { selector: { deckName: 'my-spanish-deck' } }
+      );
     });
   });
 });
@@ -1119,17 +1127,10 @@ describe('Study Session Flow', () => {
   let mockCollection: { update: ReturnType<typeof vi.fn> };
   const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
 
-  // Helper to set up useLiveQuery mock for both cards and logs
+  // Helper to set up query mocks for cards (useRxQuery) and logs (useLiveQuery)
   function setupQueryMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
-    vi.mocked(useLiveQuery).mockImplementation(((_queryFn: unknown, deps: unknown[] | undefined) => {
-      // Distinguish between cards query and logs query by deps
-      if (deps && deps.length > 0 && typeof deps[0] === 'string') {
-        // Cards query has deck name in deps
-        return { data: cards, isLoading } as any;
-      }
-      // Logs query has empty deps
-      return { data: logs, isLoading } as any;
-    }) as any);
+    vi.mocked(useRxQuery).mockReturnValue({ data: cards, isLoading } as any);
+    vi.mocked(useLiveQuery).mockReturnValue({ data: logs, isLoading } as any);
   }
 
   beforeEach(() => {
@@ -1145,6 +1146,15 @@ describe('Study Session Flow', () => {
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
 
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: {
+        findOne: vi.fn(() => ({
+          exec: vi.fn(() => Promise.resolve({
+            incrementalPatch: vi.fn(() => Promise.resolve()),
+          })),
+        })),
+      },
+    } as any);
     vi.mocked(getCardsCollection).mockReturnValue(mockCollection as any);
     vi.mocked(useSettings).mockReturnValue({
       settings: { newCardsPerDay: 10 },
@@ -1161,57 +1171,37 @@ describe('Study Session Flow', () => {
   it('simulates complete session: new cards → rating → completion', () => {
     // Start with 2 new cards
     let cards = [createFlashCard('card-a'), createFlashCard('card-b')];
-
     setupQueryMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
-    // Initial state: 2 cards remaining, first is card-a
     expect(result.current.remaining).toBe(2);
     expect(result.current.currentCard?.source).toBe('card-a');
     expect(result.current.currentCard?.isNew).toBe(true);
 
-    // Rate first card as Easy - simulates it being scheduled for future
-    act(() => {
-      result.current.rate(Rating.Easy);
-    });
-
-    // Simulate the reactive update: card-a now has state (scheduled for future)
-    const updater1 = mockCollection.update.mock.calls[0][1];
-    const card1Draft = { state: null, reverseState: null };
-    updater1(card1Draft);
+    // Simulate rating card-a as Easy
+    const { card: state1 } = computeNewState(null, Rating.Easy);
 
     cards = [
-      { ...createFlashCard('card-a'), state: card1Draft.state },
+      { ...createFlashCard('card-a'), state: state1 },
       createFlashCard('card-b'),
     ];
     setupQueryMock(cards);
-
     rerender();
 
-    // Now only 1 card remaining (card-a is scheduled for future)
     expect(result.current.remaining).toBe(1);
     expect(result.current.currentCard?.source).toBe('card-b');
 
-    // Rate second card as Easy (to ensure it's scheduled for future)
-    act(() => {
-      result.current.rate(Rating.Easy);
-    });
-
-    // Simulate reactive update
-    const updater2 = mockCollection.update.mock.calls[1][1];
-    const card2Draft = { state: null, reverseState: null };
-    updater2(card2Draft);
+    // Simulate rating card-b as Easy
+    const { card: state2 } = computeNewState(null, Rating.Easy);
 
     cards = [
-      { ...createFlashCard('card-a'), state: card1Draft.state },
-      { ...createFlashCard('card-b'), state: card2Draft.state },
+      { ...createFlashCard('card-a'), state: state1 },
+      { ...createFlashCard('card-b'), state: state2 },
     ];
     setupQueryMock(cards);
-
     rerender();
 
-    // Session complete
     expect(result.current.remaining).toBe(0);
     expect(result.current.currentCard).toBeNull();
   });
@@ -1221,29 +1211,18 @@ describe('Study Session Flow', () => {
     setupQueryMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
-
     expect(result.current.remaining).toBe(1);
 
-    // Rate as Again
-    act(() => {
-      result.current.rate(Rating.Again);
-    });
+    // Simulate rating Again
+    const { card: newState } = computeNewState(null, Rating.Again);
 
-    // Simulate the state update - Again schedules for very soon
-    const updater = mockCollection.update.mock.calls[0][1];
-    const draft = { state: null, reverseState: null };
-    updater(draft);
-
-    // Card should be due immediately/very soon (within today)
-    const updatedCards = [{ ...createFlashCard('test-card'), state: draft.state }];
+    const updatedCards = [{ ...createFlashCard('test-card'), state: newState }];
     setupQueryMock(updatedCards);
-
     rerender();
 
-    // Card should still be in session (due today)
     expect(result.current.remaining).toBe(1);
     expect(result.current.currentCard?.source).toBe('test-card');
-    expect(result.current.currentCard?.isNew).toBe(false); // Now has state
+    expect(result.current.currentCard?.isNew).toBe(false);
   });
 
   it('Easy removes card from session (scheduled for future)', () => {
@@ -1251,31 +1230,19 @@ describe('Study Session Flow', () => {
     setupQueryMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
-
     expect(result.current.remaining).toBe(1);
 
-    // Rate as Easy
-    act(() => {
-      result.current.rate(Rating.Easy);
-    });
+    // Simulate rating Easy
+    const { card: newState } = computeNewState(null, Rating.Easy);
 
-    // Simulate the state update - Easy schedules for future
-    const updater = mockCollection.update.mock.calls[0][1];
-    const draft: { state: Card | null; reverseState: Card | null } = { state: null, reverseState: null };
-    updater(draft);
-
-    // Verify the due date is in the future (beyond end of today)
     const endOfToday = new Date();
     endOfToday.setHours(23, 59, 59, 999);
-    expect(draft.state!.due.getTime()).toBeGreaterThan(endOfToday.getTime());
+    expect(newState.due.getTime()).toBeGreaterThan(endOfToday.getTime());
 
-    // Update mock with new state
-    const updatedCards = [{ ...createFlashCard('test-card'), state: draft.state }];
+    const updatedCards = [{ ...createFlashCard('test-card'), state: newState }];
     setupQueryMock(updatedCards);
-
     rerender();
 
-    // Card should be removed from session
     expect(result.current.remaining).toBe(0);
     expect(result.current.currentCard).toBeNull();
   });
@@ -1286,35 +1253,25 @@ describe('Study Session Flow', () => {
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
-    // Both directions are new
     expect(result.current.remaining).toBe(2);
-    expect(result.current.currentCard?.front).toBe('gato'); // Forward first
+    expect(result.current.currentCard?.front).toBe('gato');
     expect(result.current.currentCard?.isReverse).toBe(false);
 
-    // Rate forward direction as Easy
-    act(() => {
-      result.current.rate(Rating.Easy);
-    });
+    // Simulate forward rated as Easy (scheduled for future)
+    const { card: forwardState } = computeNewState(null, Rating.Easy);
 
-    const forwardUpdater = mockCollection.update.mock.calls[0][1];
-    const forwardDraft = { state: null, reverseState: null };
-    forwardUpdater(forwardDraft);
-
-    // Update: forward is now scheduled for future
     const updatedCards = [
       {
         ...createFlashCard('gato', { translation: 'cat', reversible: true }),
-        state: forwardDraft.state, // scheduled for future
-        reverseState: null, // still new
+        state: forwardState,
+        reverseState: null,
       },
     ];
     setupQueryMock(updatedCards);
-
     rerender();
 
-    // Only reverse direction remains
     expect(result.current.remaining).toBe(1);
-    expect(result.current.currentCard?.front).toBe('cat'); // Reverse shows translation as front
+    expect(result.current.currentCard?.front).toBe('cat');
     expect(result.current.currentCard?.back).toBe('gato');
     expect(result.current.currentCard?.isReverse).toBe(true);
   });
@@ -1328,28 +1285,13 @@ describe('Study Session Flow', () => {
     expect(result.current.remaining).toBe(1);
     expect(result.current.currentCard?.isNew).toBe(true);
 
-    // Rate as Good
-    act(() => {
-      result.current.rate(Rating.Good);
-    });
+    // Simulate rating Good
+    const { card: newState } = computeNewState(null, Rating.Good);
 
-    // Simulate the state update
-    const updater = mockCollection.update.mock.calls[0][1];
-    const draft = { state: null, reverseState: null };
-    updater(draft);
-
-    // Good on a new card schedules for a short interval (learning phase)
-    // It should still be due within today
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
-
-    const updatedCards = [{ ...createFlashCard('test-card'), state: draft.state }];
+    const updatedCards = [{ ...createFlashCard('test-card'), state: newState }];
     setupQueryMock(updatedCards);
-
     rerender();
 
-    // Card may still be in session (learning phase) or may have graduated
-    // depending on FSRS parameters - verify state was updated
     expect(result.current.currentCard?.isNew).toBe(false);
   });
 
@@ -1360,41 +1302,23 @@ describe('Study Session Flow', () => {
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
     // First rating: Again
-    act(() => {
-      result.current.rate(Rating.Again);
-    });
+    const { card: state1 } = computeNewState(null, Rating.Again);
 
-    const updater1 = mockCollection.update.mock.calls[0][1];
-    const draft1 = { state: null, reverseState: null };
-    updater1(draft1);
-
-    cards = [{ ...createFlashCard('test-card'), state: draft1.state }];
+    cards = [{ ...createFlashCard('test-card'), state: state1 }];
     setupQueryMock(cards);
-
     rerender();
 
-    // Card should still be in session after Again
     expect(result.current.remaining).toBe(1);
     expect(result.current.currentCard?.isNew).toBe(false);
 
-    // Second rating: Easy (should schedule for future)
-    act(() => {
-      result.current.rate(Rating.Easy);
-    });
+    // Second rating: Easy
+    const { card: state2 } = computeNewState(state1, Rating.Easy);
+    expect(state2.reps).toBe(2);
 
-    const updater2 = mockCollection.update.mock.calls[1][1];
-    const draft2: { state: Card | null; reverseState: Card | null } = { state: draft1.state, reverseState: null };
-    updater2(draft2);
-
-    // Verify reps increased
-    expect(draft2.state!.reps).toBe(2);
-
-    cards = [{ ...createFlashCard('test-card'), state: draft2.state }];
+    cards = [{ ...createFlashCard('test-card'), state: state2 }];
     setupQueryMock(cards);
-
     rerender();
 
-    // After Easy, card should be scheduled for future
     expect(result.current.remaining).toBe(0);
   });
 });

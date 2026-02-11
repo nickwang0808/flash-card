@@ -65,13 +65,20 @@ export async function wipeAppData(page: Page) {
   await page.waitForLoadState('networkidle');
   await page.evaluate(async () => {
     localStorage.clear();
-    // Clear IndexedDB for offline-transactions
     const dbs = await indexedDB.databases();
-    for (const db of dbs) {
-      if (db.name) {
-        indexedDB.deleteDatabase(db.name);
-      }
-    }
+    await Promise.all(
+      dbs
+        .filter((db) => db.name)
+        .map(
+          (db) =>
+            new Promise<void>((resolve) => {
+              const req = indexedDB.deleteDatabase(db.name!);
+              req.onsuccess = () => resolve();
+              req.onerror = () => resolve();
+              req.onblocked = () => resolve();
+            }),
+        ),
+    );
   });
   await page.reload();
   await page.waitForLoadState('networkidle');
@@ -92,11 +99,19 @@ export async function cloneTestRepo(page: Page, branch?: string) {
   await page.evaluate(async () => {
     localStorage.clear();
     const dbs = await indexedDB.databases();
-    for (const db of dbs) {
-      if (db.name) {
-        indexedDB.deleteDatabase(db.name);
-      }
-    }
+    await Promise.all(
+      dbs
+        .filter((db) => db.name)
+        .map(
+          (db) =>
+            new Promise<void>((resolve) => {
+              const req = indexedDB.deleteDatabase(db.name!);
+              req.onsuccess = () => resolve();
+              req.onerror = () => resolve();
+              req.onblocked = () => resolve();
+            }),
+        ),
+    );
   });
 
   // Inject settings directly into localStorage (TanStack DB format)
