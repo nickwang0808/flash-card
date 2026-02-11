@@ -1,0 +1,5 @@
+[post-create]
+copy = "wt step copy-ignored"
+
+[pre-merge]
+test = "npm test"
