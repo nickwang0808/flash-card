@@ -49,7 +49,10 @@ export function useAuth() {
   const signInWithGitHub = useCallback(async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'github',
-      options: { scopes: 'repo' },
+      options: {
+        scopes: 'repo',
+        redirectTo: window.location.origin + window.location.pathname,
+      },
     });
   }, []);
 
