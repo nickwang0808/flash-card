@@ -26,6 +26,7 @@ export function SettingsScreen({ onBack, onLogout }: Props) {
       await destroyDatabase();
     } catch (_) { /* best-effort */ }
     clear();
+    onLogout();
   }
 
   return (

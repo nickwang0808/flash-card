@@ -1113,7 +1113,7 @@ describe('useDeck hook', () => {
 
       expect(useRxQuery).toHaveBeenCalledWith(
         expect.anything(),
-        { selector: { deckName: 'my-spanish-deck' } }
+        { selector: { deckName: 'my-spanish-deck' }, sort: [{ created: 'asc' }] }
       );
     });
   });
