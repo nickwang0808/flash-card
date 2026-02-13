@@ -52,8 +52,7 @@
   html, body {
     @apply bg-background text-foreground;
     font-family: system-ui, -apple-system, sans-serif;
-    /* Prevent mobile browser address bar from causing scroll */
-    min-height: 100dvh;
-    overflow-x: hidden;
+    height: 100dvh;
+    overflow: hidden;
   }
 }

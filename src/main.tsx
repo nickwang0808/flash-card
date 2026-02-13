@@ -11,7 +11,7 @@ const root = ReactDOM.createRoot(document.getElementById('root')!);
 // Show loading while RxDB initializes
 root.render(
   <React.StrictMode>
-    <div className="min-h-dvh flex items-center justify-center">Loading...</div>
+    <div className="h-dvh flex items-center justify-center">Loading...</div>
   </React.StrictMode>,
 );
 

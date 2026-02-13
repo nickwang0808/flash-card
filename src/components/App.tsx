@@ -73,7 +73,7 @@ export function App() {
   const navigate = (s: Screen) => setScreen(s);
 
   if (isLoading) {
-    return <div className="min-h-dvh flex items-center justify-center">Loading...</div>;
+    return <div className="h-dvh flex items-center justify-center">Loading...</div>;
   }
 
   function handleAuthComplete() {

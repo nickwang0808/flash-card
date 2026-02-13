@@ -47,7 +47,7 @@ export function SyncScreen({ onBack }: Props) {
   }
 
   return (
-    <div className="min-h-dvh p-4 max-w-md mx-auto">
+    <div className="h-dvh overflow-y-auto p-4 max-w-md mx-auto">
       <div className="flex items-center justify-between mb-6">
         <button onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground">
           Back

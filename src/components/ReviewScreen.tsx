@@ -18,7 +18,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
 
   if (isLoading) {
     return (
-      <div className="min-h-dvh flex items-center justify-center">
+      <div className="h-dvh flex items-center justify-center">
         <p className="text-muted-foreground">Loading cards...</p>
       </div>
     );
@@ -26,7 +26,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
 
   if (!currentCard) {
     return (
-      <div className="min-h-dvh flex flex-col items-center justify-center p-4 gap-4">
+      <div className="h-dvh flex flex-col items-center justify-center p-4 gap-4">
         <h2 className="text-xl font-bold">Session Complete</h2>
         <p className="text-muted-foreground">No more cards to review today.</p>
         <button
@@ -40,9 +40,9 @@ export function ReviewScreen({ deck, onBack }: Props) {
   }
 
   return (
-    <div className="min-h-dvh flex flex-col p-4 max-w-md mx-auto">
+    <div className="h-dvh flex flex-col p-4 max-w-md mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 shrink-0">
         <button
           onClick={onBack}
           className="text-sm text-muted-foreground hover:text-foreground"
@@ -73,7 +73,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
       </div>
 
       {/* Card */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-6">
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-6 overflow-y-auto">
         {currentCard.isNew && (
           <span className="text-xs font-medium text-green-500 uppercase tracking-wider">
             New
@@ -111,7 +111,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
 
       {/* Rating buttons */}
       {answerRevealed && (
-        <div className="grid grid-cols-4 gap-2 mt-8 pb-4">
+        <div className="grid grid-cols-4 gap-2 pt-4 pb-4 shrink-0">
           <button
             onClick={() => handleRate(Rating.Again)}
             className="rounded-md bg-red-500/10 text-red-500 border border-red-500/20 px-2 py-3 text-sm font-medium hover:bg-red-500/20"
