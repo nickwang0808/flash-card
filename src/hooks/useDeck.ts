@@ -206,7 +206,7 @@ export function useDeck(deckName: string) {
   const db = getDatabaseSync();
   const { data: allCards, isLoading: cardsLoading } = useRxQuery(
     db.cards,
-    { selector: { deckName } }
+    { selector: { deckName }, sort: [{ created: 'asc' }] }
   );
   const { data: logs, isLoading: logsLoading } = useLiveQuery(
     (q) => q.from({ logs: reviewLogsCollection }),
