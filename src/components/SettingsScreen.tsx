@@ -16,13 +16,16 @@ export function SettingsScreen({ onBack, onLogout }: Props) {
 
   async function handleLogout() {
     if (!confirm('Clear all local data and log out?')) return;
-    await signOut();
+    try {
+      await signOut();
+    } catch (_) { /* best-effort */ }
     localStorage.removeItem('flash-card-pending-reviews');
     localStorage.removeItem('flash-card-new-count');
     localStorage.removeItem('flash-card-last-sync');
-    await destroyDatabase();
+    try {
+      await destroyDatabase();
+    } catch (_) { /* best-effort */ }
     clear();
-    onLogout();
   }
 
   return (
