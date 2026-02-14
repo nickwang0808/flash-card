@@ -94,6 +94,11 @@ async function pullHandler(
   lastCheckpoint: { done: boolean } | undefined,
   _batchSize: number,
 ): Promise<{ documents: CardDocWithDeleted[]; checkpoint: { done: boolean } | undefined }> {
+  // Already pulled in this replication run — nothing more to fetch
+  if (lastCheckpoint?.done) {
+    return { documents: [], checkpoint: lastCheckpoint };
+  }
+
   if (!(await isConfigured())) {
     return { documents: [], checkpoint: lastCheckpoint };
   }
