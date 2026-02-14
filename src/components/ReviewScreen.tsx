@@ -10,10 +10,12 @@ interface Props {
 export function ReviewScreen({ deck, onBack }: Props) {
   const { currentCard, remaining, rate, suspend, undo, canUndo, isLoading } = useDeck(deck);
   const [answerRevealed, setAnswerRevealed] = useState(false);
+  const [cardKey, setCardKey] = useState(0);
 
   function handleRate(rating: Grade) {
     rate(rating);
     setAnswerRevealed(false);
+    setCardKey(k => k + 1);
   }
 
   if (isLoading) {
@@ -73,7 +75,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
       </div>
 
       {/* Card */}
-      <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-6 overflow-y-auto">
+      <div key={cardKey} className="flex-1 min-h-0 flex flex-col items-center justify-center gap-6 overflow-y-auto animate-fade-in">
         {currentCard.isNew && (
           <span className="text-xs font-medium text-green-500 uppercase tracking-wider">
             New
@@ -88,7 +90,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
         </div>
 
         {answerRevealed ? (
-          <div className="text-center space-y-3 animate-in fade-in">
+          <div className="text-center space-y-3 animate-fade-in">
             <p className="text-xl">{currentCard.back}</p>
             {currentCard.example && (
               <p className="text-sm text-muted-foreground italic">
