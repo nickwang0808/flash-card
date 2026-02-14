@@ -1,7 +1,6 @@
-import { useLiveQuery } from '@tanstack/react-db';
 import { useEffect } from 'react';
 import { fsrs, createEmptyCard, type Grade, type Card, type ReviewLog, type Rating, type State } from 'ts-fsrs';
-import { reviewLogsCollection, type FlashCard, type StoredReviewLog } from '../services/collections';
+import { type FlashCard, type StoredReviewLog } from '../services/collections';
 import { useSettings } from './useSettings';
 import { parseCardState } from '../services/replication';
 import { useRxQuery } from './useRxQuery';
@@ -165,7 +164,7 @@ export async function rateCard(
   const existingState = card.isReverse ? card.reverseState : card.state;
   const { card: newState, log } = computeNewState(existingState, rating);
 
-  // Store ReviewLog for undo functionality
+  // Store ReviewLog in RxDB for undo functionality
   const storedLog: StoredReviewLog = {
     id: `${card.source}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
     cardSource: card.source,
@@ -180,11 +179,11 @@ export async function rateCard(
     scheduled_days: log.scheduled_days,
     review: log.review.toISOString(),
   };
-  reviewLogsCollection.insert(storedLog);
+  const db = getDatabaseSync();
+  await db.reviewlogs.insert(storedLog);
 
   // Update card in RxDB directly
   const serializedState = serializeFsrsCard(newState);
-  const db = getDatabaseSync();
   const doc = await db.cards.findOne(card.id).exec();
   if (doc) {
     if (card.isReverse) {
@@ -196,29 +195,26 @@ export async function rateCard(
 }
 
 export function useDeck(deckName: string) {
-  const { settings } = useSettings();
+  const { settings, isLoading: settingsLoading } = useSettings();
   const newCardsLimit = settings.newCardsPerDay;
 
   const endOfDay = new Date();
   endOfDay.setHours(23, 59, 59, 999);
 
-  // Query RxDB directly, bypassing the TanStack DB rxdbCollectionOptions bridge
+  // Query RxDB directly
   const db = getDatabaseSync();
   const { data: allCards, isLoading: cardsLoading } = useRxQuery(
     db.cards,
     { selector: { deckName }, sort: [{ created: 'asc' }] }
   );
-  const { data: logs, isLoading: logsLoading } = useLiveQuery(
-    (q) => q.from({ logs: reviewLogsCollection }),
-    []
-  );
+  const { data: logs, isLoading: logsLoading } = useRxQuery(db.reviewlogs);
 
-  const isLoading = cardsLoading || logsLoading;
+  const isLoading = cardsLoading || logsLoading || settingsLoading;
 
   const introducedToday = getIntroducedToday();
   // Deserialize FSRS dates from strings to Date objects
   const cardsList = (allCards as unknown as FlashCard[]).map(deserializeCardDates);
-  const logsList = logs ?? [];
+  const logsList = (logs ?? []) as unknown as StoredReviewLog[];
 
   const { newItems, dueItems } = computeStudyItems(
     cardsList,
@@ -233,7 +229,7 @@ export function useDeck(deckName: string) {
 
   // Mark current card as introduced when first shown
   useEffect(() => {
-    if (!studyItem) return;
+    if (isLoading || !studyItem) return;
 
     const isNew = studyItem.isReverse ? !studyItem.reverseState : !studyItem.state;
     if (!isNew) return;
@@ -242,7 +238,7 @@ export function useDeck(deckName: string) {
       ? `${studyItem.source}:reverse`
       : studyItem.source;
     markAsIntroduced(key);
-  }, [studyItem?.source, studyItem?.isReverse, studyItem?.state, studyItem?.reverseState]);
+  }, [isLoading, studyItem?.source, studyItem?.isReverse, studyItem?.state, studyItem?.reverseState]);
 
   // Compute current card display info
   const currentCard: CurrentCard | null = studyItem
@@ -270,7 +266,7 @@ export function useDeck(deckName: string) {
     }
   }
 
-  function undo() {
+  async function undo() {
     if (!studyItem) return;
 
     // Find the most recent log for this card+direction
@@ -304,18 +300,18 @@ export function useDeck(deckName: string) {
       : null;
 
     // Update card state in RxDB directly
-    db.cards.findOne(studyItem.id).exec().then((doc) => {
-      if (doc) {
-        if (studyItem.isReverse) {
-          doc.incrementalPatch({ reverseState: serialized });
-        } else {
-          doc.incrementalPatch({ state: serialized });
-        }
+    const cardDoc = await db.cards.findOne(studyItem.id).exec();
+    if (cardDoc) {
+      if (studyItem.isReverse) {
+        await cardDoc.incrementalPatch({ reverseState: serialized });
+      } else {
+        await cardDoc.incrementalPatch({ state: serialized });
       }
-    });
+    }
 
-    // Remove the log entry
-    reviewLogsCollection.delete(lastLog.id);
+    // Remove the log entry from RxDB
+    const logDoc = await db.reviewlogs.findOne(lastLog.id).exec();
+    if (logDoc) await logDoc.remove();
   }
 
   // Check if undo is available for the current card

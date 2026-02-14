@@ -1,5 +1,5 @@
-import { useLiveQuery } from '@tanstack/react-db';
-import { createCollection, localStorageCollectionOptions } from '@tanstack/db';
+import { useRxQuery } from './useRxQuery';
+import { getDatabaseSync, type SettingsDoc } from '../services/rxdb';
 
 export interface Settings {
   id: string;
@@ -20,35 +20,23 @@ export const defaultSettings: Settings = {
   theme: 'system',
 };
 
-export const settingsCollection = createCollection<Settings, string>(
-  localStorageCollectionOptions({
-    storageKey: 'flash-card-settings',
-    getKey: (item) => item.id,
-  }),
-);
-
 export function useSettings() {
-  const { data, isLoading } = useLiveQuery(
-    (q) => q.from({ settings: settingsCollection }),
-    [],
-  );
+  const db = getDatabaseSync();
+  const { data, isLoading } = useRxQuery(db.settings);
 
-  const settings = data?.[0] ?? defaultSettings;
+  const settings: Settings = data.length > 0
+    ? { ...defaultSettings, ...data[0] } as Settings
+    : defaultSettings;
   const isConfigured = settings.repoUrl.length > 0 && settings.token.length > 0;
 
   function update(partial: Partial<Omit<Settings, 'id'>>) {
-    const updated = { ...settings, ...partial };
-    if (settingsCollection.state.has('settings')) {
-      settingsCollection.update('settings', (draft) => {
-        Object.assign(draft, partial);
-      });
-    } else {
-      settingsCollection.insert(updated);
-    }
+    const updated = { ...settings, ...partial } as SettingsDoc;
+    db.settings.upsert(updated);
   }
 
-  function clear() {
-    settingsCollection.utils.clearStorage();
+  async function clear() {
+    const doc = await db.settings.findOne('settings').exec();
+    if (doc) await doc.remove();
     window.location.reload();
   }
 

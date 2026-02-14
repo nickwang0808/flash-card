@@ -2,20 +2,24 @@ import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/rep
 import { type RxCollection } from 'rxdb/plugins/core';
 import { type Card } from 'ts-fsrs';
 import { github, parseRepoUrl, type GitHubConfig } from './github';
-import { settingsCollection, defaultSettings } from '../hooks/useSettings';
+import { defaultSettings } from '../hooks/useSettings';
 import type { FlashCard } from './collections';
-import { type CardDoc, type AppDatabase } from './rxdb';
+import { type CardDoc, type AppDatabase, getDatabaseSync } from './rxdb';
 
-// --- Config helpers (moved from github-service.ts) ---
+// --- Config helpers ---
 
-function getConfig(): GitHubConfig {
-  const settings = settingsCollection.state.get('settings') ?? defaultSettings;
+async function getConfig(): Promise<GitHubConfig> {
+  const db = getDatabaseSync();
+  const doc = await db.settings.findOne('settings').exec();
+  const settings = doc ? doc.toJSON() : defaultSettings;
   const { owner, repo } = parseRepoUrl(settings.repoUrl);
   return { owner, repo, token: settings.token, branch: settings.branch };
 }
 
-function isConfigured(): boolean {
-  const settings = settingsCollection.state.get('settings') ?? defaultSettings;
+async function isConfigured(): Promise<boolean> {
+  const db = getDatabaseSync();
+  const doc = await db.settings.findOne('settings').exec();
+  const settings = doc ? doc.toJSON() : defaultSettings;
   return settings.repoUrl.length > 0 && settings.token.length > 0;
 }
 
@@ -90,11 +94,11 @@ async function pullHandler(
   lastCheckpoint: { done: boolean } | undefined,
   _batchSize: number,
 ): Promise<{ documents: CardDocWithDeleted[]; checkpoint: { done: boolean } | undefined }> {
-  if (!isConfigured()) {
+  if (!(await isConfigured())) {
     return { documents: [], checkpoint: lastCheckpoint };
   }
 
-  const config = getConfig();
+  const config = await getConfig();
   const allCards: CardDocWithDeleted[] = [];
 
   try {
@@ -145,7 +149,7 @@ async function pushHandler(
     assumedMasterState?: CardDocWithDeleted;
   }>,
 ): Promise<CardDocWithDeleted[]> {
-  const config = getConfig();
+  const config = await getConfig();
 
   // Group changes by deck
   const byDeck = new Map<string, CardDocWithDeleted[]>();
@@ -230,6 +234,9 @@ export function setupReplication(db: AppDatabase): void {
 }
 
 export async function runSync(): Promise<void> {
+  // Guard: skip if not configured or offline
+  if (!(await isConfigured()) || !navigator.onLine) return;
+
   // Prevent concurrent sync — reuse in-flight promise if one exists
   if (syncInProgress) return syncInProgress;
 

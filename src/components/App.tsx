@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { runSync } from '../services/replication';
 import { AuthScreen } from './AuthScreen';
@@ -19,44 +19,44 @@ const SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 export function App() {
   const { settings, isConfigured, isLoading } = useSettings();
-  const [screen, setScreen] = useState<Screen>({ name: 'auth' });
+  const [screen, setScreen] = useState<Screen>(() =>
+    // Can't check isConfigured here (initial render), will fix in effect below
+    ({ name: 'auth' })
+  );
 
-  const triggerSync = useCallback(() => {
-    if (!isConfigured || !navigator.onLine) return;
-    runSync().catch(() => {
-      // Sync errors are non-fatal — data is safe locally
-    });
-  }, [isConfigured]);
-
-  // Set initial screen based on config
+  // Set initial screen once settings load
   useEffect(() => {
-    if (!isLoading) {
-      if (isConfigured) {
-        setScreen({ name: 'deck-list' });
-        // Sync on app load if configured
-        triggerSync();
-      } else {
-        setScreen({ name: 'auth' });
-      }
+    if (isLoading) return;
+    if (isConfigured) {
+      setScreen({ name: 'deck-list' });
+    } else {
+      setScreen({ name: 'auth' });
     }
-  }, [isLoading, isConfigured, triggerSync]);
+  // Only run when loading completes, not on every isConfigured change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
 
-  // Periodic sync + sync on tab focus
+  // Initial sync — once after bootstrap
   useEffect(() => {
-    if (!isConfigured) return;
+    runSync().catch(() => {});
+  }, []);
 
-    const interval = setInterval(triggerSync, SYNC_INTERVAL_MS);
+  // Auto-sync — interval + tab focus
+  useEffect(() => {
+    const interval = setInterval(() => {
+      runSync().catch(() => {});
+    }, SYNC_INTERVAL_MS);
 
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') triggerSync();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') runSync().catch(() => {});
     };
-    document.addEventListener('visibilitychange', handleVisibility);
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibility);
+      document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [isConfigured, triggerSync]);
+  }, []);
 
   // Apply theme
   useEffect(() => {
@@ -77,8 +77,8 @@ export function App() {
   }
 
   function handleAuthComplete() {
-    // Navigate to deck-list; the isConfigured useEffect will trigger sync
     navigate({ name: 'deck-list' });
+    runSync().catch(() => {});
   }
 
   switch (screen.name) {

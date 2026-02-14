@@ -86,8 +86,7 @@ export async function wipeAppData(page: Page) {
 
 /**
  * Connects to the real GitHub test repo by injecting settings directly
- * into localStorage (bypasses OAuth screen), ending up on the deck list
- * with seeded data.
+ * into RxDB (via window.__RXDB__), ending up on the deck list with seeded data.
  * Optionally uses a specific branch for test isolation.
  */
 export async function cloneTestRepo(page: Page, branch?: string) {
@@ -114,29 +113,31 @@ export async function cloneTestRepo(page: Page, branch?: string) {
     );
   });
 
-  // Inject settings directly into localStorage (TanStack DB format)
+  // Reload so the app bootstraps fresh (creates RxDB and exposes window.__RXDB__)
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+
+  // Wait for RxDB to be available
+  await page.waitForFunction(() => !!(window as any).__RXDB__, { timeout: 10000 });
+
+  // Inject settings directly into RxDB
   await page.evaluate(
-    ({ repoUrl, token, branchName }) => {
-      const settings: Record<string, unknown> = {
-        's:settings': {
-          versionKey: crypto.randomUUID(),
-          data: {
-            id: 'settings',
-            repoUrl,
-            token,
-            newCardsPerDay: 10,
-            reviewOrder: 'random',
-            theme: 'system',
-            ...(branchName ? { branch: branchName } : {}),
-          },
-        },
-      };
-      localStorage.setItem('flash-card-settings', JSON.stringify(settings));
+    async ({ repoUrl, token, branchName }) => {
+      const db = (window as any).__RXDB__;
+      await db.settings.upsert({
+        id: 'settings',
+        repoUrl,
+        token,
+        newCardsPerDay: 10,
+        reviewOrder: 'random',
+        theme: 'system',
+        ...(branchName ? { branch: branchName } : {}),
+      });
     },
     { repoUrl: E2E_REPO_URL, token: E2E_TOKEN, branchName: branch },
   );
 
-  // Reload to pick up injected settings and trigger initial sync
+  // Reload to trigger initial sync with the injected settings
   await page.reload();
   await page.waitForSelector('text=spanish-vocab', { timeout: 30000 });
 }

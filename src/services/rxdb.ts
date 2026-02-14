@@ -36,6 +36,45 @@ const decksSchema = {
   required: ['name'],
 } as const;
 
+// Schema for settings collection
+const settingsSchema = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id: { type: 'string', maxLength: 100 },
+    repoUrl: { type: 'string' },
+    token: { type: 'string' },
+    newCardsPerDay: { type: 'number' },
+    reviewOrder: { type: 'string', maxLength: 50 },
+    theme: { type: 'string', maxLength: 20 },
+    branch: { type: 'string' },
+  },
+  required: ['id'],
+} as const;
+
+// Schema for review logs collection
+const reviewLogsSchema = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id: { type: 'string', maxLength: 300 },
+    cardSource: { type: 'string', maxLength: 200 },
+    isReverse: { type: 'boolean' },
+    rating: { type: 'number' },
+    state: { type: 'number' },
+    due: { type: 'string' },
+    stability: { type: 'number' },
+    difficulty: { type: 'number' },
+    elapsed_days: { type: 'number' },
+    last_elapsed_days: { type: 'number' },
+    scheduled_days: { type: 'number' },
+    review: { type: 'string' },
+  },
+  required: ['id', 'cardSource'],
+} as const;
+
 export type CardDoc = {
   id: string;
   deckName: string;
@@ -55,9 +94,36 @@ export type DeckDoc = {
   name: string;
 };
 
+export type SettingsDoc = {
+  id: string;
+  repoUrl: string;
+  token: string;
+  newCardsPerDay: number;
+  reviewOrder: string;
+  theme: string;
+  branch?: string;
+};
+
+export type ReviewLogDoc = {
+  id: string;
+  cardSource: string;
+  isReverse: boolean;
+  rating: number;
+  state: number;
+  due: string;
+  stability: number;
+  difficulty: number;
+  elapsed_days: number;
+  last_elapsed_days: number;
+  scheduled_days: number;
+  review: string;
+};
+
 export type AppDatabase = RxDatabase<{
   cards: RxCollection<CardDoc>;
   decks: RxCollection<DeckDoc>;
+  settings: RxCollection<SettingsDoc>;
+  reviewlogs: RxCollection<ReviewLogDoc>;
 }>;
 
 let dbPromise: Promise<AppDatabase> | null = null;
@@ -68,6 +134,8 @@ export function getDatabase(): Promise<AppDatabase> {
     dbPromise = createRxDatabase<{
       cards: RxCollection<CardDoc>;
       decks: RxCollection<DeckDoc>;
+      settings: RxCollection<SettingsDoc>;
+      reviewlogs: RxCollection<ReviewLogDoc>;
     }>({
       name: 'flashcarddb',
       storage: getRxStorageDexie(),
@@ -77,6 +145,8 @@ export function getDatabase(): Promise<AppDatabase> {
       await db.addCollections({
         cards: { schema: cardsSchema },
         decks: { schema: decksSchema },
+        settings: { schema: settingsSchema },
+        reviewlogs: { schema: reviewLogsSchema },
       });
       dbInstance = db;
       return db;
@@ -96,5 +166,6 @@ export async function destroyDatabase(): Promise<void> {
     const db = await dbPromise;
     await db.remove();
     dbPromise = null;
+    dbInstance = null;
   }
 }

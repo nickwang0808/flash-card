@@ -8,8 +8,8 @@ interface Props {
   onLogout: () => void;
 }
 
-export function SettingsScreen({ onBack, onLogout }: Props) {
-  const { settings, update, clear } = useSettings();
+export function SettingsScreen({ onBack }: Props) {
+  const { settings, update } = useSettings();
   const { signOut } = useAuth();
   const [editingRepo, setEditingRepo] = useState(false);
   const [repoUrl, setRepoUrl] = useState(settings.repoUrl);
@@ -25,8 +25,7 @@ export function SettingsScreen({ onBack, onLogout }: Props) {
     try {
       await destroyDatabase();
     } catch (_) { /* best-effort */ }
-    clear();
-    onLogout();
+    window.location.reload();
   }
 
   return (

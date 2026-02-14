@@ -109,21 +109,16 @@ test.describe('Settings screen', () => {
     await page.getByRole('button', { name: 'Settings' }).click();
     await page.getByRole('button', { name: 'dark' }).click();
 
-    const hasDarkClass = await page.evaluate(() =>
-      document.documentElement.classList.contains('dark'),
-    );
-    expect(hasDarkClass).toBe(true);
+    await expect(page.locator('html')).toHaveClass(/dark/);
   });
 
   test('switching to light theme removes dark class', async ({ page }) => {
     await page.getByRole('button', { name: 'Settings' }).click();
     await page.getByRole('button', { name: 'dark' }).click();
-    await page.getByRole('button', { name: 'light' }).click();
+    await expect(page.locator('html')).toHaveClass(/dark/);
 
-    const hasDarkClass = await page.evaluate(() =>
-      document.documentElement.classList.contains('dark'),
-    );
-    expect(hasDarkClass).toBe(false);
+    await page.getByRole('button', { name: 'light' }).click();
+    await expect(page.locator('html')).not.toHaveClass(/dark/);
   });
 
   test('new cards per day slider persists value', async ({ page }) => {
@@ -134,12 +129,11 @@ test.describe('Settings screen', () => {
 
     await expect(page.getByText(/New cards per day: 5/)).toBeVisible();
 
-    // TanStack DB stores as { "s:settings": { versionKey, data: {...} } }
-    const stored = await page.evaluate(() => {
-      const raw = localStorage.getItem('flash-card-settings');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      return parsed['s:settings']?.data?.newCardsPerDay ?? null;
+    // Settings are stored in RxDB
+    const stored = await page.evaluate(async () => {
+      const db = (window as any).__RXDB__;
+      const doc = await db.settings.findOne('settings').exec();
+      return doc ? doc.toJSON().newCardsPerDay : null;
     });
     expect(stored).toBe(5);
   });
@@ -204,14 +198,12 @@ test.describe('Settings screen', () => {
     // Change review order to "oldest-first"
     await page.getByRole('combobox').selectOption('oldest-first');
 
-    // Verify it persisted in localStorage
-    const stored = await page.evaluate(() => {
-      const raw = localStorage.getItem('flash-card-settings');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      return parsed['s:settings']?.data?.reviewOrder ?? null;
-    });
-    expect(stored).toBe('oldest-first');
+    // Wait for RxDB to persist the value (async upsert)
+    await page.waitForFunction(async () => {
+      const db = (window as any).__RXDB__;
+      const doc = await db.settings.findOne('settings').exec();
+      return doc?.toJSON()?.reviewOrder === 'oldest-first';
+    }, { timeout: 5000 });
 
     // Navigate away and back — should still show oldest-first
     await page.getByRole('button', { name: 'Back' }).click();
@@ -247,11 +239,6 @@ test.describe('Settings screen', () => {
 
     await expect(page.getByRole('heading', { name: 'Flash Cards' })).toBeVisible();
     await expect(page.getByRole('button', { name: /sign in with github/i })).toBeVisible();
-
-    const hasSettings = await page.evaluate(() =>
-      localStorage.getItem('flash-card-settings'),
-    );
-    expect(hasSettings).toBeNull();
   });
 });
 
@@ -283,6 +270,14 @@ test.describe('New card daily limit', () => {
     await page.getByRole('button', { name: 'Settings' }).click();
     await page.getByRole('slider').fill('0');
     await expect(page.getByText(/New cards per day: 0/)).toBeVisible();
+
+    // Wait for RxDB to persist the value
+    await page.waitForFunction(async () => {
+      const db = (window as any).__RXDB__;
+      const doc = await db.settings.findOne('settings').exec();
+      return doc?.toJSON()?.newCardsPerDay === 0;
+    }, { timeout: 5000 });
+
     await page.getByRole('button', { name: 'Back' }).click();
 
     // Clear any "introduced today" markers that DeckListScreen may have set

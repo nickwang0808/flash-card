@@ -398,8 +398,6 @@ describe('computeStudyItems', () => {
       const { newItems } = computeStudyItems(cards, 1, endOfDay, introducedToday);
 
       // Limit is 1, reverse is introduced (counts toward limit)
-      // Forward gets the remaining 0 slots, so only reverse shows
-      // Wait - let me reconsider: introducedCount = 1, remainingNewSlots = 0
       // Forward: not introduced, 0 < 0 = false, not included
       // Reverse: is introduced, included
       expect(newItems).toHaveLength(1);
@@ -630,9 +628,11 @@ describe('rateCard', () => {
     const mockPatch = vi.fn(() => Promise.resolve());
     const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
     const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+    const mockInsert = vi.fn(() => Promise.resolve());
     const { getDatabaseSync } = await import('../../src/services/rxdb');
     vi.mocked(getDatabaseSync).mockReturnValue({
       cards: { findOne: mockFindOne },
+      reviewlogs: { insert: mockInsert },
     } as any);
 
     const card: StudyItem = {
@@ -650,9 +650,11 @@ describe('rateCard', () => {
     const mockPatch = vi.fn(() => Promise.resolve());
     const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
     const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+    const mockInsert = vi.fn(() => Promise.resolve());
     const { getDatabaseSync } = await import('../../src/services/rxdb');
     vi.mocked(getDatabaseSync).mockReturnValue({
       cards: { findOne: mockFindOne },
+      reviewlogs: { insert: mockInsert },
     } as any);
 
     const card: StudyItem = {
@@ -665,10 +667,16 @@ describe('rateCard', () => {
     expect(mockPatch).toHaveBeenCalledWith({ reverseState: expect.any(Object) });
   });
 
-  it('inserts a review log when rating', async () => {
-    const { reviewLogsCollection } = await import('../../src/services/collections');
-    const mockInsert = vi.fn();
-    (reviewLogsCollection as any).insert = mockInsert;
+  it('inserts a review log in RxDB when rating', async () => {
+    const mockPatch = vi.fn(() => Promise.resolve());
+    const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
+    const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+    const mockInsert = vi.fn(() => Promise.resolve());
+    const { getDatabaseSync } = await import('../../src/services/rxdb');
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: mockFindOne },
+      reviewlogs: { insert: mockInsert },
+    } as any);
 
     const card: StudyItem = {
       ...createFlashCard('hello'),
@@ -678,7 +686,7 @@ describe('rateCard', () => {
     await rateCard(card, Rating.Good);
 
     expect(mockInsert).toHaveBeenCalledTimes(1);
-    const insertedLog = mockInsert.mock.calls[0][0];
+    const insertedLog = (mockInsert.mock.calls as any[][])[0][0];
     expect(insertedLog.cardSource).toBe('hello');
     expect(insertedLog.isReverse).toBe(false);
     expect(insertedLog.rating).toBe(Rating.Good);
@@ -690,15 +698,6 @@ describe('rateCard', () => {
 // ============================================================================
 
 // Mock modules
-vi.mock('@tanstack/react-db', () => ({
-  useLiveQuery: vi.fn(),
-}));
-
-vi.mock('../../src/services/collections', () => ({
-  getCardsCollection: vi.fn(),
-  reviewLogsCollection: { insert: vi.fn(), delete: vi.fn() },
-}));
-
 vi.mock('../../src/services/rxdb', () => ({
   getDatabaseSync: vi.fn(() => ({
     cards: {
@@ -707,6 +706,11 @@ vi.mock('../../src/services/rxdb', () => ({
           incrementalPatch: vi.fn(() => Promise.resolve()),
         })),
       })),
+    },
+    settings: {},
+    reviewlogs: {
+      insert: vi.fn(() => Promise.resolve()),
+      findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })),
     },
   })),
 }));
@@ -727,25 +731,26 @@ vi.mock('../../src/hooks/useSettings', () => ({
   useSettings: vi.fn(),
 }));
 
-import { useLiveQuery } from '@tanstack/react-db';
-import { getCardsCollection } from '../../src/services/collections';
 import { useSettings } from '../../src/hooks/useSettings';
 import { useRxQuery } from '../../src/hooks/useRxQuery';
 import { getDatabaseSync } from '../../src/services/rxdb';
 
 describe('useDeck hook', () => {
-  let mockCollection: { update: ReturnType<typeof vi.fn> };
   let mockCards: FlashCard[];
   const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
 
-  // Helper to set up query mocks for cards (useRxQuery) and logs (useLiveQuery)
+  // Helper to set up query mocks for cards and logs (both useRxQuery now)
   function setupQueryMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
-    vi.mocked(useRxQuery).mockReturnValue({ data: cards, isLoading } as any);
-    vi.mocked(useLiveQuery).mockReturnValue({ data: logs, isLoading } as any);
+    vi.mocked(useRxQuery).mockImplementation((_collection: any, _query?: any) => {
+      // Distinguish between cards and reviewlogs by checking if a query was passed
+      if (_query) {
+        return { data: cards, isLoading } as any;
+      }
+      return { data: logs, isLoading } as any;
+    });
   }
 
   beforeEach(() => {
-    mockCollection = { update: vi.fn() };
     mockCards = [];
 
     // Clear localStorage entries for introduced cards
@@ -766,8 +771,12 @@ describe('useDeck hook', () => {
           })),
         })),
       },
+      settings: {},
+      reviewlogs: {
+        insert: vi.fn(() => Promise.resolve()),
+        findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })),
+      },
     } as any);
-    vi.mocked(getCardsCollection).mockReturnValue(mockCollection as any);
     vi.mocked(useSettings).mockReturnValue({
       settings: { newCardsPerDay: 10 },
       isLoading: false,
@@ -1001,7 +1010,12 @@ describe('useDeck hook', () => {
       const mockPatch = vi.fn(() => Promise.resolve());
       const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
       const mockFindOne = vi.fn(() => ({ exec: mockExec }));
-      vi.mocked(getDatabaseSync).mockReturnValue({ cards: { findOne: mockFindOne } } as any);
+      const mockInsert = vi.fn(() => Promise.resolve());
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: mockFindOne },
+        settings: {},
+        reviewlogs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })) },
+      } as any);
 
       mockCards = [createFlashCard('test-card')];
       setupQueryMock(mockCards);
@@ -1020,7 +1034,12 @@ describe('useDeck hook', () => {
 
     it('does nothing when no current card', () => {
       const mockFindOne = vi.fn();
-      vi.mocked(getDatabaseSync).mockReturnValue({ cards: { findOne: mockFindOne } } as any);
+      const mockInsert = vi.fn();
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: mockFindOne },
+        settings: {},
+        reviewlogs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })) },
+      } as any);
 
       setupQueryMock([]);
 
@@ -1037,7 +1056,12 @@ describe('useDeck hook', () => {
       const mockPatch = vi.fn(() => Promise.resolve());
       const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
       const mockFindOne = vi.fn(() => ({ exec: mockExec }));
-      vi.mocked(getDatabaseSync).mockReturnValue({ cards: { findOne: mockFindOne } } as any);
+      const mockInsert = vi.fn(() => Promise.resolve());
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: mockFindOne },
+        settings: {},
+        reviewlogs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })) },
+      } as any);
 
       mockCards = [createFlashCard('test-card')];
       setupQueryMock(mockCards);
@@ -1057,7 +1081,12 @@ describe('useDeck hook', () => {
       const mockPatch = vi.fn(() => Promise.resolve());
       const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
       const mockFindOne = vi.fn(() => ({ exec: mockExec }));
-      vi.mocked(getDatabaseSync).mockReturnValue({ cards: { findOne: mockFindOne } } as any);
+      const mockInsert = vi.fn(() => Promise.resolve());
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: mockFindOne },
+        settings: {},
+        reviewlogs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })) },
+      } as any);
 
       mockCards = [
         createFlashCard('test-card', {
@@ -1124,18 +1153,19 @@ describe('useDeck hook', () => {
 // ============================================================================
 
 describe('Study Session Flow', () => {
-  let mockCollection: { update: ReturnType<typeof vi.fn> };
   const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
 
-  // Helper to set up query mocks for cards (useRxQuery) and logs (useLiveQuery)
+  // Helper to set up query mocks for cards and logs (both useRxQuery now)
   function setupQueryMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
-    vi.mocked(useRxQuery).mockReturnValue({ data: cards, isLoading } as any);
-    vi.mocked(useLiveQuery).mockReturnValue({ data: logs, isLoading } as any);
+    vi.mocked(useRxQuery).mockImplementation((_collection: any, _query?: any) => {
+      if (_query) {
+        return { data: cards, isLoading } as any;
+      }
+      return { data: logs, isLoading } as any;
+    });
   }
 
   beforeEach(() => {
-    mockCollection = { update: vi.fn() };
-
     // Clear localStorage entries for introduced cards
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -1154,8 +1184,12 @@ describe('Study Session Flow', () => {
           })),
         })),
       },
+      settings: {},
+      reviewlogs: {
+        insert: vi.fn(() => Promise.resolve()),
+        findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })),
+      },
     } as any);
-    vi.mocked(getCardsCollection).mockReturnValue(mockCollection as any);
     vi.mocked(useSettings).mockReturnValue({
       settings: { newCardsPerDay: 10 },
       isLoading: false,
