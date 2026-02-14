@@ -62,7 +62,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
             </button>
           )}
           <button
-            onClick={suspend}
+            onClick={() => { suspend(); setAnswerRevealed(false); setCardKey(k => k + 1); }}
             className="text-sm text-muted-foreground hover:text-foreground"
             title="Suspend this card permanently"
           >

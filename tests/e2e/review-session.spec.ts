@@ -162,6 +162,26 @@ test.describe('Review session', () => {
     await expect(page.getByText('5 remaining')).toBeVisible();
   });
 
+  test('Suspend hides answer and shows next card unrevealed', async ({ page }) => {
+    await page.getByText('spanish-vocab').click();
+
+    await expect(page.getByText('6 remaining')).toBeVisible();
+
+    // Reveal the answer first
+    await page.getByRole('button', { name: 'Show Answer' }).click();
+
+    // Rating buttons should be visible (answer is revealed)
+    await expect(page.getByRole('button', { name: 'Again' })).toBeVisible();
+
+    // Suspend while answer is shown
+    await page.getByRole('button', { name: 'Suspend' }).click();
+
+    // Next card should appear with answer hidden
+    await expect(page.getByText('5 remaining')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Show Answer' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Again' })).not.toBeVisible();
+  });
+
   test('End Session returns to deck list mid-session', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
