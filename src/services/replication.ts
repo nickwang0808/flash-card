@@ -215,6 +215,7 @@ async function syncDecks(db: AppDatabase): Promise<void> {
 
 let replicationState: RxReplicationState<CardDoc, unknown> | null = null;
 let database: AppDatabase | null = null;
+let syncInProgress: Promise<void> | null = null;
 
 export function setupReplication(db: AppDatabase): void {
   database = db;
@@ -229,6 +230,18 @@ export function setupReplication(db: AppDatabase): void {
 }
 
 export async function runSync(): Promise<void> {
+  // Prevent concurrent sync — reuse in-flight promise if one exists
+  if (syncInProgress) return syncInProgress;
+
+  syncInProgress = doSync();
+  try {
+    await syncInProgress;
+  } finally {
+    syncInProgress = null;
+  }
+}
+
+async function doSync(): Promise<void> {
   if (!replicationState || !database) {
     throw new Error('Replication not initialized');
   }
