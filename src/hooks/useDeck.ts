@@ -1,7 +1,7 @@
 import { fsrs, createEmptyCard, type Grade, type Card, type ReviewLog, type Rating, type State } from 'ts-fsrs';
 import { type FlashCard, type StoredReviewLog } from '../services/collections';
 import { useSettings } from './useSettings';
-import { parseCardState } from '../services/replication';
+import { parseCardState, notifyChange } from '../services/replication';
 import { useRxQuery } from './useRxQuery';
 import { getDatabaseSync } from '../services/rxdb';
 
@@ -148,6 +148,8 @@ export async function rateCard(
       await doc.incrementalPatch({ state: serializedState });
     }
   }
+
+  notifyChange();
 }
 
 export function useDeck(deckName: string) {
@@ -213,6 +215,7 @@ export function useDeck(deckName: string) {
     const doc = await db.cards.findOne(studyItem.id).exec();
     if (doc) {
       await doc.incrementalPatch({ suspended: true });
+      notifyChange();
     }
   }
 
@@ -262,6 +265,8 @@ export function useDeck(deckName: string) {
     // Remove the log entry from RxDB
     const logDoc = await db.reviewlogs.findOne(lastLog.id).exec();
     if (logDoc) await logDoc.remove();
+
+    notifyChange();
   }
 
   // Check if undo is available for the current card

@@ -226,6 +226,38 @@ let replicationState: RxReplicationState<CardDoc, unknown> | null = null;
 let database: AppDatabase | null = null;
 let syncInProgress: Promise<void> | null = null;
 
+// --- Debounce-based push ---
+
+let pendingChanges = 0;
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+const DEBOUNCE_MS = 10_000; // 10s of inactivity → flush
+const MAX_BATCH_SIZE = 10; // flush immediately after 10 changes
+
+function flushChanges(): void {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  pendingChanges = 0;
+  runSync().catch(() => {});
+}
+
+export function notifyChange(): void {
+  pendingChanges++;
+  if (pendingChanges >= MAX_BATCH_SIZE) {
+    flushChanges();
+    return;
+  }
+  if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(flushChanges, DEBOUNCE_MS);
+}
+
+export function flushSync(): void {
+  if (pendingChanges > 0) {
+    flushChanges();
+  }
+}
+
 export function setupReplication(db: AppDatabase): void {
   database = db;
   replicationState = replicateRxCollection({
@@ -272,6 +304,12 @@ async function doSync(): Promise<void> {
 }
 
 export async function cancelReplication(): Promise<void> {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  pendingChanges = 0;
+
   if (replicationState) {
     if (!replicationState.isStopped()) {
       await replicationState.cancel();

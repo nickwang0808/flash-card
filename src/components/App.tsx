@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useSettings } from '../hooks/useSettings';
-import { runSync } from '../services/replication';
+import { runSync, flushSync } from '../services/replication';
 import { AuthScreen } from './AuthScreen';
 import { DeckListScreen } from './DeckListScreen';
 import { ReviewScreen } from './ReviewScreen';
@@ -14,8 +14,6 @@ type Screen =
   | { name: 'review'; deck: string }
   | { name: 'sync' }
   | { name: 'settings' };
-
-const SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 export function App() {
   const { settings, isConfigured, isLoading } = useSettings();
@@ -41,20 +39,19 @@ export function App() {
     runSync().catch(() => {});
   }, []);
 
-  // Auto-sync — interval + tab focus
+  // Auto-sync — tab focus pulls, tab hide flushes pending changes
   useEffect(() => {
-    const interval = setInterval(() => {
-      runSync().catch(() => {});
-    }, SYNC_INTERVAL_MS);
-
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') runSync().catch(() => {});
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        runSync().catch(() => {});
+      } else {
+        flushSync();
+      }
     };
-    document.addEventListener('visibilitychange', onVisible);
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisible);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, []);
 
