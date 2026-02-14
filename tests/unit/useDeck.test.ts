@@ -6,8 +6,6 @@ import {
   computeNewState,
   rateCard,
   useDeck,
-  getIntroducedToday,
-  markAsIntroduced,
   type StudyItem,
 } from '../../src/hooks/useDeck';
 import type { FlashCard } from '../../src/services/collections';
@@ -62,70 +60,6 @@ function createPastState(daysAgo: number): Card {
   past.setDate(past.getDate() - daysAgo);
   return { ...card, due: past, reps: 1 };
 }
-
-// ============================================================================
-// localStorage Helper Tests
-// ============================================================================
-
-describe('localStorage helpers', () => {
-  const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
-
-  beforeEach(() => {
-    // Clear all localStorage entries with our prefix
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(STORAGE_KEY_PREFIX)) {
-        keysToRemove.push(key);
-      }
-    }
-    keysToRemove.forEach(key => localStorage.removeItem(key));
-  });
-
-  describe('getIntroducedToday', () => {
-    it('returns empty set when no data exists', () => {
-      const result = getIntroducedToday();
-      expect(result.size).toBe(0);
-    });
-
-    it('returns stored cards as a set', () => {
-      const todayKey = STORAGE_KEY_PREFIX + new Date().toISOString().split('T')[0];
-      localStorage.setItem(todayKey, JSON.stringify(['card1', 'card2']));
-
-      const result = getIntroducedToday();
-      expect(result.size).toBe(2);
-      expect(result.has('card1')).toBe(true);
-      expect(result.has('card2')).toBe(true);
-    });
-  });
-
-  describe('markAsIntroduced', () => {
-    it('adds a new card to localStorage', () => {
-      markAsIntroduced('new-card');
-
-      const result = getIntroducedToday();
-      expect(result.has('new-card')).toBe(true);
-    });
-
-    it('does not duplicate existing cards', () => {
-      markAsIntroduced('card1');
-      markAsIntroduced('card1');
-
-      const result = getIntroducedToday();
-      expect(result.size).toBe(1);
-    });
-
-    it('handles reverse card keys with :reverse suffix', () => {
-      markAsIntroduced('hello');
-      markAsIntroduced('hello:reverse');
-
-      const result = getIntroducedToday();
-      expect(result.size).toBe(2);
-      expect(result.has('hello')).toBe(true);
-      expect(result.has('hello:reverse')).toBe(true);
-    });
-  });
-});
 
 // ============================================================================
 // Pure Function Tests: computeStudyItems
@@ -737,7 +671,6 @@ import { getDatabaseSync } from '../../src/services/rxdb';
 
 describe('useDeck hook', () => {
   let mockCards: FlashCard[];
-  const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
 
   // Helper to set up query mocks for cards and logs (both useRxQuery now)
   function setupQueryMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
@@ -752,16 +685,6 @@ describe('useDeck hook', () => {
 
   beforeEach(() => {
     mockCards = [];
-
-    // Clear localStorage entries for introduced cards
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(STORAGE_KEY_PREFIX)) {
-        keysToRemove.push(key);
-      }
-    }
-    keysToRemove.forEach(key => localStorage.removeItem(key));
 
     vi.mocked(getDatabaseSync).mockReturnValue({
       cards: {
@@ -1153,8 +1076,6 @@ describe('useDeck hook', () => {
 // ============================================================================
 
 describe('Study Session Flow', () => {
-  const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
-
   // Helper to set up query mocks for cards and logs (both useRxQuery now)
   function setupQueryMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
     vi.mocked(useRxQuery).mockImplementation((_collection: any, _query?: any) => {
@@ -1166,15 +1087,6 @@ describe('Study Session Flow', () => {
   }
 
   beforeEach(() => {
-    // Clear localStorage entries for introduced cards
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(STORAGE_KEY_PREFIX)) {
-        keysToRemove.push(key);
-      }
-    }
-    keysToRemove.forEach(key => localStorage.removeItem(key));
 
     vi.mocked(getDatabaseSync).mockReturnValue({
       cards: {

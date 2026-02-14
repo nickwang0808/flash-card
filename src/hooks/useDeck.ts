@@ -1,53 +1,9 @@
-import { useEffect } from 'react';
 import { fsrs, createEmptyCard, type Grade, type Card, type ReviewLog, type Rating, type State } from 'ts-fsrs';
 import { type FlashCard, type StoredReviewLog } from '../services/collections';
 import { useSettings } from './useSettings';
 import { parseCardState } from '../services/replication';
 import { useRxQuery } from './useRxQuery';
 import { getDatabaseSync } from '../services/rxdb';
-
-// localStorage helpers for tracking introduced new cards
-const STORAGE_KEY_PREFIX = 'flashcard:newCardsIntroduced:';
-
-function getTodayKey(): string {
-  return STORAGE_KEY_PREFIX + new Date().toISOString().split('T')[0];
-}
-
-export function getIntroducedToday(): Set<string> {
-  const key = getTodayKey();
-  const stored = localStorage.getItem(key);
-  return new Set(stored ? JSON.parse(stored) : []);
-}
-
-export function markAsIntroduced(source: string): void {
-  const key = getTodayKey();
-  const introduced = getIntroducedToday();
-  if (introduced.has(source)) return; // Already tracked
-  introduced.add(source);
-  localStorage.setItem(key, JSON.stringify([...introduced]));
-}
-
-// Run once on module load to clean up entries older than 3 days
-function cleanupOldEntries(): void {
-  const threeDaysAgo = new Date();
-  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-  const cutoffDate = threeDaysAgo.toISOString().split('T')[0];
-
-  const keysToRemove: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key?.startsWith(STORAGE_KEY_PREFIX)) {
-      const dateStr = key.replace(STORAGE_KEY_PREFIX, '');
-      if (dateStr < cutoffDate) {
-        keysToRemove.push(key);
-      }
-    }
-  }
-  keysToRemove.forEach(key => localStorage.removeItem(key));
-}
-
-// Cleanup on load
-cleanupOldEntries();
 
 export type StudyItem = FlashCard & { isReverse: boolean };
 
@@ -211,10 +167,17 @@ export function useDeck(deckName: string) {
 
   const isLoading = cardsLoading || logsLoading || settingsLoading;
 
-  const introducedToday = getIntroducedToday();
   // Deserialize FSRS dates from strings to Date objects
   const cardsList = (allCards as unknown as FlashCard[]).map(deserializeCardDates);
   const logsList = (logs ?? []) as unknown as StoredReviewLog[];
+
+  // Derive introduced-today from review logs (state=0 means "was New when reviewed")
+  const today = new Date().toISOString().split('T')[0];
+  const introducedToday = new Set(
+    logsList
+      .filter((l) => l.state === 0 && l.review.startsWith(today))
+      .map((l) => l.isReverse ? `${l.cardSource}:reverse` : l.cardSource)
+  );
 
   const { newItems, dueItems } = computeStudyItems(
     cardsList,
@@ -226,19 +189,6 @@ export function useDeck(deckName: string) {
   // New cards first, then due cards
   const allItems = [...newItems, ...dueItems];
   const studyItem = allItems[0] ?? null;
-
-  // Mark current card as introduced when first shown
-  useEffect(() => {
-    if (isLoading || !studyItem) return;
-
-    const isNew = studyItem.isReverse ? !studyItem.reverseState : !studyItem.state;
-    if (!isNew) return;
-
-    const key = studyItem.isReverse
-      ? `${studyItem.source}:reverse`
-      : studyItem.source;
-    markAsIntroduced(key);
-  }, [isLoading, studyItem?.source, studyItem?.isReverse, studyItem?.state, studyItem?.reverseState]);
 
   // Compute current card display info
   const currentCard: CurrentCard | null = studyItem

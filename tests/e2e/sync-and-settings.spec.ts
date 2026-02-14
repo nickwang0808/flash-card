@@ -280,16 +280,6 @@ test.describe('New card daily limit', () => {
 
     await page.getByRole('button', { name: 'Back' }).click();
 
-    // Clear any "introduced today" markers that DeckListScreen may have set
-    // (useDeck in DeckRow marks the first card as introduced on mount)
-    await page.evaluate(() => {
-      const prefix = 'flashcard:newCardsIntroduced:';
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const key = localStorage.key(i);
-        if (key?.startsWith(prefix)) localStorage.removeItem(key);
-      }
-    });
-
     await page.getByText('spanish-vocab').click();
 
     // No new cards allowed — should show session complete right away

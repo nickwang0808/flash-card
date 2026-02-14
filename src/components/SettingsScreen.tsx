@@ -19,9 +19,6 @@ export function SettingsScreen({ onBack }: Props) {
     try {
       await signOut();
     } catch (_) { /* best-effort */ }
-    localStorage.removeItem('flash-card-pending-reviews');
-    localStorage.removeItem('flash-card-new-count');
-    localStorage.removeItem('flash-card-last-sync');
     try {
       await destroyDatabase();
     } catch (_) { /* best-effort */ }
