@@ -173,6 +173,18 @@ export function AuthScreen({ onComplete }: Props) {
             >
               {loading ? 'Connecting...' : 'Connect'}
             </button>
+
+            <p className="text-xs text-muted-foreground text-center">
+              Don't have a data repo?{' '}
+              <a
+                href="https://raw.githubusercontent.com/nickwang0808/flash-card/master/docs/data-setup.md"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                Paste this link to your agent to set one up
+              </a>
+            </p>
           </form>
         )}
       </div>
