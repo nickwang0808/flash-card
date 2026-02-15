@@ -67,9 +67,14 @@ export function computeStudyItems(
   }
 
   // Combine: all forwards first, then all reverses
+  // Sort due items by due time so recently-rated learning cards fall to the end
   return {
     newItems: [...newForward, ...newReverse],
-    dueItems: [...dueForward, ...dueReverse],
+    dueItems: [...dueForward, ...dueReverse].sort((a, b) => {
+      const aDue = a.isReverse ? a.reverseState!.due : a.state!.due;
+      const bDue = b.isReverse ? b.reverseState!.due : b.state!.due;
+      return aDue.getTime() - bDue.getTime();
+    }),
   };
 }
 

@@ -418,6 +418,51 @@ describe('computeStudyItems', () => {
       expect(newItems).toHaveLength(2);
     });
   });
+
+  describe('learning card ordering', () => {
+    it('sorts learning cards after overdue review cards in dueItems', () => {
+      const endOfDay = getEndOfDay();
+
+      // Simulate: card1 was just rated "Again" (Learning state, due in 1 min)
+      const { card: learningState } = computeNewState(null, Rating.Again);
+
+      // card2 is an overdue review card (due yesterday)
+      const cards = [
+        createFlashCard('just-rated-again', { state: learningState }),
+        createFlashCard('overdue-review', { state: createPastState(1) }),
+      ];
+
+      const { dueItems } = computeStudyItems(cards, 10, endOfDay);
+
+      expect(dueItems).toHaveLength(2);
+      // Overdue review card should come first, not the just-rated learning card
+      expect(dueItems[0].source).toBe('overdue-review');
+      expect(dueItems[1].source).toBe('just-rated-again');
+    });
+
+    it('sorts multiple learning cards by due time (oldest due first)', () => {
+      const endOfDay = getEndOfDay();
+
+      // card1 rated "Again" 5 minutes ago (due 4 min ago)
+      const pastTime = new Date(Date.now() - 5 * 60 * 1000);
+      const { card: olderLearning } = computeNewState(null, Rating.Again, pastTime);
+
+      // card2 rated "Again" just now (due in 1 min)
+      const { card: newerLearning } = computeNewState(null, Rating.Again);
+
+      const cards = [
+        createFlashCard('newer-again', { state: newerLearning }),
+        createFlashCard('older-again', { state: olderLearning }),
+      ];
+
+      const { dueItems } = computeStudyItems(cards, 10, endOfDay);
+
+      expect(dueItems).toHaveLength(2);
+      // Older learning card (due earlier) should come first
+      expect(dueItems[0].source).toBe('older-again');
+      expect(dueItems[1].source).toBe('newer-again');
+    });
+  });
 });
 
 // ============================================================================
