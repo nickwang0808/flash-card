@@ -9,6 +9,7 @@ export interface Settings {
   reviewOrder: 'random' | 'oldest-first' | 'deck-grouped';
   theme: 'light' | 'dark' | 'system';
   branch?: string;
+  apiBaseUrl?: string;
 }
 
 export const defaultSettings: Settings = {

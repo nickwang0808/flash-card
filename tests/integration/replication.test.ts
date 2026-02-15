@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { CardData, GitStorageService } from '../../src/services/git-storage';
+import type { CardRepository } from '../../src/services/card-repository';
 
 // Create a mock service that records calls
 function createMockService(initialCards: CardData[] = []): GitStorageService & {
@@ -47,60 +48,50 @@ function makeCard(source: string, deckName = 'test-deck', overrides: Partial<Car
   };
 }
 
-// We need to mock RxDB and settings before importing replication
+// Mock CardRepository
+const mockCardsStore: Map<string, CardData & { id: string }> = new Map();
+
+const mockCardRepository: CardRepository = {
+  getById: vi.fn(async (id: string) => {
+    const card = mockCardsStore.get(id);
+    return card ? { ...card, state: null, reverseState: null } as any : null;
+  }),
+  getAll: vi.fn(async () => [...mockCardsStore.values()] as any[]),
+  getDeckNames: vi.fn(async () => [...new Set([...mockCardsStore.values()].map(c => c.deckName))]),
+  updateState: vi.fn(async () => {}),
+  suspend: vi.fn(async () => {}),
+  replaceAll: vi.fn(async (cards: CardData[]) => {
+    mockCardsStore.clear();
+    for (const c of cards) {
+      const id = `${c.deckName}|${c.source}`;
+      mockCardsStore.set(id, { ...c, id });
+    }
+  }),
+  getCardDataByIds: vi.fn(async (ids: string[]) => {
+    const result: CardData[] = [];
+    for (const id of ids) {
+      const card = mockCardsStore.get(id);
+      if (card) {
+        const { id: _id, ...data } = card;
+        result.push(data);
+      }
+    }
+    return result;
+  }),
+};
+
+vi.mock('../../src/services/card-repository', () => ({
+  getCardRepository: vi.fn(() => mockCardRepository),
+  makeCardId: (deckName: string, source: string) => `${deckName}|${source}`,
+}));
+
+// We need to mock RxDB for settings access only
 const mockSettings = {
   repoUrl: 'https://github.com/test/repo',
   token: 'test-token',
   newCardsPerDay: 10,
   reviewOrder: 'random',
   theme: 'system',
-};
-
-const mockCardsData: Map<string, any> = new Map();
-const mockDecksData: Map<string, any> = new Map();
-
-const mockCardsCollection = {
-  find: vi.fn(() => ({
-    exec: vi.fn(async () => [...mockCardsData.values()].map((c) => ({
-      ...c,
-      toJSON: () => c,
-      remove: vi.fn(),
-    }))),
-    remove: vi.fn(async () => {
-      mockCardsData.clear();
-    }),
-  })),
-  findOne: vi.fn((id: string) => ({
-    exec: vi.fn(async () => {
-      const card = mockCardsData.get(id);
-      if (!card) return null;
-      return {
-        ...card,
-        toJSON: () => card,
-        incrementalPatch: vi.fn(async (patch: any) => {
-          mockCardsData.set(id, { ...card, ...patch });
-        }),
-      };
-    }),
-  })),
-  bulkInsert: vi.fn(async (docs: any[]) => {
-    for (const doc of docs) {
-      mockCardsData.set(doc.id, doc);
-    }
-  }),
-};
-
-const mockDecksCollection = {
-  find: vi.fn(() => ({
-    exec: vi.fn(async () => [...mockDecksData.values()].map((d) => ({
-      ...d,
-      name: d.name,
-      remove: vi.fn(async () => mockDecksData.delete(d.name)),
-    }))),
-  })),
-  insert: vi.fn(async (doc: any) => {
-    mockDecksData.set(doc.name, doc);
-  }),
 };
 
 vi.mock('../../src/services/rxdb', () => ({
@@ -112,8 +103,6 @@ vi.mock('../../src/services/rxdb', () => ({
         })),
       })),
     },
-    cards: mockCardsCollection,
-    decks: mockDecksCollection,
   })),
 }));
 
@@ -133,19 +122,15 @@ Object.defineProperty(globalThis, 'navigator', {
   writable: true,
 });
 
-import { setServiceFactory, runSync, notifyChange, flushSync, cancelSync } from '../../src/services/replication';
+import { setServiceFactory, runSync, notifyChange, cancelSync } from '../../src/services/replication';
 
 describe('Replication with mocked GitStorageService', () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     await cancelSync();
-    mockCardsData.clear();
-    mockDecksData.clear();
-    mockCardsCollection.find.mockClear();
-    mockCardsCollection.findOne.mockClear();
-    mockCardsCollection.bulkInsert.mockClear();
-    mockDecksCollection.find.mockClear();
-    mockDecksCollection.insert.mockClear();
+    mockCardsStore.clear();
+    vi.mocked(mockCardRepository.replaceAll).mockClear();
+    vi.mocked(mockCardRepository.getCardDataByIds).mockClear();
   });
 
   afterEach(() => {
@@ -153,7 +138,7 @@ describe('Replication with mocked GitStorageService', () => {
     vi.useRealTimers();
   });
 
-  it('runSync pulls and replaces RxDB cards', async () => {
+  it('runSync pulls and replaces cards via repository', async () => {
     const seedCards = [
       makeCard('hello', 'spanish'),
       makeCard('world', 'spanish'),
@@ -164,16 +149,15 @@ describe('Replication with mocked GitStorageService', () => {
     await runSync();
 
     expect(mockService.pullCallCount).toBe(1);
-    expect(mockCardsCollection.bulkInsert).toHaveBeenCalledTimes(1);
+    expect(mockCardRepository.replaceAll).toHaveBeenCalledTimes(1);
 
-    const insertedCards = mockCardsCollection.bulkInsert.mock.calls[0][0];
-    expect(insertedCards).toHaveLength(2);
-    expect(insertedCards[0].source).toBe('hello');
-    expect(insertedCards[0].id).toBe('spanish|hello');
-    expect(insertedCards[1].source).toBe('world');
+    const replacedCards = vi.mocked(mockCardRepository.replaceAll).mock.calls[0][0];
+    expect(replacedCards).toHaveLength(2);
+    expect(replacedCards[0].source).toBe('hello');
+    expect(replacedCards[1].source).toBe('world');
   });
 
-  it('runSync creates deck entries from pulled cards', async () => {
+  it('runSync populates card store after pull', async () => {
     const seedCards = [
       makeCard('hello', 'spanish'),
       makeCard('bonjour', 'french'),
@@ -181,19 +165,27 @@ describe('Replication with mocked GitStorageService', () => {
     const mockService = createMockService(seedCards);
     setServiceFactory(async () => mockService);
 
+    // Allow replaceAll to actually populate the store
+    vi.mocked(mockCardRepository.replaceAll).mockImplementation(async (cards) => {
+      mockCardsStore.clear();
+      for (const c of cards) {
+        const id = `${c.deckName}|${c.source}`;
+        mockCardsStore.set(id, { ...c, id });
+      }
+    });
+
     await runSync();
 
-    expect(mockDecksCollection.insert).toHaveBeenCalledTimes(2);
-    const insertedDecks = mockDecksCollection.insert.mock.calls.map((c: any[]) => c[0].name);
-    expect(insertedDecks).toContain('spanish');
-    expect(insertedDecks).toContain('french');
+    expect(mockCardsStore.size).toBe(2);
+    expect(mockCardsStore.has('spanish|hello')).toBe(true);
+    expect(mockCardsStore.has('french|bonjour')).toBe(true);
   });
 
   it('pushDirtyCards sends correct CardData via service', async () => {
     const mockService = createMockService();
     setServiceFactory(async () => mockService);
 
-    // Seed a card in RxDB
+    // Seed a card in the store
     const card = {
       id: 'deck|hello',
       deckName: 'deck',
@@ -201,14 +193,27 @@ describe('Replication with mocked GitStorageService', () => {
       translation: 'hi',
       example: 'Hello!',
       notes: '',
-      tags: [],
+      tags: [] as string[],
       created: '2025-01-01T00:00:00Z',
       reversible: false,
       state: null,
       reverseState: null,
       suspended: false,
     };
-    mockCardsData.set('deck|hello', card);
+    mockCardsStore.set('deck|hello', card);
+
+    // Re-mock getCardDataByIds to actually use the store
+    vi.mocked(mockCardRepository.getCardDataByIds).mockImplementation(async (ids) => {
+      const result: CardData[] = [];
+      for (const id of ids) {
+        const c = mockCardsStore.get(id);
+        if (c) {
+          const { id: _id, ...data } = c;
+          result.push(data);
+        }
+      }
+      return result;
+    });
 
     notifyChange('deck|hello');
     await vi.advanceTimersByTimeAsync(10_000);
@@ -232,12 +237,24 @@ describe('Replication with mocked GitStorageService', () => {
     for (const source of ['a', 'b', 'c']) {
       const card = {
         id: `deck|${source}`, deckName: 'deck', source,
-        translation: source, example: '', notes: '', tags: [],
+        translation: source, example: '', notes: '', tags: [] as string[],
         created: '2025-01-01', reversible: false,
         state: null, reverseState: null, suspended: false,
       };
-      mockCardsData.set(`deck|${source}`, card);
+      mockCardsStore.set(`deck|${source}`, card);
     }
+
+    vi.mocked(mockCardRepository.getCardDataByIds).mockImplementation(async (ids) => {
+      const result: CardData[] = [];
+      for (const id of ids) {
+        const c = mockCardsStore.get(id);
+        if (c) {
+          const { id: _id, ...data } = c;
+          result.push(data);
+        }
+      }
+      return result;
+    });
 
     notifyChange('deck|a');
     notifyChange('deck|b');
@@ -272,14 +289,25 @@ describe('Replication with mocked GitStorageService', () => {
     };
     setServiceFactory(async () => service);
 
+    // Track what gets passed to replaceAll
+    let replacedCards: CardData[] = [];
+    vi.mocked(mockCardRepository.replaceAll).mockImplementation(async (cards) => {
+      replacedCards = cards;
+      mockCardsStore.clear();
+      for (const c of cards) {
+        const id = `${c.deckName}|${c.source}`;
+        mockCardsStore.set(id, { ...c, id });
+      }
+    });
+
     // Pull
     await runSync();
 
-    // Verify card in RxDB
-    const inserted = mockCardsCollection.bulkInsert.mock.calls[0][0][0];
-    expect(inserted.source).toBe('gato');
-    expect(inserted.translation).toBe('cat');
-    expect(inserted.reversible).toBe(true);
-    expect(inserted.state).toEqual(originalCard.state);
+    // Verify card passed to repository
+    expect(replacedCards).toHaveLength(1);
+    expect(replacedCards[0].source).toBe('gato');
+    expect(replacedCards[0].translation).toBe('cat');
+    expect(replacedCards[0].reversible).toBe(true);
+    expect(replacedCards[0].state).toEqual(originalCard.state);
   });
 });

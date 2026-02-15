@@ -1,8 +1,8 @@
-import { type Card } from 'ts-fsrs';
-import type { CardData, GitStorageService } from './git-storage';
+import type { GitStorageService } from './git-storage';
 import { GitHubStorageService, parseRepoUrl, type GitHubConfig } from './github';
 import { defaultSettings } from '../hooks/useSettings';
-import { type AppDatabase, getDatabaseSync } from './rxdb';
+import { getDatabaseSync } from './rxdb';
+import { getCardRepository } from './card-repository';
 
 // --- Config helpers ---
 
@@ -41,54 +41,6 @@ async function getService(): Promise<GitStorageService> {
   return new GitHubStorageService(config);
 }
 
-// --- Composite key helpers ---
-
-export function makeCardId(deckName: string, source: string): string {
-  return `${deckName}|${source}`;
-}
-
-export function parseCardId(id: string): { deckName: string; source: string } {
-  const idx = id.indexOf('|');
-  if (idx === -1) return { deckName: '', source: id };
-  return { deckName: id.slice(0, idx), source: id.slice(idx + 1) };
-}
-
-// --- Date serialization for FSRS Card objects ---
-
-interface CardStateJSON extends Omit<Card, 'due' | 'last_review'> {
-  due: string;
-  last_review?: string;
-}
-
-export function parseCardState(json: CardStateJSON): Card {
-  return {
-    ...json,
-    due: new Date(json.due),
-    last_review: json.last_review ? new Date(json.last_review) : undefined,
-  } as Card;
-}
-
-// --- Decks sync: derive from cards after pull ---
-
-async function syncDecks(db: AppDatabase): Promise<void> {
-  const allCards = await db.cards.find().exec();
-  const deckNames = new Set(allCards.map((c) => c.deckName));
-
-  const currentDecks = await db.decks.find().exec();
-  const currentDeckNames = new Set(currentDecks.map((d) => d.name));
-
-  for (const name of deckNames) {
-    if (!currentDeckNames.has(name)) {
-      await db.decks.insert({ name });
-    }
-  }
-  for (const deck of currentDecks) {
-    if (!deckNames.has(deck.name)) {
-      await deck.remove();
-    }
-  }
-}
-
 // --- Sync state ---
 
 let syncInProgress: Promise<void> | null = null;
@@ -104,28 +56,8 @@ async function pushDirtyCards(ids: string[]): Promise<void> {
   if (!(await isConfigured()) || !navigator.onLine) return;
 
   const service = await getService();
-  const db = getDatabaseSync();
-  const cards: CardData[] = [];
-
-  for (const id of ids) {
-    const doc = await db.cards.findOne(id).exec();
-    if (doc) {
-      const json = doc.toJSON();
-      cards.push({
-        deckName: json.deckName,
-        source: json.source,
-        translation: json.translation,
-        example: json.example,
-        notes: json.notes,
-        tags: json.tags,
-        created: json.created,
-        reversible: json.reversible,
-        state: json.state,
-        reverseState: json.reverseState,
-        suspended: json.suspended,
-      });
-    }
-  }
+  const repo = getCardRepository();
+  const cards = await repo.getCardDataByIds(ids);
 
   if (cards.length > 0) await service.pushCards(cards);
 }
@@ -183,7 +115,7 @@ export async function runSync(): Promise<void> {
 
 async function doSync(): Promise<void> {
   const service = await getService();
-  const db = getDatabaseSync();
+  const repo = getCardRepository();
 
   // Flush any pending pushes first (so we don't lose them)
   if (dirtyCardIds.size > 0) {
@@ -198,27 +130,7 @@ async function doSync(): Promise<void> {
 
   // Pull: bulk replace
   const cards = await service.pullAllCards();
-  await db.cards.find().remove();
-  if (cards.length > 0) {
-    await db.cards.bulkInsert(
-      cards.map((c) => ({
-        id: makeCardId(c.deckName, c.source),
-        deckName: c.deckName,
-        source: c.source,
-        translation: c.translation,
-        example: c.example ?? '',
-        notes: c.notes ?? '',
-        tags: c.tags ?? [],
-        created: c.created,
-        reversible: c.reversible,
-        state: c.state,
-        reverseState: c.reverseState,
-        suspended: c.suspended ?? false,
-      })),
-    );
-  }
-
-  await syncDecks(db);
+  await repo.replaceAll(cards);
 }
 
 export async function cancelSync(): Promise<void> {

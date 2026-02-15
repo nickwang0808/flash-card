@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { getDatabase, type AppDatabase } from './services/rxdb';
+import { RxDbCardRepository, setCardRepository } from './services/card-repository';
+import { RxDbReviewLogRepository, setReviewLogRepository } from './services/review-log-repository';
 import { App } from './components/App';
 import './styles/main.css';
 
@@ -49,6 +51,10 @@ async function migrateSettings(db: AppDatabase): Promise<void> {
 async function bootstrap() {
   const db = await getDatabase();
   await migrateSettings(db);
+
+  // Initialize repositories
+  setCardRepository(new RxDbCardRepository(db));
+  setReviewLogRepository(new RxDbReviewLogRepository(db));
 
   // Expose for E2E tests
   if (import.meta.env.DEV) {

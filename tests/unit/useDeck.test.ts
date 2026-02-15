@@ -8,7 +8,7 @@ import {
   useDeck,
   type StudyItem,
 } from '../../src/hooks/useDeck';
-import type { FlashCard } from '../../src/services/collections';
+import type { FlashCard } from '../../src/services/card-repository';
 
 // ============================================================================
 // Test Helpers
@@ -558,15 +558,16 @@ describe('computeNewState', () => {
 // ============================================================================
 
 describe('rateCard', () => {
-  it('updates forward state via RxDB for non-reverse card', async () => {
-    const mockPatch = vi.fn(() => Promise.resolve());
-    const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
-    const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+  it('updates forward state via repository for non-reverse card', async () => {
+    const mockUpdateState = vi.fn(() => Promise.resolve());
     const mockInsert = vi.fn(() => Promise.resolve());
-    const { getDatabaseSync } = await import('../../src/services/rxdb');
-    vi.mocked(getDatabaseSync).mockReturnValue({
-      cards: { findOne: mockFindOne },
-      reviewlogs: { insert: mockInsert },
+    const { getCardRepository } = await import('../../src/services/card-repository');
+    const { getReviewLogRepository } = await import('../../src/services/review-log-repository');
+    vi.mocked(getCardRepository).mockReturnValue({
+      updateState: mockUpdateState,
+    } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({
+      insert: mockInsert,
     } as any);
 
     const card: StudyItem = {
@@ -576,19 +577,19 @@ describe('rateCard', () => {
 
     await rateCard(card, Rating.Good);
 
-    expect(mockFindOne).toHaveBeenCalledWith('test-deck|hello');
-    expect(mockPatch).toHaveBeenCalledWith({ state: expect.any(Object) });
+    expect(mockUpdateState).toHaveBeenCalledWith('test-deck|hello', 'state', expect.any(Object));
   });
 
-  it('updates reverse state via RxDB for reverse card', async () => {
-    const mockPatch = vi.fn(() => Promise.resolve());
-    const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
-    const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+  it('updates reverse state via repository for reverse card', async () => {
+    const mockUpdateState = vi.fn(() => Promise.resolve());
     const mockInsert = vi.fn(() => Promise.resolve());
-    const { getDatabaseSync } = await import('../../src/services/rxdb');
-    vi.mocked(getDatabaseSync).mockReturnValue({
-      cards: { findOne: mockFindOne },
-      reviewlogs: { insert: mockInsert },
+    const { getCardRepository } = await import('../../src/services/card-repository');
+    const { getReviewLogRepository } = await import('../../src/services/review-log-repository');
+    vi.mocked(getCardRepository).mockReturnValue({
+      updateState: mockUpdateState,
+    } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({
+      insert: mockInsert,
     } as any);
 
     const card: StudyItem = {
@@ -598,18 +599,19 @@ describe('rateCard', () => {
 
     await rateCard(card, Rating.Good);
 
-    expect(mockPatch).toHaveBeenCalledWith({ reverseState: expect.any(Object) });
+    expect(mockUpdateState).toHaveBeenCalledWith('test-deck|hello', 'reverseState', expect.any(Object));
   });
 
-  it('inserts a review log in RxDB when rating', async () => {
-    const mockPatch = vi.fn(() => Promise.resolve());
-    const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
-    const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+  it('inserts a review log via repository when rating', async () => {
+    const mockUpdateState = vi.fn(() => Promise.resolve());
     const mockInsert = vi.fn(() => Promise.resolve());
-    const { getDatabaseSync } = await import('../../src/services/rxdb');
-    vi.mocked(getDatabaseSync).mockReturnValue({
-      cards: { findOne: mockFindOne },
-      reviewlogs: { insert: mockInsert },
+    const { getCardRepository } = await import('../../src/services/card-repository');
+    const { getReviewLogRepository } = await import('../../src/services/review-log-repository');
+    vi.mocked(getCardRepository).mockReturnValue({
+      updateState: mockUpdateState,
+    } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({
+      insert: mockInsert,
     } as any);
 
     const card: StudyItem = {
@@ -632,33 +634,32 @@ describe('rateCard', () => {
 // ============================================================================
 
 // Mock modules
-vi.mock('../../src/services/rxdb', () => ({
-  getDatabaseSync: vi.fn(() => ({
-    cards: {
-      findOne: vi.fn(() => ({
-        exec: vi.fn(() => Promise.resolve({
-          incrementalPatch: vi.fn(() => Promise.resolve()),
-        })),
-      })),
-    },
-    settings: {},
-    reviewlogs: {
-      insert: vi.fn(() => Promise.resolve()),
-      findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })),
-    },
-  })),
-}));
+vi.mock('../../src/services/card-repository', async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    getCardRepository: vi.fn(() => ({
+      updateState: vi.fn(() => Promise.resolve()),
+      suspend: vi.fn(() => Promise.resolve()),
+    })),
+    useCards: vi.fn(() => ({ data: [], isLoading: false })),
+    useDeckNames: vi.fn(() => ({ data: [], isLoading: false })),
+  };
+});
 
-vi.mock('../../src/hooks/useRxQuery', () => ({
-  useRxQuery: vi.fn(() => ({ data: [], isLoading: false })),
-}));
+vi.mock('../../src/services/review-log-repository', async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    getReviewLogRepository: vi.fn(() => ({
+      insert: vi.fn(() => Promise.resolve()),
+      remove: vi.fn(() => Promise.resolve()),
+    })),
+    useReviewLogs: vi.fn(() => ({ data: [], isLoading: false })),
+  };
+});
 
 vi.mock('../../src/services/replication', () => ({
-  parseCardState: vi.fn((json: any) => ({
-    ...json,
-    due: new Date(json.due),
-    last_review: json.last_review ? new Date(json.last_review) : undefined,
-  })),
   notifyChange: vi.fn(),
   cancelSync: vi.fn(),
 }));
@@ -668,39 +669,27 @@ vi.mock('../../src/hooks/useSettings', () => ({
 }));
 
 import { useSettings } from '../../src/hooks/useSettings';
-import { useRxQuery } from '../../src/hooks/useRxQuery';
-import { getDatabaseSync } from '../../src/services/rxdb';
+import { useCards, getCardRepository } from '../../src/services/card-repository';
+import { useReviewLogs, getReviewLogRepository } from '../../src/services/review-log-repository';
 
 describe('useDeck hook', () => {
   let mockCards: FlashCard[];
 
-  // Helper to set up query mocks for cards and logs (both useRxQuery now)
-  function setupQueryMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
-    vi.mocked(useRxQuery).mockImplementation((_collection: any, _query?: any) => {
-      // Distinguish between cards and reviewlogs by checking if a query was passed
-      if (_query) {
-        return { data: cards, isLoading } as any;
-      }
-      return { data: logs, isLoading } as any;
-    });
+  function setupMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
+    vi.mocked(useCards).mockReturnValue({ data: cards, isLoading });
+    vi.mocked(useReviewLogs).mockReturnValue({ data: logs, isLoading });
   }
 
   beforeEach(() => {
     mockCards = [];
 
-    vi.mocked(getDatabaseSync).mockReturnValue({
-      cards: {
-        findOne: vi.fn(() => ({
-          exec: vi.fn(() => Promise.resolve({
-            incrementalPatch: vi.fn(() => Promise.resolve()),
-          })),
-        })),
-      },
-      settings: {},
-      reviewlogs: {
-        insert: vi.fn(() => Promise.resolve()),
-        findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })),
-      },
+    vi.mocked(getCardRepository).mockReturnValue({
+      updateState: vi.fn(() => Promise.resolve()),
+      suspend: vi.fn(() => Promise.resolve()),
+    } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({
+      insert: vi.fn(() => Promise.resolve()),
+      remove: vi.fn(() => Promise.resolve()),
     } as any);
     vi.mocked(useSettings).mockReturnValue({
       settings: { newCardsPerDay: 10 },
@@ -708,7 +697,7 @@ describe('useDeck hook', () => {
       update: vi.fn(),
       clear: vi.fn(),
     } as any);
-    setupQueryMock(mockCards);
+    setupMock(mockCards);
   });
 
   afterEach(() => {
@@ -717,7 +706,7 @@ describe('useDeck hook', () => {
 
   describe('loading state', () => {
     it('returns isLoading true when query is loading', () => {
-      setupQueryMock([], [], true);
+      setupMock([], [], true);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -748,7 +737,7 @@ describe('useDeck hook', () => {
         createFlashCard('due-card', { state: createPastState(1) }),
         createFlashCard('new-card'),
       ];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -763,7 +752,7 @@ describe('useDeck hook', () => {
         createFlashCard('new-b'),
         createFlashCard('new-c'),
       ];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -778,7 +767,7 @@ describe('useDeck hook', () => {
   describe('currentCard display data', () => {
     it('sets front/back correctly for forward direction', () => {
       mockCards = [createFlashCard('hola', { translation: 'hello' })];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -802,7 +791,7 @@ describe('useDeck hook', () => {
           reverseState: null, // reverse is new
         }),
       ];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -825,7 +814,7 @@ describe('useDeck hook', () => {
           notes: 'Common greeting',
         }),
       ];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -835,7 +824,7 @@ describe('useDeck hook', () => {
 
     it('marks new cards as isNew true', () => {
       mockCards = [createFlashCard('new-card')];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -844,7 +833,7 @@ describe('useDeck hook', () => {
 
     it('marks reviewed cards as isNew false', () => {
       mockCards = [createFlashCard('reviewed', { state: createPastState(1) })];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -860,7 +849,7 @@ describe('useDeck hook', () => {
           reverseState: createPastState(1), // reverse was reviewed and is due
         }),
       ];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -876,7 +865,7 @@ describe('useDeck hook', () => {
           reverseState: null, // reverse never reviewed
         }),
       ];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -892,7 +881,7 @@ describe('useDeck hook', () => {
         createFlashCard('new-2'),
         createFlashCard('due-1', { state: createPastState(1) }),
       ];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -901,7 +890,7 @@ describe('useDeck hook', () => {
 
     it('counts both directions of reversible cards', () => {
       mockCards = [createFlashCard('reversible', { reversible: true })];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -922,7 +911,7 @@ describe('useDeck hook', () => {
         createFlashCard('three'),
         createFlashCard('four'),
       ];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -931,19 +920,20 @@ describe('useDeck hook', () => {
   });
 
   describe('rate function', () => {
-    it('calls RxDB findOne with correct card ID when rating', async () => {
-      const mockPatch = vi.fn(() => Promise.resolve());
-      const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
-      const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+    it('calls repository updateState with correct card ID when rating', async () => {
+      const mockUpdateState = vi.fn(() => Promise.resolve());
       const mockInsert = vi.fn(() => Promise.resolve());
-      vi.mocked(getDatabaseSync).mockReturnValue({
-        cards: { findOne: mockFindOne },
-        settings: {},
-        reviewlogs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })) },
+      vi.mocked(getCardRepository).mockReturnValue({
+        updateState: mockUpdateState,
+        suspend: vi.fn(() => Promise.resolve()),
+      } as any);
+      vi.mocked(getReviewLogRepository).mockReturnValue({
+        insert: mockInsert,
+        remove: vi.fn(() => Promise.resolve()),
       } as any);
 
       mockCards = [createFlashCard('test-card')];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -953,20 +943,23 @@ describe('useDeck hook', () => {
 
       // Allow async rateCard to complete
       await vi.waitFor(() => {
-        expect(mockFindOne).toHaveBeenCalledWith('test-deck|test-card');
+        expect(mockUpdateState).toHaveBeenCalledWith('test-deck|test-card', 'state', expect.any(Object));
       });
     });
 
     it('does nothing when no current card', () => {
-      const mockFindOne = vi.fn();
+      const mockUpdateState = vi.fn();
       const mockInsert = vi.fn();
-      vi.mocked(getDatabaseSync).mockReturnValue({
-        cards: { findOne: mockFindOne },
-        settings: {},
-        reviewlogs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })) },
+      vi.mocked(getCardRepository).mockReturnValue({
+        updateState: mockUpdateState,
+        suspend: vi.fn(() => Promise.resolve()),
+      } as any);
+      vi.mocked(getReviewLogRepository).mockReturnValue({
+        insert: mockInsert,
+        remove: vi.fn(() => Promise.resolve()),
       } as any);
 
-      setupQueryMock([]);
+      setupMock([]);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -974,22 +967,23 @@ describe('useDeck hook', () => {
         result.current.rate(Rating.Good);
       });
 
-      expect(mockFindOne).not.toHaveBeenCalled();
+      expect(mockUpdateState).not.toHaveBeenCalled();
     });
 
     it('patches forward state for non-reverse card', async () => {
-      const mockPatch = vi.fn(() => Promise.resolve());
-      const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
-      const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+      const mockUpdateState = vi.fn(() => Promise.resolve());
       const mockInsert = vi.fn(() => Promise.resolve());
-      vi.mocked(getDatabaseSync).mockReturnValue({
-        cards: { findOne: mockFindOne },
-        settings: {},
-        reviewlogs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })) },
+      vi.mocked(getCardRepository).mockReturnValue({
+        updateState: mockUpdateState,
+        suspend: vi.fn(() => Promise.resolve()),
+      } as any);
+      vi.mocked(getReviewLogRepository).mockReturnValue({
+        insert: mockInsert,
+        remove: vi.fn(() => Promise.resolve()),
       } as any);
 
       mockCards = [createFlashCard('test-card')];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -998,19 +992,20 @@ describe('useDeck hook', () => {
       });
 
       await vi.waitFor(() => {
-        expect(mockPatch).toHaveBeenCalledWith({ state: expect.any(Object) });
+        expect(mockUpdateState).toHaveBeenCalledWith('test-deck|test-card', 'state', expect.any(Object));
       });
     });
 
     it('patches reverse state for reverse card', async () => {
-      const mockPatch = vi.fn(() => Promise.resolve());
-      const mockExec = vi.fn(() => Promise.resolve({ incrementalPatch: mockPatch }));
-      const mockFindOne = vi.fn(() => ({ exec: mockExec }));
+      const mockUpdateState = vi.fn(() => Promise.resolve());
       const mockInsert = vi.fn(() => Promise.resolve());
-      vi.mocked(getDatabaseSync).mockReturnValue({
-        cards: { findOne: mockFindOne },
-        settings: {},
-        reviewlogs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })) },
+      vi.mocked(getCardRepository).mockReturnValue({
+        updateState: mockUpdateState,
+        suspend: vi.fn(() => Promise.resolve()),
+      } as any);
+      vi.mocked(getReviewLogRepository).mockReturnValue({
+        insert: mockInsert,
+        remove: vi.fn(() => Promise.resolve()),
       } as any);
 
       mockCards = [
@@ -1020,7 +1015,7 @@ describe('useDeck hook', () => {
           reverseState: null,
         }),
       ];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -1031,7 +1026,7 @@ describe('useDeck hook', () => {
       });
 
       await vi.waitFor(() => {
-        expect(mockPatch).toHaveBeenCalledWith({ reverseState: expect.any(Object) });
+        expect(mockUpdateState).toHaveBeenCalledWith('test-deck|test-card', 'reverseState', expect.any(Object));
       });
     });
   });
@@ -1052,7 +1047,7 @@ describe('useDeck hook', () => {
         createFlashCard('four'),
         createFlashCard('five'),
       ];
-      setupQueryMock(mockCards);
+      setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
@@ -1062,13 +1057,10 @@ describe('useDeck hook', () => {
   });
 
   describe('deck name handling', () => {
-    it('calls useRxQuery with deckName selector', () => {
+    it('calls useCards with deckName', () => {
       renderHook(() => useDeck('my-spanish-deck'));
 
-      expect(useRxQuery).toHaveBeenCalledWith(
-        expect.anything(),
-        { selector: { deckName: 'my-spanish-deck' }, sort: [{ created: 'asc' }] }
-      );
+      expect(useCards).toHaveBeenCalledWith('my-spanish-deck');
     });
   });
 });
@@ -1078,31 +1070,19 @@ describe('useDeck hook', () => {
 // ============================================================================
 
 describe('Study Session Flow', () => {
-  // Helper to set up query mocks for cards and logs (both useRxQuery now)
-  function setupQueryMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
-    vi.mocked(useRxQuery).mockImplementation((_collection: any, _query?: any) => {
-      if (_query) {
-        return { data: cards, isLoading } as any;
-      }
-      return { data: logs, isLoading } as any;
-    });
+  function setupMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
+    vi.mocked(useCards).mockReturnValue({ data: cards, isLoading });
+    vi.mocked(useReviewLogs).mockReturnValue({ data: logs, isLoading });
   }
 
   beforeEach(() => {
-
-    vi.mocked(getDatabaseSync).mockReturnValue({
-      cards: {
-        findOne: vi.fn(() => ({
-          exec: vi.fn(() => Promise.resolve({
-            incrementalPatch: vi.fn(() => Promise.resolve()),
-          })),
-        })),
-      },
-      settings: {},
-      reviewlogs: {
-        insert: vi.fn(() => Promise.resolve()),
-        findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })),
-      },
+    vi.mocked(getCardRepository).mockReturnValue({
+      updateState: vi.fn(() => Promise.resolve()),
+      suspend: vi.fn(() => Promise.resolve()),
+    } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({
+      insert: vi.fn(() => Promise.resolve()),
+      remove: vi.fn(() => Promise.resolve()),
     } as any);
     vi.mocked(useSettings).mockReturnValue({
       settings: { newCardsPerDay: 10 },
@@ -1119,7 +1099,7 @@ describe('Study Session Flow', () => {
   it('simulates complete session: new cards → rating → completion', () => {
     // Start with 2 new cards
     let cards = [createFlashCard('card-a'), createFlashCard('card-b')];
-    setupQueryMock(cards);
+    setupMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
@@ -1134,7 +1114,7 @@ describe('Study Session Flow', () => {
       { ...createFlashCard('card-a'), state: state1 },
       createFlashCard('card-b'),
     ];
-    setupQueryMock(cards);
+    setupMock(cards);
     rerender();
 
     expect(result.current.remaining).toBe(1);
@@ -1147,7 +1127,7 @@ describe('Study Session Flow', () => {
       { ...createFlashCard('card-a'), state: state1 },
       { ...createFlashCard('card-b'), state: state2 },
     ];
-    setupQueryMock(cards);
+    setupMock(cards);
     rerender();
 
     expect(result.current.remaining).toBe(0);
@@ -1156,7 +1136,7 @@ describe('Study Session Flow', () => {
 
   it('Again keeps card in session (due immediately)', () => {
     const cards = [createFlashCard('test-card')];
-    setupQueryMock(cards);
+    setupMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
     expect(result.current.remaining).toBe(1);
@@ -1165,7 +1145,7 @@ describe('Study Session Flow', () => {
     const { card: newState } = computeNewState(null, Rating.Again);
 
     const updatedCards = [{ ...createFlashCard('test-card'), state: newState }];
-    setupQueryMock(updatedCards);
+    setupMock(updatedCards);
     rerender();
 
     expect(result.current.remaining).toBe(1);
@@ -1175,7 +1155,7 @@ describe('Study Session Flow', () => {
 
   it('Easy removes card from session (scheduled for future)', () => {
     const cards = [createFlashCard('test-card')];
-    setupQueryMock(cards);
+    setupMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
     expect(result.current.remaining).toBe(1);
@@ -1188,7 +1168,7 @@ describe('Study Session Flow', () => {
     expect(newState.due.getTime()).toBeGreaterThan(endOfToday.getTime());
 
     const updatedCards = [{ ...createFlashCard('test-card'), state: newState }];
-    setupQueryMock(updatedCards);
+    setupMock(updatedCards);
     rerender();
 
     expect(result.current.remaining).toBe(0);
@@ -1197,7 +1177,7 @@ describe('Study Session Flow', () => {
 
   it('handles reversible card session with both directions', () => {
     const cards = [createFlashCard('gato', { translation: 'cat', reversible: true })];
-    setupQueryMock(cards);
+    setupMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
@@ -1215,7 +1195,7 @@ describe('Study Session Flow', () => {
         reverseState: null,
       },
     ];
-    setupQueryMock(updatedCards);
+    setupMock(updatedCards);
     rerender();
 
     expect(result.current.remaining).toBe(1);
@@ -1226,7 +1206,7 @@ describe('Study Session Flow', () => {
 
   it('Good on new card keeps it in session (learning phase)', () => {
     const cards = [createFlashCard('test-card')];
-    setupQueryMock(cards);
+    setupMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
@@ -1237,7 +1217,7 @@ describe('Study Session Flow', () => {
     const { card: newState } = computeNewState(null, Rating.Good);
 
     const updatedCards = [{ ...createFlashCard('test-card'), state: newState }];
-    setupQueryMock(updatedCards);
+    setupMock(updatedCards);
     rerender();
 
     expect(result.current.currentCard?.isNew).toBe(false);
@@ -1245,7 +1225,7 @@ describe('Study Session Flow', () => {
 
   it('multiple ratings update state correctly', () => {
     let cards = [createFlashCard('test-card')];
-    setupQueryMock(cards);
+    setupMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
@@ -1253,7 +1233,7 @@ describe('Study Session Flow', () => {
     const { card: state1 } = computeNewState(null, Rating.Again);
 
     cards = [{ ...createFlashCard('test-card'), state: state1 }];
-    setupQueryMock(cards);
+    setupMock(cards);
     rerender();
 
     expect(result.current.remaining).toBe(1);
@@ -1264,7 +1244,7 @@ describe('Study Session Flow', () => {
     expect(state2.reps).toBe(2);
 
     cards = [{ ...createFlashCard('test-card'), state: state2 }];
-    setupQueryMock(cards);
+    setupMock(cards);
     rerender();
 
     expect(result.current.remaining).toBe(0);

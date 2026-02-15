@@ -1,9 +1,8 @@
 import { fsrs, createEmptyCard, type Grade, type Card, type ReviewLog, type Rating, type State } from 'ts-fsrs';
-import { type FlashCard, type StoredReviewLog } from '../services/collections';
+import { type FlashCard, useCards, getCardRepository, serializeFsrsCard } from '../services/card-repository';
+import { type StoredReviewLog, useReviewLogs, getReviewLogRepository } from '../services/review-log-repository';
 import { useSettings } from './useSettings';
-import { parseCardState, notifyChange } from '../services/replication';
-import { useRxQuery } from './useRxQuery';
-import { getDatabaseSync } from '../services/rxdb';
+import { notifyChange } from '../services/replication';
 
 export type StudyItem = FlashCard & { isReverse: boolean };
 
@@ -15,16 +14,6 @@ export interface CurrentCard {
   notes?: string;
   isReverse: boolean;
   isNew: boolean;
-}
-
-// Deserialize FSRS Card dates from ISO strings to Date objects
-// RxDB stores JSON, so state.due and state.last_review come back as strings
-function deserializeCardDates(card: FlashCard): FlashCard {
-  return {
-    ...card,
-    state: card.state ? parseCardState(card.state as any) : null,
-    reverseState: card.reverseState ? parseCardState(card.reverseState as any) : null,
-  };
 }
 
 // Pure function to compute study items from cards
@@ -95,24 +84,7 @@ export function computeNewState(
   return { card: result.card, log: result.log };
 }
 
-// Serialize FSRS Card for RxDB storage (Dates → ISO strings)
-// RxDB incrementalPatch can hang if the document contains native Date objects
-// in schema-free fields, so always store as plain JSON.
-function serializeFsrsCard(card: Card): Record<string, unknown> {
-  return {
-    due: card.due.toISOString(),
-    stability: card.stability,
-    difficulty: card.difficulty,
-    elapsed_days: card.elapsed_days,
-    scheduled_days: card.scheduled_days,
-    reps: card.reps,
-    lapses: card.lapses,
-    state: card.state,
-    last_review: card.last_review?.toISOString(),
-  };
-}
-
-// Rate a card and update RxDB directly
+// Rate a card and update via repositories
 export async function rateCard(
   card: StudyItem,
   rating: Grade
@@ -120,7 +92,7 @@ export async function rateCard(
   const existingState = card.isReverse ? card.reverseState : card.state;
   const { card: newState, log } = computeNewState(existingState, rating);
 
-  // Store ReviewLog in RxDB for undo functionality
+  // Store ReviewLog via repository
   const storedLog: StoredReviewLog = {
     id: `${card.source}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
     cardSource: card.source,
@@ -135,19 +107,14 @@ export async function rateCard(
     scheduled_days: log.scheduled_days,
     review: log.review.toISOString(),
   };
-  const db = getDatabaseSync();
-  await db.reviewlogs.insert(storedLog);
+  const logRepo = getReviewLogRepository();
+  await logRepo.insert(storedLog);
 
-  // Update card in RxDB directly
+  // Update card state via repository
   const serializedState = serializeFsrsCard(newState);
-  const doc = await db.cards.findOne(card.id).exec();
-  if (doc) {
-    if (card.isReverse) {
-      await doc.incrementalPatch({ reverseState: serializedState });
-    } else {
-      await doc.incrementalPatch({ state: serializedState });
-    }
-  }
+  const cardRepo = getCardRepository();
+  const field = card.isReverse ? 'reverseState' : 'state';
+  await cardRepo.updateState(card.id, field, serializedState);
 
   notifyChange(card.id);
 }
@@ -159,19 +126,11 @@ export function useDeck(deckName: string) {
   const endOfDay = new Date();
   endOfDay.setHours(23, 59, 59, 999);
 
-  // Query RxDB directly
-  const db = getDatabaseSync();
-  const { data: allCards, isLoading: cardsLoading } = useRxQuery(
-    db.cards,
-    { selector: { deckName }, sort: [{ created: 'asc' }] }
-  );
-  const { data: logs, isLoading: logsLoading } = useRxQuery(db.reviewlogs);
+  // Query via repository hooks
+  const { data: cardsList, isLoading: cardsLoading } = useCards(deckName);
+  const { data: logsList, isLoading: logsLoading } = useReviewLogs();
 
   const isLoading = cardsLoading || logsLoading || settingsLoading;
-
-  // Deserialize FSRS dates from strings to Date objects
-  const cardsList = (allCards as unknown as FlashCard[]).map(deserializeCardDates);
-  const logsList = (logs ?? []) as unknown as StoredReviewLog[];
 
   // Derive introduced-today from review logs (state=0 means "was New when reviewed")
   const today = new Date().toISOString().split('T')[0];
@@ -212,11 +171,9 @@ export function useDeck(deckName: string) {
 
   async function suspend() {
     if (!studyItem) return;
-    const doc = await db.cards.findOne(studyItem.id).exec();
-    if (doc) {
-      await doc.incrementalPatch({ suspended: true });
-      notifyChange(studyItem.id);
-    }
+    const cardRepo = getCardRepository();
+    await cardRepo.suspend(studyItem.id);
+    notifyChange(studyItem.id);
   }
 
   async function undo() {
@@ -252,19 +209,14 @@ export function useDeck(deckName: string) {
       ? serializeFsrsCard(previousState)
       : null;
 
-    // Update card state in RxDB directly
-    const cardDoc = await db.cards.findOne(studyItem.id).exec();
-    if (cardDoc) {
-      if (studyItem.isReverse) {
-        await cardDoc.incrementalPatch({ reverseState: serialized });
-      } else {
-        await cardDoc.incrementalPatch({ state: serialized });
-      }
-    }
+    // Update card state via repository
+    const cardRepo = getCardRepository();
+    const field = studyItem.isReverse ? 'reverseState' : 'state';
+    await cardRepo.updateState(studyItem.id, field, serialized);
 
-    // Remove the log entry from RxDB
-    const logDoc = await db.reviewlogs.findOne(lastLog.id).exec();
-    if (logDoc) await logDoc.remove();
+    // Remove the log entry via repository
+    const logRepo = getReviewLogRepository();
+    await logRepo.remove(lastLog.id);
 
     notifyChange(studyItem.id);
   }

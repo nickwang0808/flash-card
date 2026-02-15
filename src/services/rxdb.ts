@@ -25,17 +25,6 @@ const cardsSchema = {
   indexes: ['deckName'],
 } as const;
 
-// Schema for decks collection
-const decksSchema = {
-  version: 0,
-  primaryKey: 'name',
-  type: 'object',
-  properties: {
-    name: { type: 'string', maxLength: 100 },
-  },
-  required: ['name'],
-} as const;
-
 // Schema for settings collection
 const settingsSchema = {
   version: 0,
@@ -91,10 +80,6 @@ export type CardDoc = {
   suspended?: boolean;
 };
 
-export type DeckDoc = {
-  name: string;
-};
-
 export type SettingsDoc = {
   id: string;
   repoUrl: string;
@@ -123,7 +108,6 @@ export type ReviewLogDoc = {
 
 export type AppDatabase = RxDatabase<{
   cards: RxCollection<CardDoc>;
-  decks: RxCollection<DeckDoc>;
   settings: RxCollection<SettingsDoc>;
   reviewlogs: RxCollection<ReviewLogDoc>;
 }>;
@@ -135,7 +119,6 @@ export function getDatabase(): Promise<AppDatabase> {
   if (!dbPromise) {
     dbPromise = createRxDatabase<{
       cards: RxCollection<CardDoc>;
-      decks: RxCollection<DeckDoc>;
       settings: RxCollection<SettingsDoc>;
       reviewlogs: RxCollection<ReviewLogDoc>;
     }>({
@@ -146,7 +129,6 @@ export function getDatabase(): Promise<AppDatabase> {
     }).then(async (db) => {
       await db.addCollections({
         cards: { schema: cardsSchema },
-        decks: { schema: decksSchema },
         settings: { schema: settingsSchema },
         reviewlogs: { schema: reviewLogsSchema },
       });

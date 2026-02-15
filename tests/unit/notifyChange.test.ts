@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockFindOneExec = vi.fn(() => Promise.resolve(null));
-const mockCardFindOneExec = vi.fn(() => Promise.resolve(null));
 vi.mock('../../src/services/rxdb', () => ({
   getDatabaseSync: vi.fn(() => ({
     settings: { findOne: vi.fn(() => ({ exec: mockFindOneExec })) },
-    cards: { findOne: vi.fn(() => ({ exec: mockCardFindOneExec })) },
+  })),
+}));
+
+const mockGetCardDataByIds = vi.fn(() => Promise.resolve([]));
+vi.mock('../../src/services/card-repository', () => ({
+  getCardRepository: vi.fn(() => ({
+    getCardDataByIds: mockGetCardDataByIds,
   })),
 }));
 
@@ -41,9 +46,10 @@ describe('notifyChange debounce', () => {
     vi.mocked(getDatabaseSync).mockClear();
     mockPushCards.mockClear();
     mockFindOneExec.mockClear();
+    mockGetCardDataByIds.mockClear();
     // Default: not configured (empty repoUrl/token) so pushDirtyCards exits early
     mockFindOneExec.mockImplementation(() => Promise.resolve(null));
-    mockCardFindOneExec.mockImplementation(() => Promise.resolve(null));
+    mockGetCardDataByIds.mockImplementation(() => Promise.resolve([]));
   });
 
   afterEach(() => {
@@ -121,16 +127,16 @@ describe('notifyChange debounce', () => {
 
   it('deduplicates repeated changes to the same card', async () => {
     // Mock configured so pushDirtyCards actually queries cards
-    mockFindOneExec.mockImplementation(() => Promise.resolve({
+    mockFindOneExec.mockImplementation((() => Promise.resolve({
       toJSON: () => ({ repoUrl: 'https://github.com/t/r', token: 'tok', branch: 'main' }),
-    }));
-    mockCardFindOneExec.mockImplementation(() => Promise.resolve({
-      toJSON: () => ({
-        id: 'deck|hello', deckName: 'deck', source: 'hello',
-        translation: 'hi', tags: [], created: '2025-01-01',
+    })) as any);
+    mockGetCardDataByIds.mockImplementation((async (ids: string[]) =>
+      ids.map(() => ({
+        deckName: 'deck', source: 'hello',
+        translation: 'hi', tags: [] as string[], created: '2025-01-01',
         reversible: false, state: null, reverseState: null, suspended: false,
-      }),
-    }));
+      }))
+    ) as any);
 
     // Rate the same card 3 times
     notifyChange('deck|hello');

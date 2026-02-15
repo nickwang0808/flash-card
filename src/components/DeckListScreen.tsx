@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useDeck } from '../hooks/useDeck';
-import { useRxQuery } from '../hooks/useRxQuery';
-import { getDatabaseSync } from '../services/rxdb';
+import { useDeckNames } from '../services/card-repository';
 
 interface Props {
   onSelectDeck: (deck: string) => void;
@@ -37,11 +36,8 @@ function DeckRow({
 export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
   const [online, setOnline] = useState(navigator.onLine);
 
-  // Get deck names directly from RxDB
-  const db = getDatabaseSync();
-  const { data: decks, isLoading } = useRxQuery(db.decks);
-
-  const deckNames = decks.map((deck) => deck.name);
+  // Get deck names via CardRepository
+  const { data: deckNames, isLoading } = useDeckNames();
 
   useEffect(() => {
     const handleOnline = () => setOnline(true);
