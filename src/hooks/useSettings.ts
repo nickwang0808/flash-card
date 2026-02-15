@@ -1,7 +1,7 @@
 import { useRxQuery } from './useRxQuery';
 import { getDatabaseSync, type SettingsDoc } from '../services/rxdb';
 
-export interface Settings {
+interface Settings {
   id: string;
   repoUrl: string;
   token: string;

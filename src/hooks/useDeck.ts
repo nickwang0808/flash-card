@@ -6,7 +6,7 @@ import { notifyChange } from '../services/replication';
 
 export type StudyItem = FlashCard & { isReverse: boolean };
 
-export interface CurrentCard {
+interface CurrentCard {
   source: string;
   front: string;
   back: string;

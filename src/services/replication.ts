@@ -6,7 +6,7 @@ import { getCardRepository } from './card-repository';
 
 // --- Config helpers ---
 
-export async function getConfig(): Promise<GitHubConfig> {
+async function getConfig(): Promise<GitHubConfig> {
   const db = getDatabaseSync();
   const doc = await db.settings.findOne('settings').exec();
   const settings = doc ? doc.toJSON() : defaultSettings;

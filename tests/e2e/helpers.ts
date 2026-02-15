@@ -126,20 +126,3 @@ export async function cloneTestRepo(page: Page, branch?: string) {
   await page.waitForSelector('text=spanish-vocab', { timeout: 30000 });
 }
 
-/**
- * Gets pending transaction count from the UI (displayed in various screens).
- */
-export async function getPendingCountFromUI(page: Page): Promise<number> {
-  const pendingText = await page.locator('text=/\\d+ pending/').textContent();
-  if (!pendingText) return 0;
-  const match = pendingText.match(/(\d+) pending/);
-  return match ? parseInt(match[1], 10) : 0;
-}
-
-/**
- * Check if pending reviews message is visible.
- */
-export async function hasPendingReviewsVisible(page: Page): Promise<boolean> {
-  const pendingLocator = page.locator('text=/\\d+ reviews? pending sync/');
-  return pendingLocator.isVisible().catch(() => false);
-}

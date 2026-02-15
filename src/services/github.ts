@@ -26,44 +26,6 @@ export async function listUserRepos(
   return data.map((r) => ({ full_name: r.full_name, html_url: r.html_url }));
 }
 
-export async function createBranch(
-  config: GitHubConfig,
-  branchName: string,
-  fromBranch: string = 'main',
-): Promise<void> {
-  const octokit = new Octokit({
-    auth: config.token,
-    ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
-  });
-  const { data: refData } = await octokit.git.getRef({
-    owner: config.owner,
-    repo: config.repo,
-    ref: `heads/${fromBranch}`,
-  });
-  await octokit.git.createRef({
-    owner: config.owner,
-    repo: config.repo,
-    ref: `refs/heads/${branchName}`,
-    sha: refData.object.sha,
-  });
-}
-
-export async function deleteBranch(config: GitHubConfig, branchName: string): Promise<void> {
-  const octokit = new Octokit({
-    auth: config.token,
-    ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
-  });
-  try {
-    await octokit.git.deleteRef({
-      owner: config.owner,
-      repo: config.repo,
-      ref: `heads/${branchName}`,
-    });
-  } catch {
-    // Ignore errors (branch might not exist)
-  }
-}
-
 // Card JSON format as stored in GitHub (FSRS dates serialized to ISO strings)
 interface CardJSON {
   source: string;

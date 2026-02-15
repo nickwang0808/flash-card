@@ -17,7 +17,7 @@ export interface StoredReviewLog {
   review: string;              // ISO date
 }
 
-export interface ReviewLogRepository {
+interface ReviewLogRepository {
   insert(log: StoredReviewLog): Promise<void>;
   remove(id: string): Promise<void>;
   subscribe(cb: (logs: StoredReviewLog[]) => void): () => void;

@@ -33,14 +33,8 @@ export interface CardRepository {
 
 // --- Composite key helpers ---
 
-export function makeCardId(deckName: string, source: string): string {
+function makeCardId(deckName: string, source: string): string {
   return `${deckName}|${source}`;
-}
-
-export function parseCardId(id: string): { deckName: string; source: string } {
-  const idx = id.indexOf('|');
-  if (idx === -1) return { deckName: '', source: id };
-  return { deckName: id.slice(0, idx), source: id.slice(idx + 1) };
 }
 
 // --- Date serialization for FSRS Card objects ---
@@ -50,7 +44,7 @@ interface CardStateJSON extends Omit<Card, 'due' | 'last_review'> {
   last_review?: string;
 }
 
-export function parseCardState(json: CardStateJSON): Card {
+function parseCardState(json: CardStateJSON): Card {
   return {
     ...json,
     due: new Date(json.due),

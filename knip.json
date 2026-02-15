@@ -1,0 +1,10 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": ["tests/integration/**/*.test.ts"],
+  "project": ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
+  "vitest": {
+    "config": ["vitest.config.ts", "tests/integration/vitest.config.ts"]
+  },
+  "ignoreDependencies": ["tailwindcss"],
+  "ignoreBinaries": ["tsx"]
+}
