@@ -1,7 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { getDatabase, type AppDatabase } from './services/rxdb';
-import { setupReplication } from './services/replication';
 import { App } from './components/App';
 import './styles/main.css';
 
@@ -50,7 +49,6 @@ async function migrateSettings(db: AppDatabase): Promise<void> {
 async function bootstrap() {
   const db = await getDatabase();
   await migrateSettings(db);
-  setupReplication(db);
 
   // Expose for E2E tests
   if (import.meta.env.DEV) {

@@ -49,6 +49,7 @@ const settingsSchema = {
     reviewOrder: { type: 'string', maxLength: 50 },
     theme: { type: 'string', maxLength: 20 },
     branch: { type: 'string' },
+    apiBaseUrl: { type: 'string' },
   },
   required: ['id'],
 } as const;
@@ -102,6 +103,7 @@ export type SettingsDoc = {
   reviewOrder: string;
   theme: string;
   branch?: string;
+  apiBaseUrl?: string;
 };
 
 export type ReviewLogDoc = {

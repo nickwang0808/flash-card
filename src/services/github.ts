@@ -1,10 +1,12 @@
 import { Octokit } from '@octokit/rest';
+import type { CardData, GitStorageService } from './git-storage';
 
 export interface GitHubConfig {
   owner: string;
   repo: string;
   token: string;
   branch?: string;
+  baseUrl?: string;
 }
 
 export function parseRepoUrl(url: string): { owner: string; repo: string } {
@@ -13,43 +15,210 @@ export function parseRepoUrl(url: string): { owner: string; repo: string } {
   return { owner: match[1], repo: match[2] };
 }
 
-export const github = {
-  async validateRepo(config: GitHubConfig): Promise<boolean> {
+export async function listUserRepos(
+  token: string,
+): Promise<Array<{ full_name: string; html_url: string }>> {
+  const octokit = new Octokit({ auth: token });
+  const { data } = await octokit.repos.listForAuthenticatedUser({
+    per_page: 100,
+    sort: 'updated',
+  });
+  return data.map((r) => ({ full_name: r.full_name, html_url: r.html_url }));
+}
+
+export async function createBranch(
+  config: GitHubConfig,
+  branchName: string,
+  fromBranch: string = 'main',
+): Promise<void> {
+  const octokit = new Octokit({
+    auth: config.token,
+    ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+  });
+  const { data: refData } = await octokit.git.getRef({
+    owner: config.owner,
+    repo: config.repo,
+    ref: `heads/${fromBranch}`,
+  });
+  await octokit.git.createRef({
+    owner: config.owner,
+    repo: config.repo,
+    ref: `refs/heads/${branchName}`,
+    sha: refData.object.sha,
+  });
+}
+
+export async function deleteBranch(config: GitHubConfig, branchName: string): Promise<void> {
+  const octokit = new Octokit({
+    auth: config.token,
+    ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+  });
+  try {
+    await octokit.git.deleteRef({
+      owner: config.owner,
+      repo: config.repo,
+      ref: `heads/${branchName}`,
+    });
+  } catch {
+    // Ignore errors (branch might not exist)
+  }
+}
+
+// Card JSON format as stored in GitHub (FSRS dates serialized to ISO strings)
+interface CardJSON {
+  source: string;
+  translation: string;
+  example?: string;
+  notes?: string;
+  tags?: string[];
+  created: string;
+  reversible?: boolean;
+  state: Record<string, unknown> | null;
+  reverseState: Record<string, unknown> | null;
+  suspended?: boolean;
+}
+
+export class GitHubStorageService implements GitStorageService {
+  private octokit: Octokit;
+
+  constructor(private config: GitHubConfig) {
+    this.octokit = new Octokit({
+      auth: config.token,
+      ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+    });
+  }
+
+  async pullAllCards(): Promise<CardData[]> {
+    const allCards: CardData[] = [];
+
+    const entries = await this.listDirectory('');
+    for (const entry of entries) {
+      if (entry.type !== 'dir') continue;
+      try {
+        const { content } = await this.readFile(`${entry.name}/cards.json`);
+        const cardsMap: Record<string, CardJSON> = JSON.parse(content);
+
+        for (const card of Object.values(cardsMap)) {
+          allCards.push({
+            deckName: entry.name,
+            source: card.source,
+            translation: card.translation,
+            example: card.example,
+            notes: card.notes,
+            tags: card.tags,
+            created: card.created,
+            reversible: card.reversible ?? false,
+            state: card.state ?? null,
+            reverseState: card.reverseState ?? null,
+            suspended: card.suspended,
+          });
+        }
+      } catch {
+        // Not a deck directory or no cards.json — skip
+      }
+    }
+
+    return allCards;
+  }
+
+  async pushCards(cards: CardData[]): Promise<void> {
+    // Group by deckName
+    const byDeck = new Map<string, CardData[]>();
+    for (const card of cards) {
+      if (!byDeck.has(card.deckName)) byDeck.set(card.deckName, []);
+      byDeck.get(card.deckName)!.push(card);
+    }
+
+    for (const [deckName, deckCards] of byDeck) {
+      let existing: Record<string, CardJSON> = {};
+      let sha: string | undefined;
+
+      try {
+        const result = await this.readFile(`${deckName}/cards.json`);
+        existing = JSON.parse(result.content);
+        sha = result.sha;
+      } catch {
+        // New deck, file doesn't exist yet
+      }
+
+      for (const card of deckCards) {
+        existing[card.source] = {
+          source: card.source,
+          translation: card.translation,
+          example: card.example,
+          notes: card.notes,
+          tags: card.tags,
+          created: card.created,
+          reversible: card.reversible,
+          state: card.state,
+          reverseState: card.reverseState,
+          suspended: card.suspended,
+        };
+      }
+
+      await this.writeFile(
+        `${deckName}/cards.json`,
+        JSON.stringify(existing, null, 2),
+        sha,
+        `sync: ${deckName} - ${deckCards.map((c) => c.source).join(', ')}`,
+      );
+    }
+  }
+
+  async getCommits(
+    limit: number = 10,
+  ): Promise<Array<{ message: string; sha: string; date: string }>> {
+    const { data } = await this.octokit.repos.listCommits({
+      owner: this.config.owner,
+      repo: this.config.repo,
+      per_page: limit,
+      ...(this.config.branch ? { sha: this.config.branch } : {}),
+    });
+    return data.map((c) => ({
+      message: c.commit.message,
+      sha: c.sha.slice(0, 7),
+      date: c.commit.committer?.date ?? '',
+    }));
+  }
+
+  async validateConnection(): Promise<boolean> {
     try {
-      const octokit = new Octokit({ auth: config.token });
-      await octokit.repos.get({ owner: config.owner, repo: config.repo });
+      await this.octokit.repos.get({
+        owner: this.config.owner,
+        repo: this.config.repo,
+      });
       return true;
     } catch {
       return false;
     }
-  },
+  }
 
-  async listDirectory(
-    config: GitHubConfig,
-    path: string = '',
-  ): Promise<Array<{ name: string; type: string }>> {
-    const octokit = new Octokit({ auth: config.token });
-    const { data } = await octokit.repos.getContent({
-      owner: config.owner,
-      repo: config.repo,
+  async listDecks(): Promise<string[]> {
+    const entries = await this.listDirectory('');
+    return entries
+      .filter((e) => e.type === 'dir' && !e.name.startsWith('.'))
+      .map((e) => e.name);
+  }
+
+  // --- Internal helpers (GitHub-specific file I/O) ---
+
+  async listDirectory(path: string): Promise<Array<{ name: string; type: string }>> {
+    const { data } = await this.octokit.repos.getContent({
+      owner: this.config.owner,
+      repo: this.config.repo,
       path,
-      ...(config.branch ? { ref: config.branch } : {}),
+      ...(this.config.branch ? { ref: this.config.branch } : {}),
     });
     if (!Array.isArray(data)) return [];
     return data.map((item) => ({ name: item.name, type: item.type }));
-  },
+  }
 
-  async readFile(
-    config: GitHubConfig,
-    path: string,
-  ): Promise<{ content: string; sha: string }> {
-    const octokit = new Octokit({ auth: config.token });
-
-    const { data: meta } = await octokit.repos.getContent({
-      owner: config.owner,
-      repo: config.repo,
+  async readFile(path: string): Promise<{ content: string; sha: string }> {
+    const { data: meta } = await this.octokit.repos.getContent({
+      owner: this.config.owner,
+      repo: this.config.repo,
       path,
-      ...(config.branch ? { ref: config.branch } : {}),
+      ...(this.config.branch ? { ref: this.config.branch } : {}),
     });
 
     if (Array.isArray(meta) || meta.type !== 'file') {
@@ -57,96 +226,32 @@ export const github = {
     }
 
     // Decode base64 content with proper UTF-8 handling
-    // atob() only handles Latin-1, so we convert to bytes then decode as UTF-8
     const binary = atob(meta.content!.replace(/\n/g, ''));
     const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
     const text = new TextDecoder().decode(bytes);
     return { content: text, sha: meta.sha };
-  },
+  }
 
-  async writeFile(
-    config: GitHubConfig,
+  private async writeFile(
     path: string,
     content: string,
     sha: string | undefined,
     message: string,
   ): Promise<string> {
-    const octokit = new Octokit({ auth: config.token });
     const bytes = new TextEncoder().encode(content);
     const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
     const encoded = btoa(binary);
 
-    const { data } = await octokit.repos.createOrUpdateFileContents({
-      owner: config.owner,
-      repo: config.repo,
+    const { data } = await this.octokit.repos.createOrUpdateFileContents({
+      owner: this.config.owner,
+      repo: this.config.repo,
       path,
       message,
       content: encoded,
       ...(sha ? { sha } : {}),
-      ...(config.branch ? { branch: config.branch } : {}),
+      ...(this.config.branch ? { branch: this.config.branch } : {}),
     });
 
     return data.content?.sha ?? '';
-  },
-
-  async getCommits(
-    config: GitHubConfig,
-    limit: number = 10,
-  ): Promise<Array<{ message: string; sha: string; date: string }>> {
-    const octokit = new Octokit({ auth: config.token });
-    const { data } = await octokit.repos.listCommits({
-      owner: config.owner,
-      repo: config.repo,
-      per_page: limit,
-      ...(config.branch ? { sha: config.branch } : {}),
-    });
-    return data.map((c) => ({
-      message: c.commit.message,
-      sha: c.sha.slice(0, 7),
-      date: c.commit.committer?.date ?? '',
-    }));
-  },
-
-  async createBranch(
-    config: GitHubConfig,
-    branchName: string,
-    fromBranch: string = 'main',
-  ): Promise<void> {
-    const octokit = new Octokit({ auth: config.token });
-    const { data: refData } = await octokit.git.getRef({
-      owner: config.owner,
-      repo: config.repo,
-      ref: `heads/${fromBranch}`,
-    });
-    await octokit.git.createRef({
-      owner: config.owner,
-      repo: config.repo,
-      ref: `refs/heads/${branchName}`,
-      sha: refData.object.sha,
-    });
-  },
-
-  async listUserRepos(
-    token: string,
-  ): Promise<Array<{ full_name: string; html_url: string }>> {
-    const octokit = new Octokit({ auth: token });
-    const { data } = await octokit.repos.listForAuthenticatedUser({
-      per_page: 100,
-      sort: 'updated',
-    });
-    return data.map((r) => ({ full_name: r.full_name, html_url: r.html_url }));
-  },
-
-  async deleteBranch(config: GitHubConfig, branchName: string): Promise<void> {
-    const octokit = new Octokit({ auth: config.token });
-    try {
-      await octokit.git.deleteRef({
-        owner: config.owner,
-        repo: config.repo,
-        ref: `heads/${branchName}`,
-      });
-    } catch {
-      // Ignore errors (branch might not exist)
-    }
-  },
-};
+  }
+}

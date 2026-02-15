@@ -39,12 +39,10 @@ export function App() {
     runSync().catch(() => {});
   }, []);
 
-  // Auto-sync — tab focus pulls, tab hide flushes pending changes
+  // Tab hide — flush pending debounced pushes immediately
   useEffect(() => {
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        runSync().catch(() => {});
-      } else {
+      if (document.visibilityState === 'hidden') {
         flushSync();
       }
     };

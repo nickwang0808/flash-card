@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../hooks/useAuth';
-import { github, parseRepoUrl } from '../services/github';
+import { GitHubStorageService, listUserRepos, parseRepoUrl } from '../services/github';
 
 interface Props {
   onComplete: () => void;
@@ -20,7 +20,7 @@ export function AuthScreen({ onComplete }: Props) {
 
   useEffect(() => {
     if (hasGitHubToken && settings.token) {
-      github.listUserRepos(settings.token).then(setRepos).catch(() => {});
+      listUserRepos(settings.token).then(setRepos).catch(() => {});
     }
   }, [hasGitHubToken, settings.token]);
 
@@ -49,9 +49,9 @@ export function AuthScreen({ onComplete }: Props) {
     try {
       setStatus('Validating credentials...');
       const { owner, repo } = parseRepoUrl(url);
-      const config = { owner, repo, token: settings.token };
+      const service = new GitHubStorageService({ owner, repo, token: settings.token });
 
-      const valid = await github.validateRepo(config);
+      const valid = await service.validateConnection();
       if (!valid) {
         setError('Cannot access repository. Check your URL and permissions.');
         setLoading(false);
@@ -59,10 +59,9 @@ export function AuthScreen({ onComplete }: Props) {
       }
 
       setStatus('Checking deck structure...');
-      const entries = await github.listDirectory(config, '');
-      const dirs = entries.filter(e => e.type === 'dir' && !e.name.startsWith('.'));
+      const decks = await service.listDecks();
 
-      if (dirs.length === 0) {
+      if (decks.length === 0) {
         setError('No decks found. Repository should contain directories with cards.json files.');
         setLoading(false);
         return;
@@ -70,14 +69,11 @@ export function AuthScreen({ onComplete }: Props) {
 
       // Verify at least one dir has cards.json
       let foundDeck = false;
-      for (const dir of dirs) {
-        try {
-          await github.readFile(config, `${dir.name}/cards.json`);
-          foundDeck = true;
-          break;
-        } catch {
-          continue;
-        }
+      try {
+        const cards = await service.pullAllCards();
+        foundDeck = cards.length > 0;
+      } catch {
+        // ignore
       }
 
       if (!foundDeck) {

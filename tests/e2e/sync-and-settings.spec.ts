@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { cloneTestRepo, createTestBranch, deleteTestBranch, E2E_REPO_URL } from './helpers';
+import { cloneTestRepo, createTestBranch, deleteTestBranch } from './helpers';
 
 test.describe('Sync screen', () => {
   let testBranch: string;
@@ -82,7 +82,7 @@ test.describe('Settings screen', () => {
     await page.getByRole('button', { name: 'Settings' }).click();
 
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
-    await expect(page.getByText(E2E_REPO_URL)).toBeVisible();
+    await expect(page.getByText('https://github.com/test/flash-card-test')).toBeVisible();
     await expect(page.getByText(/New cards per day: 10/)).toBeVisible();
   });
 
@@ -176,7 +176,7 @@ test.describe('Settings screen', () => {
     await page.getByRole('button', { name: 'Cancel' }).click();
 
     // Should show original URL, not the edited one
-    await expect(page.getByText(E2E_REPO_URL)).toBeVisible();
+    await expect(page.getByText('https://github.com/test/flash-card-test')).toBeVisible();
     await expect(page.getByText('https://github.com/test/should-revert')).not.toBeVisible();
   });
 

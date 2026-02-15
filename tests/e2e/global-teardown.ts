@@ -1,8 +1,7 @@
-import { config } from 'dotenv';
-import { cleanupTestRepo } from './test-server';
+import { cleanupTestRepo, stopServer } from './test-server';
 
 async function globalTeardown() {
-  config(); // load .env
+  await stopServer();
   cleanupTestRepo();
 }
 

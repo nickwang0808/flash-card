@@ -660,6 +660,7 @@ vi.mock('../../src/services/replication', () => ({
     last_review: json.last_review ? new Date(json.last_review) : undefined,
   })),
   notifyChange: vi.fn(),
+  cancelSync: vi.fn(),
 }));
 
 vi.mock('../../src/hooks/useSettings', () => ({

@@ -149,7 +149,7 @@ export async function rateCard(
     }
   }
 
-  notifyChange();
+  notifyChange(card.id);
 }
 
 export function useDeck(deckName: string) {
@@ -215,7 +215,7 @@ export function useDeck(deckName: string) {
     const doc = await db.cards.findOne(studyItem.id).exec();
     if (doc) {
       await doc.incrementalPatch({ suspended: true });
-      notifyChange();
+      notifyChange(studyItem.id);
     }
   }
 
@@ -266,7 +266,7 @@ export function useDeck(deckName: string) {
     const logDoc = await db.reviewlogs.findOne(lastLog.id).exec();
     if (logDoc) await logDoc.remove();
 
-    notifyChange();
+    notifyChange(studyItem.id);
   }
 
   // Check if undo is available for the current card

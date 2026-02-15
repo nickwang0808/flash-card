@@ -1,57 +1,37 @@
 import { type Page } from '@playwright/test';
-import { Octokit } from '@octokit/rest';
+import { execSync } from 'child_process';
+import { readTestConfig } from './test-server';
 
-const E2E_REPO_URL = process.env.E2E_REPO_URL || 'https://github.com/nickwang0808/flash-card-test';
-const E2E_TOKEN = process.env.E2E_TOKEN || '';
-
-export { E2E_REPO_URL, E2E_TOKEN };
-
-function parseRepoUrl(url: string): { owner: string; repo: string } {
-  const match = url.match(/github\.com\/([^/]+)\/([^/.]+)/);
-  if (!match) throw new Error('Invalid GitHub repository URL');
-  return { owner: match[1], repo: match[2] };
+function getConfig() {
+  return readTestConfig();
 }
 
 /**
- * Creates a unique test branch from main for test isolation.
- * Returns the branch name.
+ * Creates a local git branch for test isolation.
+ * Uses the local test repo instead of GitHub API.
  */
 export async function createTestBranch(suiteName: string): Promise<string> {
-  const { owner, repo } = parseRepoUrl(E2E_REPO_URL);
-  const octokit = new Octokit({ auth: E2E_TOKEN });
+  const { repoDir } = getConfig();
   const branchName = `test-${suiteName}-${Date.now()}`;
-
-  // Get the SHA of main branch
-  const { data: refData } = await octokit.git.getRef({
-    owner,
-    repo,
-    ref: 'heads/main',
-  });
-
-  // Create the new branch
-  await octokit.git.createRef({
-    owner,
-    repo,
-    ref: `refs/heads/${branchName}`,
-    sha: refData.object.sha,
-  });
-
+  execSync(`git branch "${branchName}" main`, { cwd: repoDir, stdio: 'pipe' });
   return branchName;
 }
 
 /**
- * Deletes a test branch.
+ * Deletes a local test branch.
  */
 export async function deleteTestBranch(branchName: string): Promise<void> {
-  const { owner, repo } = parseRepoUrl(E2E_REPO_URL);
-  const octokit = new Octokit({ auth: E2E_TOKEN });
-
+  const { repoDir } = getConfig();
   try {
-    await octokit.git.deleteRef({
-      owner,
-      repo,
-      ref: `heads/${branchName}`,
-    });
+    // Make sure we're not on the branch we're deleting
+    const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
+      cwd: repoDir,
+      encoding: 'utf-8',
+    }).trim();
+    if (currentBranch === branchName) {
+      execSync('git checkout main --quiet', { cwd: repoDir, stdio: 'pipe' });
+    }
+    execSync(`git branch -D "${branchName}"`, { cwd: repoDir, stdio: 'pipe' });
   } catch {
     // Ignore errors (branch might not exist)
   }
@@ -85,11 +65,13 @@ export async function wipeAppData(page: Page) {
 }
 
 /**
- * Connects to the real GitHub test repo by injecting settings directly
+ * Connects to the local test git server by injecting settings directly
  * into RxDB (via window.__RXDB__), ending up on the deck list with seeded data.
  * Optionally uses a specific branch for test isolation.
  */
 export async function cloneTestRepo(page: Page, branch?: string) {
+  const { serverUrl } = getConfig();
+
   // Start fresh
   await page.goto('http://localhost:5173');
   await page.waitForLoadState('networkidle');
@@ -121,20 +103,22 @@ export async function cloneTestRepo(page: Page, branch?: string) {
   await page.waitForFunction(() => !!(window as any).__RXDB__, { timeout: 10000 });
 
   // Inject settings directly into RxDB
+  // Uses a fake github.com URL (parsed by parseRepoUrl) + apiBaseUrl pointing at local server
   await page.evaluate(
-    async ({ repoUrl, token, branchName }) => {
+    async ({ apiBaseUrl, branchName }) => {
       const db = (window as any).__RXDB__;
       await db.settings.upsert({
         id: 'settings',
-        repoUrl,
-        token,
+        repoUrl: 'https://github.com/test/flash-card-test',
+        token: 'fake-token',
         newCardsPerDay: 10,
         reviewOrder: 'random',
         theme: 'system',
+        apiBaseUrl,
         ...(branchName ? { branch: branchName } : {}),
       });
     },
-    { repoUrl: E2E_REPO_URL, token: E2E_TOKEN, branchName: branch },
+    { apiBaseUrl: serverUrl, branchName: branch },
   );
 
   // Reload to trigger initial sync with the injected settings
@@ -144,11 +128,8 @@ export async function cloneTestRepo(page: Page, branch?: string) {
 
 /**
  * Gets pending transaction count from the UI (displayed in various screens).
- * Since offline-transactions uses IndexedDB which is harder to query directly,
- * we rely on the UI showing the pending count.
  */
 export async function getPendingCountFromUI(page: Page): Promise<number> {
-  // Look for the "X pending" text in the UI
   const pendingText = await page.locator('text=/\\d+ pending/').textContent();
   if (!pendingText) return 0;
   const match = pendingText.match(/(\d+) pending/);
