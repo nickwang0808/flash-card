@@ -91,18 +91,20 @@ export function ReviewScreen({ deck, onBack }: Props) {
         <div className="text-center" data-testid="card-front">
           <div className="text-3xl font-bold flex items-center justify-center gap-2">
             <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{currentCard.front}</Markdown>
-            <button
-              onClick={() => speak(currentCard.term)}
-              className="text-muted-foreground hover:text-foreground shrink-0"
-              title="Speak term"
-              data-testid="tts-button"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-              </svg>
-            </button>
+            {!currentCard.isReverse && (
+              <button
+                onClick={() => speak(currentCard.term)}
+                className="text-muted-foreground hover:text-foreground shrink-0"
+                title="Speak term"
+                data-testid="tts-button"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                </svg>
+              </button>
+            )}
           </div>
           {currentCard.isReverse && (
             <p className="text-xs text-muted-foreground mt-1">reverse</p>
@@ -111,8 +113,22 @@ export function ReviewScreen({ deck, onBack }: Props) {
 
         {answerRevealed ? (
           <div className="text-center space-y-3 animate-fade-in" data-testid="card-back">
-            <div className="text-xl">
+            <div className="text-xl flex items-center justify-center gap-2">
               <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{currentCard.back}</Markdown>
+              {currentCard.isReverse && (
+                <button
+                  onClick={() => speak(currentCard.term)}
+                  className="text-muted-foreground hover:text-foreground shrink-0"
+                  title="Speak term"
+                  data-testid="tts-button"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
         ) : (
