@@ -171,12 +171,67 @@ describe('computeStudyItems', () => {
       ];
       const { newItems } = computeStudyItems(cards, 3, endOfDay);
 
-      // All forwards first, then reverses (limit of 3 reached)
+      // one reserves 2 slots (fwd+rev), two gets only forward (1 slot left)
       expect(newItems).toHaveLength(3);
       expect(newItems.map((i) => `${i.term}-${i.isReverse}`)).toEqual([
         'one-false',
         'two-false',
         'one-true',
+      ]);
+    });
+
+    it('reserves slots for reverse when reversible card appears before limit', () => {
+      const cards = [
+        createFlashCard('rev', { reversible: true }),
+        createFlashCard('non-rev-1'),
+        createFlashCard('non-rev-2'),
+      ];
+      const { newItems } = computeStudyItems(cards, 3, endOfDay);
+
+      // rev takes 2 slots (fwd+rev), non-rev-1 takes 1 slot, non-rev-2 excluded
+      expect(newItems).toHaveLength(3);
+      expect(newItems.map((i) => `${i.term}-${i.isReverse}`)).toEqual([
+        'rev-false',
+        'non-rev-1-false',
+        'rev-true',
+      ]);
+    });
+
+    it('only adds forward when just one slot remains for reversible card', () => {
+      const cards = [
+        createFlashCard('non-rev-1'),
+        createFlashCard('non-rev-2'),
+        createFlashCard('rev', { reversible: true }),
+      ];
+      const { newItems } = computeStudyItems(cards, 3, endOfDay);
+
+      // non-rev-1 and non-rev-2 take 2 slots, rev gets only forward (1 slot left)
+      expect(newItems).toHaveLength(3);
+      expect(newItems.map((i) => `${i.term}-${i.isReverse}`)).toEqual([
+        'non-rev-1-false',
+        'non-rev-2-false',
+        'rev-false',
+      ]);
+    });
+
+    it('mixed reversible and non-reversible cards with tight limit', () => {
+      const cards = [
+        createFlashCard('a'),
+        createFlashCard('b', { reversible: true }),
+        createFlashCard('c'),
+        createFlashCard('d', { reversible: true }),
+        createFlashCard('e'),
+      ];
+      const { newItems } = computeStudyItems(cards, 5, endOfDay);
+
+      // a(1), b-fwd+b-rev(3), c(4), d needs 2 but only 1 left → d-fwd(5)
+      expect(newItems).toHaveLength(5);
+      expect(newItems.map((i) => `${i.term}-${i.isReverse}`)).toEqual([
+        'a-false',
+        'b-false',
+        'c-false',
+        'd-false',
+        'b-true',
       ]);
     });
 

@@ -14,37 +14,38 @@ test.describe('Review session', () => {
     await deleteTestBranch(testBranch);
   });
 
-  test('shows correct count of new cards (5 cards + 1 reversible = 6 new)', async ({ page }) => {
+  test('shows correct count of new cards (30 cards, 2 reversible, limit 10 = 10 new)', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    // All 6 cards are new (5 regular + 1 reverse of gato)
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    // 30 cards with 2 reversible (gato, rojo), default limit 10
+    // hola(1) + gato fwd+rev(3) + perro(4) + rojo fwd+rev(6) + casa(7) + agua(8) + libro(9) + amigo(10)
+    await expect(page.getByText('10 remaining')).toBeVisible();
     await expect(page.getByText('New')).toBeVisible();
   });
 
   test('rating Easy removes card from session (schedules for future)', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    // Start with 6 cards
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    // Start with 10 cards
+    await expect(page.getByText('10 remaining')).toBeVisible();
 
     await page.getByRole('button', { name: 'Show Answer' }).click();
     await page.getByRole('button', { name: 'Easy' }).click();
 
     // Card is scheduled for future, removed from session
-    await expect(page.getByText('5 remaining')).toBeVisible();
+    await expect(page.getByText('9 remaining')).toBeVisible();
   });
 
   test('rating Again keeps card in session for later', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    await expect(page.getByText('10 remaining')).toBeVisible();
 
     await page.getByRole('button', { name: 'Show Answer' }).click();
     await page.getByRole('button', { name: 'Again' }).click();
 
-    // Card stays in session (due immediately), count should still be 6
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    // Card stays in session (due immediately), count should still be 10
+    await expect(page.getByText('10 remaining')).toBeVisible();
   });
 
   test('completing all cards shows session complete', async ({ page }) => {
@@ -52,7 +53,7 @@ test.describe('Review session', () => {
 
     // Rate all cards as Easy to complete quickly
     // Wait for remaining count to change after each rating (async RxDB write)
-    for (let i = 6; i > 0; i--) {
+    for (let i = 10; i > 0; i--) {
       await expect(page.getByText(`${i} remaining`)).toBeVisible();
       await page.getByRole('button', { name: 'Show Answer' }).click();
       await page.getByRole('button', { name: 'Easy' }).click();
@@ -66,7 +67,7 @@ test.describe('Review session', () => {
     await page.getByText('spanish-vocab').click();
 
     // Complete all cards
-    for (let i = 6; i > 0; i--) {
+    for (let i = 10; i > 0; i--) {
       await expect(page.getByText(`${i} remaining`)).toBeVisible();
       await page.getByRole('button', { name: 'Show Answer' }).click();
       await page.getByRole('button', { name: 'Easy' }).click();
@@ -80,14 +81,14 @@ test.describe('Review session', () => {
   test('Undo button is not visible before rating a card', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    await expect(page.getByText('10 remaining')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Undo' })).not.toBeVisible();
   });
 
   test('Undo reverts a card rated Again back to new', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    await expect(page.getByText('10 remaining')).toBeVisible();
 
     // Remember the front text of the first card
     const frontText = (await page.locator('[data-testid="card-front"]').textContent())?.trim();
@@ -96,12 +97,12 @@ test.describe('Review session', () => {
     await page.getByRole('button', { name: 'Show Answer' }).click();
     await page.getByRole('button', { name: 'Again' }).click();
 
-    // Still 6 remaining (Again keeps the card)
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    // Still 10 remaining (Again keeps the card)
+    await expect(page.getByText('10 remaining')).toBeVisible();
 
-    // Rate the remaining 5 new cards as Easy to clear them out
+    // Rate the remaining 9 new cards as Easy to clear them out
     // Wait for remaining count to decrease after each (async RxDB write)
-    for (let i = 6; i >= 2; i--) {
+    for (let i = 10; i >= 2; i--) {
       await expect(page.getByText(`${i} remaining`)).toBeVisible();
       await page.getByRole('button', { name: 'Show Answer' }).click();
       await page.getByRole('button', { name: 'Easy' }).click();
@@ -125,14 +126,14 @@ test.describe('Review session', () => {
   test('rating Hard keeps new card in session (short learning interval)', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    await expect(page.getByText('10 remaining')).toBeVisible();
 
     await page.getByRole('button', { name: 'Show Answer' }).click();
     await page.getByRole('button', { name: 'Hard' }).click();
 
     // Hard on a new card schedules it for very soon (still due today),
-    // so it stays in the session — count remains 6
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    // so it stays in the session — count remains 10
+    await expect(page.getByText('10 remaining')).toBeVisible();
     // Answer should be hidden again (ready for next review)
     await expect(page.getByRole('button', { name: 'Show Answer' })).toBeVisible();
   });
@@ -140,32 +141,34 @@ test.describe('Review session', () => {
   test('rating Good keeps new card in session (short learning interval)', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    await expect(page.getByText('10 remaining')).toBeVisible();
 
     await page.getByRole('button', { name: 'Show Answer' }).click();
     await page.getByRole('button', { name: 'Good' }).click();
 
     // Good on a new card schedules it for soon (still due today)
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    await expect(page.getByText('10 remaining')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Show Answer' })).toBeVisible();
   });
 
   test('Suspend removes card from session permanently', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    await expect(page.getByText('10 remaining')).toBeVisible();
+    const frontBefore = await page.locator('[data-testid="card-front"]').textContent();
 
     // Suspend the current card without rating it
     await page.getByRole('button', { name: 'Suspend' }).click();
 
-    // Card is removed from session
-    await expect(page.getByText('5 remaining')).toBeVisible();
+    // With 30 cards, the next card backfills the slot (count stays at 10)
+    // but the suspended card is gone — a different card is shown
+    await expect(page.locator('[data-testid="card-front"]')).not.toHaveText(frontBefore!);
   });
 
   test('Suspend hides answer and shows next card unrevealed', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    await expect(page.getByText('10 remaining')).toBeVisible();
 
     // Reveal the answer first
     await page.getByRole('button', { name: 'Show Answer' }).click();
@@ -177,7 +180,6 @@ test.describe('Review session', () => {
     await page.getByRole('button', { name: 'Suspend' }).click();
 
     // Next card should appear with answer hidden
-    await expect(page.getByText('5 remaining')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Show Answer' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Again' })).not.toBeVisible();
   });
@@ -185,12 +187,12 @@ test.describe('Review session', () => {
   test('End Session returns to deck list mid-session', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    await expect(page.getByText('10 remaining')).toBeVisible();
 
     // Rate one card, then end session
     await page.getByRole('button', { name: 'Show Answer' }).click();
     await page.getByRole('button', { name: 'Easy' }).click();
-    await expect(page.getByText('5 remaining')).toBeVisible();
+    await expect(page.getByText('9 remaining')).toBeVisible();
 
     await page.getByRole('button', { name: 'End Session' }).click();
 
@@ -203,7 +205,7 @@ test.describe('Review session', () => {
 
     // Find the "hola" card which has example and notes in its back markdown
     // Cards may appear in random order, so rate through until we find hola
-    for (let remaining = 6; remaining > 0; remaining--) {
+    for (let remaining = 10; remaining > 0; remaining--) {
       await expect(page.getByText(`${remaining} remaining`)).toBeVisible();
       const front = (await page.locator('[data-testid="card-front"]').textContent())?.trim();
       if (front === 'hola') {
@@ -231,7 +233,7 @@ test.describe('Review session', () => {
 
     // Rate forward cards as Easy until we reach the reverse card (gato reverse)
     // Forward cards are shown first, reverse cards after
-    for (let remaining = 6; remaining > 0; remaining--) {
+    for (let remaining = 10; remaining > 0; remaining--) {
       await expect(page.getByText(`${remaining} remaining`)).toBeVisible();
       const front = (await page.locator('[data-testid="card-front"]').textContent())?.trim();
       // The reverse card shows the back content as front — starts with "cat"
@@ -256,13 +258,13 @@ test.describe('Review session', () => {
   test('Undo after rating Easy restores card as new', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    await expect(page.getByText('6 remaining')).toBeVisible();
+    await expect(page.getByText('10 remaining')).toBeVisible();
 
     // Rate card as Easy — removes it from session
     await page.getByRole('button', { name: 'Show Answer' }).click();
     await page.getByRole('button', { name: 'Easy' }).click();
 
-    await expect(page.getByText('5 remaining')).toBeVisible();
+    await expect(page.getByText('9 remaining')).toBeVisible();
 
     // Undo button should be visible — it targets the previously rated card, not the current one
     await expect(page.getByRole('button', { name: 'Undo' })).toBeVisible();
