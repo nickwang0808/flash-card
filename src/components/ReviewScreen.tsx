@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Rating, type Grade } from 'ts-fsrs';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { useDeck } from '../hooks/useDeck';
 import { useTts } from '../hooks/useTts';
 import { TtsLocalePicker } from './TtsLocalePicker';
@@ -89,7 +90,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
 
         <div className="text-center" data-testid="card-front">
           <div className="text-3xl font-bold flex items-center justify-center gap-2">
-            <Markdown remarkPlugins={[remarkGfm]}>{currentCard.front}</Markdown>
+            <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{currentCard.front}</Markdown>
             <button
               onClick={() => speak(currentCard.term)}
               className="text-muted-foreground hover:text-foreground shrink-0"
@@ -111,7 +112,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
         {answerRevealed ? (
           <div className="text-center space-y-3 animate-fade-in" data-testid="card-back">
             <div className="text-xl">
-              <Markdown remarkPlugins={[remarkGfm]}>{currentCard.back}</Markdown>
+              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{currentCard.back}</Markdown>
             </div>
           </div>
         ) : (
