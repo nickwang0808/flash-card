@@ -1282,3 +1282,356 @@ describe('Study Session Flow', () => {
     expect(result.current.remaining).toBe(0);
   });
 });
+
+// ============================================================================
+// Undo Tests
+// ============================================================================
+
+describe('Undo', () => {
+  function setupMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
+    vi.mocked(useCards).mockReturnValue({ data: cards, isLoading });
+    vi.mocked(useReviewLogs).mockReturnValue({ data: logs, isLoading });
+  }
+
+  function createReviewLog(
+    cardId: string,
+    opts: {
+      isReverse?: boolean;
+      rating?: number;
+      state?: number;
+      timestamp?: number;
+    } = {}
+  ) {
+    const ts = opts.timestamp ?? Date.now();
+    const direction = opts.isReverse ? 'reverse' : 'forward';
+    return {
+      id: `${cardId}:${direction}:${ts}`,
+      cardId,
+      isReverse: opts.isReverse ?? false,
+      rating: opts.rating ?? Rating.Good,
+      state: opts.state ?? 0,
+      due: new Date().toISOString(),
+      stability: 1,
+      difficulty: 5,
+      elapsed_days: 0,
+      last_elapsed_days: 0,
+      scheduled_days: 1,
+      review: new Date().toISOString(),
+    };
+  }
+
+  beforeEach(() => {
+    vi.mocked(getCardRepository).mockReturnValue({
+      updateState: vi.fn(() => Promise.resolve()),
+      suspend: vi.fn(() => Promise.resolve()),
+      getById: vi.fn(() => Promise.resolve(null)),
+    } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({
+      insert: vi.fn(() => Promise.resolve()),
+      remove: vi.fn(() => Promise.resolve()),
+    } as any);
+    vi.mocked(useSettings).mockReturnValue({
+      settings: { newCardsPerDay: 10 },
+      isLoading: false,
+      update: vi.fn(),
+      clear: vi.fn(),
+    } as any);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('canUndo', () => {
+    it('is false when there are no review logs', () => {
+      setupMock([createFlashCard('card-a')]);
+
+      const { result } = renderHook(() => useDeck('test-deck'));
+
+      expect(result.current.canUndo).toBe(false);
+    });
+
+    it('is true when any review log exists, regardless of current card', () => {
+      // card-a was rated and left the queue; card-b is now current
+      const { card: ratedState } = computeNewState(null, Rating.Easy);
+      const cards = [
+        { ...createFlashCard('card-a'), state: ratedState },
+        createFlashCard('card-b'),
+      ];
+      const logs = [createReviewLog('test-deck|card-a', { timestamp: 1000 })];
+      setupMock(cards, logs);
+
+      const { result } = renderHook(() => useDeck('test-deck'));
+
+      // Current card is card-b, but undo is available because card-a has a log
+      expect(result.current.currentCard?.term).toBe('card-b');
+      expect(result.current.canUndo).toBe(true);
+    });
+
+    it('is true even when no cards are in queue (session complete)', () => {
+      const { card: ratedState } = computeNewState(null, Rating.Easy);
+      const cards = [{ ...createFlashCard('card-a'), state: ratedState }];
+      const logs = [createReviewLog('test-deck|card-a', { timestamp: 1000 })];
+      setupMock(cards, logs);
+
+      const { result } = renderHook(() => useDeck('test-deck'));
+
+      expect(result.current.currentCard).toBeNull();
+      expect(result.current.remaining).toBe(0);
+      expect(result.current.canUndo).toBe(true);
+    });
+  });
+
+  describe('undo targets most recent review', () => {
+    it('undoes the most recently rated card, not the current card', async () => {
+      const mockUpdateState = vi.fn(() => Promise.resolve());
+      const mockRemove = vi.fn(() => Promise.resolve());
+      vi.mocked(getCardRepository).mockReturnValue({
+        updateState: mockUpdateState,
+        suspend: vi.fn(() => Promise.resolve()),
+        getById: vi.fn(() => Promise.resolve(null)),
+      } as any);
+      vi.mocked(getReviewLogRepository).mockReturnValue({
+        insert: vi.fn(() => Promise.resolve()),
+        remove: mockRemove,
+      } as any);
+
+      // card-a was rated (has a log); card-b is now current
+      const { card: ratedState } = computeNewState(null, Rating.Easy);
+      const cards = [
+        { ...createFlashCard('card-a'), state: ratedState },
+        createFlashCard('card-b'),
+      ];
+      const logs = [
+        createReviewLog('test-deck|card-a', { state: 0, timestamp: 1000 }),
+      ];
+      setupMock(cards, logs);
+
+      const { result } = renderHook(() => useDeck('test-deck'));
+
+      expect(result.current.currentCard?.term).toBe('card-b');
+
+      await act(async () => {
+        await result.current.undo();
+      });
+
+      // Should undo card-a (the most recent log), not card-b (current)
+      expect(mockUpdateState).toHaveBeenCalledWith('test-deck|card-a', 'state', null);
+      expect(mockRemove).toHaveBeenCalledWith(logs[0].id);
+    });
+
+    it('picks the latest log when multiple logs exist', async () => {
+      const mockUpdateState = vi.fn(() => Promise.resolve());
+      const mockRemove = vi.fn(() => Promise.resolve());
+      vi.mocked(getCardRepository).mockReturnValue({
+        updateState: mockUpdateState,
+        suspend: vi.fn(() => Promise.resolve()),
+        getById: vi.fn(() => Promise.resolve(null)),
+      } as any);
+      vi.mocked(getReviewLogRepository).mockReturnValue({
+        insert: vi.fn(() => Promise.resolve()),
+        remove: mockRemove,
+      } as any);
+
+      const { card: stateA } = computeNewState(null, Rating.Easy);
+      const { card: stateB } = computeNewState(null, Rating.Easy);
+      const cards = [
+        { ...createFlashCard('card-a'), state: stateA },
+        { ...createFlashCard('card-b'), state: stateB },
+      ];
+      const logs = [
+        createReviewLog('test-deck|card-a', { state: 0, timestamp: 1000 }),
+        createReviewLog('test-deck|card-b', { state: 0, timestamp: 2000 }),
+      ];
+      setupMock(cards, logs);
+
+      const { result } = renderHook(() => useDeck('test-deck'));
+
+      await act(async () => {
+        await result.current.undo();
+      });
+
+      // Should undo card-b (timestamp 2000 > 1000)
+      expect(mockUpdateState).toHaveBeenCalledWith('test-deck|card-b', 'state', null);
+      expect(mockRemove).toHaveBeenCalledWith(logs[1].id);
+    });
+  });
+
+  describe('undo restores new cards', () => {
+    it('restores a new card to null state (state=0 in log)', async () => {
+      const mockUpdateState = vi.fn(() => Promise.resolve());
+      vi.mocked(getCardRepository).mockReturnValue({
+        updateState: mockUpdateState,
+        suspend: vi.fn(() => Promise.resolve()),
+        getById: vi.fn(() => Promise.resolve(null)),
+      } as any);
+      vi.mocked(getReviewLogRepository).mockReturnValue({
+        insert: vi.fn(() => Promise.resolve()),
+        remove: vi.fn(() => Promise.resolve()),
+      } as any);
+
+      const { card: ratedState } = computeNewState(null, Rating.Good);
+      const cards = [{ ...createFlashCard('card-a'), state: ratedState }];
+      const logs = [
+        createReviewLog('test-deck|card-a', { state: 0, timestamp: 1000 }),
+      ];
+      setupMock(cards, logs);
+
+      const { result } = renderHook(() => useDeck('test-deck'));
+
+      await act(async () => {
+        await result.current.undo();
+      });
+
+      // state=0 means it was New → should restore to null, not a serialized empty card
+      expect(mockUpdateState).toHaveBeenCalledWith('test-deck|card-a', 'state', null);
+    });
+
+    it('undone new card returns to its original position and becomes current', () => {
+      // Simulate: cards a, b, c in deck order. User rated a and b, now on c.
+      // After undoing b, b should become the current card.
+      const { card: stateA } = computeNewState(null, Rating.Easy);
+      const { card: stateB } = computeNewState(null, Rating.Easy);
+      const cards = [
+        { ...createFlashCard('card-a'), state: stateA },
+        { ...createFlashCard('card-b'), state: stateB },
+        createFlashCard('card-c'),
+      ];
+      const logs = [
+        createReviewLog('test-deck|card-a', { state: 0, timestamp: 1000 }),
+        createReviewLog('test-deck|card-b', { state: 0, timestamp: 2000 }),
+      ];
+      setupMock(cards, logs);
+
+      const { result, rerender } = renderHook(() => useDeck('test-deck'));
+
+      // Currently showing card-c (only new card left)
+      expect(result.current.currentCard?.term).toBe('card-c');
+
+      // After undo, card-b's state goes back to null (simulated by re-mocking)
+      const undoneCards = [
+        { ...createFlashCard('card-a'), state: stateA },
+        createFlashCard('card-b'), // back to new (null state)
+        createFlashCard('card-c'),
+      ];
+      setupMock(undoneCards, [logs[0]]); // only card-a's log remains
+      rerender();
+
+      // card-b is new again and comes before card-c in deck order
+      expect(result.current.currentCard?.term).toBe('card-b');
+      expect(result.current.currentCard?.isNew).toBe(true);
+    });
+
+    it('undone new reverse card restores reverseState to null', async () => {
+      const mockUpdateState = vi.fn(() => Promise.resolve());
+      vi.mocked(getCardRepository).mockReturnValue({
+        updateState: mockUpdateState,
+        suspend: vi.fn(() => Promise.resolve()),
+        getById: vi.fn(() => Promise.resolve(null)),
+      } as any);
+      vi.mocked(getReviewLogRepository).mockReturnValue({
+        insert: vi.fn(() => Promise.resolve()),
+        remove: vi.fn(() => Promise.resolve()),
+      } as any);
+
+      const { card: reverseState } = computeNewState(null, Rating.Good);
+      const cards = [
+        createFlashCard('gato', {
+          reversible: true,
+          state: createFutureState(5),
+          reverseState,
+        }),
+      ];
+      const logs = [
+        createReviewLog('test-deck|gato', { isReverse: true, state: 0, timestamp: 1000 }),
+      ];
+      setupMock(cards, logs);
+
+      const { result } = renderHook(() => useDeck('test-deck'));
+
+      await act(async () => {
+        await result.current.undo();
+      });
+
+      expect(mockUpdateState).toHaveBeenCalledWith('test-deck|gato', 'reverseState', null);
+    });
+  });
+
+  describe('undo does nothing when no logs', () => {
+    it('undo is a no-op when logsList is empty', async () => {
+      const mockUpdateState = vi.fn(() => Promise.resolve());
+      const mockRemove = vi.fn(() => Promise.resolve());
+      vi.mocked(getCardRepository).mockReturnValue({
+        updateState: mockUpdateState,
+        suspend: vi.fn(() => Promise.resolve()),
+        getById: vi.fn(() => Promise.resolve(null)),
+      } as any);
+      vi.mocked(getReviewLogRepository).mockReturnValue({
+        insert: vi.fn(() => Promise.resolve()),
+        remove: mockRemove,
+      } as any);
+
+      setupMock([createFlashCard('card-a')]);
+
+      const { result } = renderHook(() => useDeck('test-deck'));
+
+      await act(async () => {
+        await result.current.undo();
+      });
+
+      expect(mockUpdateState).not.toHaveBeenCalled();
+      expect(mockRemove).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('undo reviewed (non-new) card', () => {
+    it('uses FSRS rollback for cards that were not new (state > 0)', async () => {
+      const mockUpdateState = vi.fn(() => Promise.resolve());
+      // First review
+      const { card: state1 } = computeNewState(null, Rating.Good);
+      // Second review
+      const now = new Date(state1.due.getTime() + 1000);
+      const { card: state2, log: log2 } = computeNewState(state1, Rating.Good, now);
+
+      vi.mocked(getCardRepository).mockReturnValue({
+        updateState: mockUpdateState,
+        suspend: vi.fn(() => Promise.resolve()),
+        getById: vi.fn(() => Promise.resolve({ ...createFlashCard('card-a'), state: state2 })),
+      } as any);
+      vi.mocked(getReviewLogRepository).mockReturnValue({
+        insert: vi.fn(() => Promise.resolve()),
+        remove: vi.fn(() => Promise.resolve()),
+      } as any);
+
+      const cards = [{ ...createFlashCard('card-a'), state: state2 }];
+      const logs = [{
+        id: `test-deck|card-a:forward:2000`,
+        cardId: 'test-deck|card-a',
+        isReverse: false,
+        rating: log2.rating,
+        state: log2.state, // state > 0 (not New)
+        due: log2.due.toISOString(),
+        stability: log2.stability,
+        difficulty: log2.difficulty,
+        elapsed_days: log2.elapsed_days,
+        last_elapsed_days: log2.last_elapsed_days,
+        scheduled_days: log2.scheduled_days,
+        review: log2.review.toISOString(),
+      }];
+      setupMock(cards, logs);
+
+      const { result } = renderHook(() => useDeck('test-deck'));
+
+      await act(async () => {
+        await result.current.undo();
+      });
+
+      // Should call updateState with a serialized FSRS card (not null)
+      expect(mockUpdateState).toHaveBeenCalledWith(
+        'test-deck|card-a',
+        'state',
+        expect.objectContaining({ due: expect.any(String), stability: expect.any(Number) })
+      );
+    });
+  });
+});

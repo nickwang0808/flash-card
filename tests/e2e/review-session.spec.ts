@@ -118,8 +118,8 @@ test.describe('Review session', () => {
     // Card is still shown (undo reverts its FSRS state)
     await expect(page.locator('[data-testid="card-front"]')).toContainText(frontText!);
 
-    // Undo button should disappear since the log was removed
-    await expect(page.getByRole('button', { name: 'Undo' })).not.toBeVisible();
+    // Undo button should still be visible (other review logs exist from the Easy-rated cards)
+    await expect(page.getByRole('button', { name: 'Undo' })).toBeVisible();
   });
 
   test('rating Hard keeps new card in session (short learning interval)', async ({ page }) => {
@@ -264,10 +264,8 @@ test.describe('Review session', () => {
 
     await expect(page.getByText('5 remaining')).toBeVisible();
 
-    // The next card should have Undo available (from the previous card's log)
-    await expect(page.getByRole('button', { name: 'Undo' })).not.toBeVisible();
-    // Undo is only available for the CURRENT card, not the previous one
-    // This verifies Undo is contextual to the displayed card
+    // Undo button should be visible — it targets the previously rated card, not the current one
+    await expect(page.getByRole('button', { name: 'Undo' })).toBeVisible();
   });
 
   test('all four rating buttons are visible after revealing answer', async ({ page }) => {

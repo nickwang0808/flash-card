@@ -187,54 +187,53 @@ export function useDeck(deckName: string) {
   }
 
   async function undo() {
-    if (!studyItem) return;
-
-    // Find the most recent log for this card+direction
-    const relevantLogs = logsList
-      .filter((l: StoredReviewLog) => l.cardId === studyItem.id && l.isReverse === studyItem.isReverse)
-      .sort((a: StoredReviewLog, b: StoredReviewLog) => parseInt(b.id.split(':')[2]) - parseInt(a.id.split(':')[2]));
-
-    const lastLog = relevantLogs[0];
+    // Find the most recent review log overall
+    const sorted = [...logsList].sort(
+      (a: StoredReviewLog, b: StoredReviewLog) =>
+        parseInt(b.id.split(':')[2]) - parseInt(a.id.split(':')[2])
+    );
+    const lastLog = sorted[0];
     if (!lastLog) return;
 
-    const currentState = studyItem.isReverse ? studyItem.reverseState : studyItem.state;
-    if (!currentState) return;
-
-    // Convert stored log back to ReviewLog format for rollback
-    const reviewLog: ReviewLog = {
-      rating: lastLog.rating as Rating,
-      state: lastLog.state as State,
-      due: new Date(lastLog.due),
-      stability: lastLog.stability,
-      difficulty: lastLog.difficulty,
-      elapsed_days: lastLog.elapsed_days,
-      last_elapsed_days: lastLog.last_elapsed_days,
-      scheduled_days: lastLog.scheduled_days,
-      review: new Date(lastLog.review),
-    };
-
-    // Use FSRS rollback
-    const previousState = fsrs().rollback(currentState, reviewLog);
-    const serialized = previousState.due
-      ? serializeFsrsCard(previousState)
-      : null;
-
-    // Update card state via repository
     const cardRepo = getCardRepository();
-    const field = studyItem.isReverse ? 'reverseState' : 'state';
-    await cardRepo.updateState(studyItem.id, field, serialized);
+    const field = lastLog.isReverse ? 'reverseState' : 'state';
 
-    // Remove the log entry via repository
+    if (lastLog.state === 0) {
+      // Card was New when reviewed — restore to null
+      await cardRepo.updateState(lastLog.cardId, field, null);
+    } else {
+      // Look up the card to get its current FSRS state for rollback
+      const card = await cardRepo.getById(lastLog.cardId);
+      if (!card) return;
+
+      const currentState = lastLog.isReverse ? card.reverseState : card.state;
+      if (!currentState) return;
+
+      const reviewLog: ReviewLog = {
+        rating: lastLog.rating as Rating,
+        state: lastLog.state as State,
+        due: new Date(lastLog.due),
+        stability: lastLog.stability,
+        difficulty: lastLog.difficulty,
+        elapsed_days: lastLog.elapsed_days,
+        last_elapsed_days: lastLog.last_elapsed_days,
+        scheduled_days: lastLog.scheduled_days,
+        review: new Date(lastLog.review),
+      };
+
+      const previousState = fsrs().rollback(currentState, reviewLog);
+      await cardRepo.updateState(lastLog.cardId, field, serializeFsrsCard(previousState));
+    }
+
+    // Remove the log entry
     const logRepo = getReviewLogRepository();
     await logRepo.remove(lastLog.id);
 
-    notifyChange(studyItem.id);
+    notifyChange(lastLog.cardId);
   }
 
-  // Check if undo is available for the current card
-  const canUndo = studyItem
-    ? logsList.some((l: StoredReviewLog) => l.cardId === studyItem.id && l.isReverse === studyItem.isReverse)
-    : false;
+  // Check if undo is available (any review log exists)
+  const canUndo = logsList.length > 0;
 
   return {
     isLoading,
