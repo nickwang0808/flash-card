@@ -1,11 +1,19 @@
 import { defineConfig } from 'vite';
+import { execSync } from 'child_process';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 
+const commitHash = execSync('git rev-parse --short HEAD').toString().trim();
+const commitMessage = execSync('git log -1 --pretty=%s').toString().trim();
+
 export default defineConfig({
   base: '/flash-card/',
+  define: {
+    __COMMIT_HASH__: JSON.stringify(commitHash),
+    __COMMIT_MESSAGE__: JSON.stringify(commitMessage),
+  },
   plugins: [
     tailwindcss(),
     react(),

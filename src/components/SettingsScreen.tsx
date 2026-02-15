@@ -151,6 +151,16 @@ export function SettingsScreen({ onBack }: Props) {
             Clears all local data
           </p>
         </div>
+
+        {/* Version */}
+        <div className="pt-4 border-t border-border text-center">
+          <p className="text-xs text-muted-foreground font-mono">
+            {__COMMIT_HASH__}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {__COMMIT_MESSAGE__}
+          </p>
+        </div>
       </div>
     </div>
   );
