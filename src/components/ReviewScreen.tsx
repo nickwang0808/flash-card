@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Rating, type Grade } from 'ts-fsrs';
 import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import remarkGfm from 'remark-gfm';
+import { Rating, type Grade } from 'ts-fsrs';
 import { useDeck } from '../hooks/useDeck';
 import { useTts } from '../hooks/useTts';
 import { TtsLocalePicker } from './TtsLocalePicker';
@@ -89,8 +89,8 @@ export function ReviewScreen({ deck, onBack }: Props) {
         )}
 
         <div className="text-center" data-testid="card-front">
-          <div className="text-3xl font-bold flex items-center justify-center gap-2">
-            <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{currentCard.front}</Markdown>
+          <div className="flex items-center justify-center gap-2">
+            <div className="card-markdown"><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{currentCard.front}</Markdown></div>
             {!currentCard.isReverse && (
               <button
                 onClick={() => speak(currentCard.term)}
@@ -113,8 +113,8 @@ export function ReviewScreen({ deck, onBack }: Props) {
 
         {answerRevealed ? (
           <div className="text-center space-y-3 animate-fade-in" data-testid="card-back">
-            <div className="text-xl flex items-center justify-center gap-2">
-              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{currentCard.back}</Markdown>
+            <div className="flex items-center justify-center gap-2">
+              <div><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{currentCard.back}</Markdown></div>
               {currentCard.isReverse && (
                 <button
                   onClick={() => speak(currentCard.term)}

@@ -1,6 +1,7 @@
 #!/usr/bin/env npx tsx
 /**
  * Seed and reset the test repo for development/testing.
+ * Uses the same card data as E2E tests — one dataset to maintain.
  *
  * Usage:
  *   npx tsx scripts/seed-test-repo.ts seed    # Seed with test data
@@ -10,6 +11,7 @@
 
 import { Octokit } from '@octokit/rest';
 import * as dotenv from 'dotenv';
+import { TEST_CARDS } from '../tests/e2e/test-server';
 
 dotenv.config();
 
@@ -29,57 +31,6 @@ function parseRepoUrl(url: string): { owner: string; repo: string } {
 
 const { owner, repo } = parseRepoUrl(REPO_URL);
 const octokit = new Octokit({ auth: TOKEN });
-
-// FlashCard schema - matches FlashCardJSON in github-service.ts
-// Cards with state: null are "new" cards
-const SEED_CARDS: Record<string, any> = {};
-
-const VOCAB_DATA = [
-  { source: 'hola', translation: 'hello', example: '¡Hola! ¿Cómo estás?' },
-  { source: 'gracias', translation: 'thank you', example: 'Muchas gracias por tu ayuda.' },
-  { source: 'agua', translation: 'water', example: 'Necesito un vaso de agua.' },
-  { source: 'gato', translation: 'cat', notes: 'Common pet', reversible: true },
-  { source: 'perro', translation: 'dog', notes: 'Common pet' },
-  { source: 'casa', translation: 'house', example: 'Mi casa es grande.' },
-  { source: 'libro', translation: 'book', example: 'Estoy leyendo un libro.' },
-  { source: 'comida', translation: 'food', example: 'La comida está deliciosa.' },
-  { source: 'tiempo', translation: 'time/weather', example: '¿Qué tiempo hace hoy?' },
-  { source: 'amigo', translation: 'friend', example: 'Él es mi mejor amigo.', reversible: true },
-  { source: 'trabajo', translation: 'work', example: 'Voy al trabajo cada día.' },
-  { source: 'dinero', translation: 'money', example: 'No tengo mucho dinero.' },
-  { source: 'ciudad', translation: 'city', example: 'Madrid es una ciudad bonita.' },
-  { source: 'coche', translation: 'car', example: 'Mi coche es rojo.' },
-  { source: 'mesa', translation: 'table', example: 'El libro está en la mesa.' },
-  { source: 'silla', translation: 'chair', example: 'Siéntate en la silla.' },
-  { source: 'ventana', translation: 'window', example: 'Abre la ventana, por favor.' },
-  { source: 'puerta', translation: 'door', example: 'Cierra la puerta.' },
-  { source: 'calle', translation: 'street', example: 'Vivo en esta calle.' },
-  { source: 'mañana', translation: 'morning/tomorrow', example: 'Nos vemos mañana.' },
-  { source: 'noche', translation: 'night', example: 'Buenas noches.' },
-  { source: 'día', translation: 'day', example: '¿Qué día es hoy?' },
-  { source: 'año', translation: 'year', example: 'El año tiene doce meses.' },
-  { source: 'mes', translation: 'month', example: 'Este mes es enero.' },
-  { source: 'semana', translation: 'week', example: 'La semana tiene siete días.' },
-  { source: 'hora', translation: 'hour', example: '¿Qué hora es?' },
-  { source: 'minuto', translation: 'minute', example: 'Espera un minuto.' },
-  { source: 'segundo', translation: 'second', example: 'Vuelvo en un segundo.' },
-  { source: 'nombre', translation: 'name', example: '¿Cuál es tu nombre?', reversible: true },
-  { source: 'familia', translation: 'family', example: 'Mi familia es pequeña.' },
-];
-
-// Generate SEED_CARDS from VOCAB_DATA
-for (const item of VOCAB_DATA) {
-  SEED_CARDS[item.source] = {
-    source: item.source,
-    translation: item.translation,
-    example: item.example,
-    notes: item.notes,
-    created: '2024-01-01T00:00:00Z',
-    reversible: item.reversible ?? false,
-    state: null,
-    reverseState: null,
-  };
-}
 
 async function getFileSha(path: string): Promise<string | null> {
   try {
@@ -105,7 +56,7 @@ async function writeFile(path: string, content: string, message: string): Promis
     content: encoded,
     ...(sha ? { sha } : {}),
   });
-  console.log(`✓ ${sha ? 'Updated' : 'Created'} ${path}`);
+  console.log(`${sha ? 'Updated' : 'Created'} ${path}`);
 }
 
 async function deleteFile(path: string, message: string): Promise<boolean> {
@@ -122,47 +73,45 @@ async function deleteFile(path: string, message: string): Promise<boolean> {
     message,
     sha,
   });
-  console.log(`✓ Deleted ${path}`);
+  console.log(`Deleted ${path}`);
   return true;
 }
 
 async function seed(): Promise<void> {
   console.log(`\nSeeding ${REPO_URL}...\n`);
 
-  // Write cards.json (state is embedded per-card, undefined = new)
   await writeFile(
     'spanish-vocab/cards.json',
-    JSON.stringify(SEED_CARDS, null, 2),
+    JSON.stringify(TEST_CARDS, null, 2),
     'seed test data'
   );
 
   // Delete old state.json if it exists (legacy cleanup)
   await deleteFile('spanish-vocab/state.json', 'cleanup: remove legacy state.json');
 
-  const reversibleCount = VOCAB_DATA.filter(v => v.reversible).length;
-  console.log(`\n✓ Seed complete! ${VOCAB_DATA.length} cards (${reversibleCount} reversible, ${VOCAB_DATA.length + reversibleCount} total reviewable)`);
+  const cardCount = Object.keys(TEST_CARDS).length;
+  const reversibleCount = Object.values(TEST_CARDS).filter((c: any) => c.reversible).length;
+  console.log(`\nSeed complete! ${cardCount} cards (${reversibleCount} reversible, ${cardCount + reversibleCount} total reviewable)`);
 }
 
 async function reset(): Promise<void> {
   console.log(`\nResetting ${REPO_URL}...\n`);
 
-  // Re-seed cards without any FSRS state (all new)
   await writeFile(
     'spanish-vocab/cards.json',
-    JSON.stringify(SEED_CARDS, null, 2),
+    JSON.stringify(TEST_CARDS, null, 2),
     'reset: restore seed data (all cards new)'
   );
 
   // Delete old state.json if it exists (legacy cleanup)
   await deleteFile('spanish-vocab/state.json', 'cleanup: remove legacy state.json');
 
-  console.log('\n✓ Reset complete! All cards are now new again.');
+  console.log('\nReset complete! All cards are now new again.');
 }
 
 async function status(): Promise<void> {
   console.log(`\nStatus of ${REPO_URL}:\n`);
 
-  // Check cards.json
   try {
     const { data } = await octokit.repos.getContent({
       owner,
@@ -172,18 +121,18 @@ async function status(): Promise<void> {
     if (!Array.isArray(data) && 'content' in data) {
       const content = Buffer.from(data.content, 'base64').toString('utf8');
       const cards = JSON.parse(content);
-      const cardList = Object.values(cards) as any[];
-      const reviewed = cardList.filter((c) => c.state).length;
-      const newCards = cardList.filter((c) => !c.state).length;
+      const entries = Object.entries(cards) as [string, any][];
+      const reviewed = entries.filter(([, c]) => c.state).length;
+      const newCards = entries.filter(([, c]) => !c.state).length;
 
-      console.log(`Cards: ${cardList.length} cards in spanish-vocab/cards.json`);
+      console.log(`Cards: ${entries.length} cards in spanish-vocab/cards.json`);
       console.log(`  - ${newCards} new, ${reviewed} reviewed`);
 
-      for (const card of cardList) {
+      for (const [term, card] of entries) {
         if (card.state) {
-          console.log(`  - ${card.source}: ${card.state.reps} reps, due ${card.state.due?.split('T')[0] || 'unknown'}`);
+          console.log(`  - ${term}: ${card.state.reps} reps, due ${card.state.due?.split('T')[0] || 'unknown'}`);
         } else {
-          console.log(`  - ${card.source}: new${card.reversible ? ' (reversible)' : ''}`);
+          console.log(`  - ${term}: new${card.reversible ? ' (reversible)' : ''}`);
         }
       }
     }
