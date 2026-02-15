@@ -90,7 +90,7 @@ test.describe('Review session', () => {
     await expect(page.getByText('6 remaining')).toBeVisible();
 
     // Remember the front text of the first card
-    const frontText = await page.locator('p.text-3xl').textContent();
+    const frontText = (await page.locator('[data-testid="card-front"]').textContent())?.trim();
 
     // Rate as Again — card stays in session but moves behind new items
     await page.getByRole('button', { name: 'Show Answer' }).click();
@@ -109,14 +109,14 @@ test.describe('Review session', () => {
 
     // Now only the Again card remains — it should reappear
     await expect(page.getByText('1 remaining')).toBeVisible();
-    await expect(page.locator('p.text-3xl')).toHaveText(frontText!);
+    await expect(page.locator('[data-testid="card-front"]')).toContainText(frontText!);
 
     // Undo button should be visible since this card has a review log
     await expect(page.getByRole('button', { name: 'Undo' })).toBeVisible();
     await page.getByRole('button', { name: 'Undo' }).click();
 
     // Card is still shown (undo reverts its FSRS state)
-    await expect(page.locator('p.text-3xl')).toHaveText(frontText!);
+    await expect(page.locator('[data-testid="card-front"]')).toContainText(frontText!);
 
     // Undo button should disappear since the log was removed
     await expect(page.getByRole('button', { name: 'Undo' })).not.toBeVisible();
@@ -198,22 +198,22 @@ test.describe('Review session', () => {
     await expect(page.getByRole('heading', { name: 'Decks' })).toBeVisible();
   });
 
-  test('Show Answer reveals translation, example, and notes', async ({ page }) => {
+  test('Show Answer reveals back content with markdown', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    // Find the "hola" card which has example and notes fields
+    // Find the "hola" card which has example and notes in its back markdown
     // Cards may appear in random order, so rate through until we find hola
     for (let remaining = 6; remaining > 0; remaining--) {
       await expect(page.getByText(`${remaining} remaining`)).toBeVisible();
-      const front = await page.locator('p.text-3xl').textContent();
+      const front = (await page.locator('[data-testid="card-front"]').textContent())?.trim();
       if (front === 'hola') {
         await page.getByRole('button', { name: 'Show Answer' }).click();
 
-        // Translation
+        // Translation text
         await expect(page.getByText('hello')).toBeVisible();
-        // Example sentence (italic)
+        // Example sentence (rendered as italic from markdown *...*)
         await expect(page.getByText(/cómo estás/)).toBeVisible();
-        // Notes
+        // Notes (rendered as blockquote from markdown > ...)
         await expect(page.getByText('Common greeting')).toBeVisible();
         return; // Test passed
       }
@@ -233,15 +233,16 @@ test.describe('Review session', () => {
     // Forward cards are shown first, reverse cards after
     for (let remaining = 6; remaining > 0; remaining--) {
       await expect(page.getByText(`${remaining} remaining`)).toBeVisible();
-      const front = await page.locator('p.text-3xl').textContent();
-      if (front === 'cat') {
-        // Found the reverse card — the translation is shown as the front
+      const front = (await page.locator('[data-testid="card-front"]').textContent())?.trim();
+      // The reverse card shows the back content as front — starts with "cat"
+      if (front?.startsWith('cat')) {
+        // Found the reverse card — the back is shown as the front
         await expect(page.getByText('reverse')).toBeVisible();
         await expect(page.getByText('New')).toBeVisible();
 
-        // Reveal answer — should show the source word (gato)
+        // Reveal answer — should show the term (gato) as the back
         await page.getByRole('button', { name: 'Show Answer' }).click();
-        await expect(page.getByText('gato', { exact: true })).toBeVisible();
+        await expect(page.getByTestId('card-back').getByText('gato')).toBeVisible();
         return; // Test passed
       }
       // Skip this forward card

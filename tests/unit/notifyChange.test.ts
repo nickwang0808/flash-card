@@ -132,8 +132,8 @@ describe('notifyChange debounce', () => {
     })) as any);
     mockGetCardDataByIds.mockImplementation((async (ids: string[]) =>
       ids.map(() => ({
-        deckName: 'deck', source: 'hello',
-        translation: 'hi', tags: [] as string[], created: '2025-01-01',
+        deckName: 'deck', term: 'hello',
+        back: 'hi', tags: [] as string[], created: '2025-01-01',
         reversible: false, state: null, reverseState: null, suspended: false,
       }))
     ) as any);

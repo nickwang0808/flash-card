@@ -15,11 +15,11 @@ const __dirname = path.dirname(__filename);
 const CONFIG_FILE = path.resolve(__dirname, '../../temp/e2e-config.json');
 
 const TEST_CARDS = {
-  hola: { source: 'hola', translation: 'hello', example: 'Hola, ¿cómo estás?', notes: 'Common greeting', tags: ['greeting'], created: '2025-01-01T00:00:00Z', state: null, reverseState: null },
-  gato: { source: 'gato', translation: 'cat', example: 'El gato está durmiendo.', tags: ['animal'], created: '2025-01-01T12:00:00Z', reversible: true, state: null, reverseState: null },
-  perro: { source: 'perro', translation: 'dog', tags: ['animal'], created: '2025-01-02T00:00:00Z', state: null, reverseState: null },
-  casa: { source: 'casa', translation: 'house', created: '2025-01-03T00:00:00Z', state: null, reverseState: null },
-  agua: { source: 'agua', translation: 'water', created: '2025-01-04T00:00:00Z', state: null, reverseState: null },
+  hola: { back: 'hello\n\n*Hola, ¿cómo estás?*\n\n> Common greeting', tags: ['greeting'], created: '2025-01-01T00:00:00Z', state: null, reverseState: null },
+  gato: { back: 'cat\n\n*El gato está durmiendo.*', tags: ['animal'], created: '2025-01-01T12:00:00Z', reversible: true, state: null, reverseState: null },
+  perro: { back: 'dog', tags: ['animal'], created: '2025-01-02T00:00:00Z', state: null, reverseState: null },
+  casa: { back: 'house', created: '2025-01-03T00:00:00Z', state: null, reverseState: null },
+  agua: { back: 'water', created: '2025-01-04T00:00:00Z', state: null, reverseState: null },
 };
 
 let repoCleanup: (() => void) | null = null;

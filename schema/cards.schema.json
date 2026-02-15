@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Flash Card Deck",
+  "description": "Schema for cards.json files in a flash card data repository. Each key is the raw term being learned (TTS-readable).",
+  "type": "object",
+  "additionalProperties": {
+    "type": "object",
+    "required": ["back", "created"],
+    "additionalProperties": false,
+    "properties": {
+      "front": {
+        "type": "string",
+        "description": "Markdown content for the front side. Defaults to the key (term) if omitted."
+      },
+      "back": {
+        "type": "string",
+        "description": "Markdown content for the back side."
+      },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "created": {
+        "type": "string",
+        "format": "date-time",
+        "description": "ISO 8601 date when the card was created."
+      },
+      "reversible": {
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the card can be studied in reverse (back→front)."
+      },
+      "state": {
+        "description": "FSRS scheduling state for the forward direction (managed by the app).",
+        "oneOf": [{ "type": "object" }, { "type": "null" }]
+      },
+      "reverseState": {
+        "description": "FSRS scheduling state for the reverse direction (managed by the app).",
+        "oneOf": [{ "type": "object" }, { "type": "null" }]
+      },
+      "suspended": {
+        "type": "boolean",
+        "description": "Whether the card is suspended from review."
+      }
+    }
+  }
+}

@@ -27,11 +27,10 @@ export async function listUserRepos(
 }
 
 // Card JSON format as stored in GitHub (FSRS dates serialized to ISO strings)
+// The card's term/key is the JSON map key, not stored inside the object.
 interface CardJSON {
-  source: string;
-  translation: string;
-  example?: string;
-  notes?: string;
+  front?: string;             // markdown (optional, defaults to term/key)
+  back: string;               // markdown
   tags?: string[];
   created: string;
   reversible?: boolean;
@@ -60,13 +59,12 @@ export class GitHubStorageService implements GitStorageService {
         const { content } = await this.readFile(`${entry.name}/cards.json`);
         const cardsMap: Record<string, CardJSON> = JSON.parse(content);
 
-        for (const card of Object.values(cardsMap)) {
+        for (const [term, card] of Object.entries(cardsMap)) {
           allCards.push({
             deckName: entry.name,
-            source: card.source,
-            translation: card.translation,
-            example: card.example,
-            notes: card.notes,
+            term,
+            front: card.front,
+            back: card.back,
             tags: card.tags,
             created: card.created,
             reversible: card.reversible ?? false,
@@ -104,11 +102,8 @@ export class GitHubStorageService implements GitStorageService {
       }
 
       for (const card of deckCards) {
-        existing[card.source] = {
-          source: card.source,
-          translation: card.translation,
-          example: card.example,
-          notes: card.notes,
+        const json: CardJSON = {
+          back: card.back,
           tags: card.tags,
           created: card.created,
           reversible: card.reversible,
@@ -116,13 +111,15 @@ export class GitHubStorageService implements GitStorageService {
           reverseState: card.reverseState,
           suspended: card.suspended,
         };
+        if (card.front) json.front = card.front;
+        existing[card.term] = json;
       }
 
       await this.writeFile(
         `${deckName}/cards.json`,
         JSON.stringify(existing, null, 2),
         sha,
-        `sync: ${deckName} - ${deckCards.map((c) => c.source).join(', ')}`,
+        `sync: ${deckName} - ${deckCards.map((c) => c.term).join(', ')}`,
       );
     }
   }

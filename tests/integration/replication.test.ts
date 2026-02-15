@@ -35,11 +35,11 @@ function createMockService(initialCards: CardData[] = []): GitStorageService & {
   return mock;
 }
 
-function makeCard(source: string, deckName = 'test-deck', overrides: Partial<CardData> = {}): CardData {
+function makeCard(term: string, deckName = 'test-deck', overrides: Partial<CardData> = {}): CardData {
   return {
     deckName,
-    source,
-    translation: `${source}-translation`,
+    term,
+    back: `${term}-translation`,
     created: '2025-01-01T00:00:00Z',
     reversible: false,
     state: null,
@@ -63,7 +63,7 @@ const mockCardRepository: CardRepository = {
   replaceAll: vi.fn(async (cards: CardData[]) => {
     mockCardsStore.clear();
     for (const c of cards) {
-      const id = `${c.deckName}|${c.source}`;
+      const id = `${c.deckName}|${c.term}`;
       mockCardsStore.set(id, { ...c, id });
     }
   }),
@@ -82,7 +82,7 @@ const mockCardRepository: CardRepository = {
 
 vi.mock('../../src/services/card-repository', () => ({
   getCardRepository: vi.fn(() => mockCardRepository),
-  makeCardId: (deckName: string, source: string) => `${deckName}|${source}`,
+  makeCardId: (deckName: string, term: string) => `${deckName}|${term}`,
 }));
 
 // We need to mock RxDB for settings access only
@@ -153,8 +153,8 @@ describe('Replication with mocked GitStorageService', () => {
 
     const replacedCards = vi.mocked(mockCardRepository.replaceAll).mock.calls[0][0];
     expect(replacedCards).toHaveLength(2);
-    expect(replacedCards[0].source).toBe('hello');
-    expect(replacedCards[1].source).toBe('world');
+    expect(replacedCards[0].term).toBe('hello');
+    expect(replacedCards[1].term).toBe('world');
   });
 
   it('runSync populates card store after pull', async () => {
@@ -169,7 +169,7 @@ describe('Replication with mocked GitStorageService', () => {
     vi.mocked(mockCardRepository.replaceAll).mockImplementation(async (cards) => {
       mockCardsStore.clear();
       for (const c of cards) {
-        const id = `${c.deckName}|${c.source}`;
+        const id = `${c.deckName}|${c.term}`;
         mockCardsStore.set(id, { ...c, id });
       }
     });
@@ -189,10 +189,8 @@ describe('Replication with mocked GitStorageService', () => {
     const card = {
       id: 'deck|hello',
       deckName: 'deck',
-      source: 'hello',
-      translation: 'hi',
-      example: 'Hello!',
-      notes: '',
+      term: 'hello',
+      back: 'hi',
       tags: [] as string[],
       created: '2025-01-01T00:00:00Z',
       reversible: false,
@@ -224,9 +222,9 @@ describe('Replication with mocked GitStorageService', () => {
     expect(mockService.pushCardsCalls.length).toBe(1);
     const pushed = mockService.pushCardsCalls[0];
     expect(pushed).toHaveLength(1);
-    expect(pushed[0].source).toBe('hello');
+    expect(pushed[0].term).toBe('hello');
     expect(pushed[0].deckName).toBe('deck');
-    expect(pushed[0].translation).toBe('hi');
+    expect(pushed[0].back).toBe('hi');
   });
 
   it('debounce batches multiple changes into one push', async () => {
@@ -234,14 +232,14 @@ describe('Replication with mocked GitStorageService', () => {
     setServiceFactory(async () => mockService);
 
     // Seed cards
-    for (const source of ['a', 'b', 'c']) {
+    for (const term of ['a', 'b', 'c']) {
       const card = {
-        id: `deck|${source}`, deckName: 'deck', source,
-        translation: source, example: '', notes: '', tags: [] as string[],
+        id: `deck|${term}`, deckName: 'deck', term,
+        back: term, tags: [] as string[],
         created: '2025-01-01', reversible: false,
         state: null, reverseState: null, suspended: false,
       };
-      mockCardsStore.set(`deck|${source}`, card);
+      mockCardsStore.set(`deck|${term}`, card);
     }
 
     vi.mocked(mockCardRepository.getCardDataByIds).mockImplementation(async (ids) => {
@@ -270,8 +268,7 @@ describe('Replication with mocked GitStorageService', () => {
 
   it('round-trip: push cards then pull same data back', async () => {
     const originalCard = makeCard('gato', 'spanish', {
-      translation: 'cat',
-      example: 'El gato',
+      back: 'cat\n\n*El gato*',
       reversible: true,
       tags: ['animal'],
       state: { due: '2025-02-01T00:00:00Z', stability: 1.5, difficulty: 5, elapsed_days: 0, scheduled_days: 1, reps: 1, lapses: 0, state: 2 },
@@ -295,7 +292,7 @@ describe('Replication with mocked GitStorageService', () => {
       replacedCards = cards;
       mockCardsStore.clear();
       for (const c of cards) {
-        const id = `${c.deckName}|${c.source}`;
+        const id = `${c.deckName}|${c.term}`;
         mockCardsStore.set(id, { ...c, id });
       }
     });
@@ -305,8 +302,8 @@ describe('Replication with mocked GitStorageService', () => {
 
     // Verify card passed to repository
     expect(replacedCards).toHaveLength(1);
-    expect(replacedCards[0].source).toBe('gato');
-    expect(replacedCards[0].translation).toBe('cat');
+    expect(replacedCards[0].term).toBe('gato');
+    expect(replacedCards[0].back).toBe('cat\n\n*El gato*');
     expect(replacedCards[0].reversible).toBe(true);
     expect(replacedCards[0].state).toEqual(originalCard.state);
   });

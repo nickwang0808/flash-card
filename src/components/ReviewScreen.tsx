@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { Rating, type Grade } from 'ts-fsrs';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useDeck } from '../hooks/useDeck';
 
 interface Props {
@@ -82,24 +84,20 @@ export function ReviewScreen({ deck, onBack }: Props) {
           </span>
         )}
 
-        <div className="text-center">
-          <p className="text-3xl font-bold">{currentCard.front}</p>
+        <div className="text-center" data-testid="card-front">
+          <div className="text-3xl font-bold">
+            <Markdown remarkPlugins={[remarkGfm]}>{currentCard.front}</Markdown>
+          </div>
           {currentCard.isReverse && (
             <p className="text-xs text-muted-foreground mt-1">reverse</p>
           )}
         </div>
 
         {answerRevealed ? (
-          <div className="text-center space-y-3 animate-fade-in">
-            <p className="text-xl">{currentCard.back}</p>
-            {currentCard.example && (
-              <p className="text-sm text-muted-foreground italic">
-                {currentCard.example}
-              </p>
-            )}
-            {currentCard.notes && (
-              <p className="text-sm text-muted-foreground">{currentCard.notes}</p>
-            )}
+          <div className="text-center space-y-3 animate-fade-in" data-testid="card-back">
+            <div className="text-xl">
+              <Markdown remarkPlugins={[remarkGfm]}>{currentCard.back}</Markdown>
+            </div>
           </div>
         ) : (
           <button

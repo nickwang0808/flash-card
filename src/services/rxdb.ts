@@ -8,12 +8,11 @@ const cardsSchema = {
   primaryKey: 'id',
   type: 'object',
   properties: {
-    id: { type: 'string', maxLength: 300 },          // "deckName|source"
+    id: { type: 'string', maxLength: 300 },          // "deckName|term"
     deckName: { type: 'string', maxLength: 100 },
-    source: { type: 'string', maxLength: 200 },
-    translation: { type: 'string' },
-    example: { type: 'string' },
-    notes: { type: 'string' },
+    term: { type: 'string', maxLength: 200 },        // raw key (TTS-readable)
+    front: { type: 'string' },                        // markdown (optional, defaults to term)
+    back: { type: 'string' },                         // markdown
     tags: { type: 'array', items: { type: 'string' } },
     created: { type: 'string' },
     reversible: { type: 'boolean' },
@@ -21,7 +20,7 @@ const cardsSchema = {
     reverseState: {},                                  // FSRS Card (free-form JSON)
     suspended: { type: 'boolean' },
   },
-  required: ['id', 'deckName', 'source', 'translation', 'created', 'reversible'],
+  required: ['id', 'deckName', 'term', 'back', 'created', 'reversible'],
   indexes: ['deckName'],
 } as const;
 
@@ -50,7 +49,7 @@ const reviewLogsSchema = {
   type: 'object',
   properties: {
     id: { type: 'string', maxLength: 300 },
-    cardSource: { type: 'string', maxLength: 200 },
+    cardId: { type: 'string', maxLength: 300 },
     isReverse: { type: 'boolean' },
     rating: { type: 'number' },
     state: { type: 'number' },
@@ -62,16 +61,15 @@ const reviewLogsSchema = {
     scheduled_days: { type: 'number' },
     review: { type: 'string' },
   },
-  required: ['id', 'cardSource'],
+  required: ['id', 'cardId'],
 } as const;
 
 export type CardDoc = {
   id: string;
   deckName: string;
-  source: string;
-  translation: string;
-  example?: string;
-  notes?: string;
+  term: string;
+  front?: string;
+  back: string;
   tags?: string[];
   created: string;
   reversible: boolean;
@@ -93,7 +91,7 @@ export type SettingsDoc = {
 
 export type ReviewLogDoc = {
   id: string;
-  cardSource: string;
+  cardId: string;
   isReverse: boolean;
   rating: number;
   state: number;
@@ -115,25 +113,38 @@ export type AppDatabase = RxDatabase<{
 let dbPromise: Promise<AppDatabase> | null = null;
 let dbInstance: AppDatabase | null = null;
 
+async function createAndSetup(): Promise<AppDatabase> {
+  const db = await createRxDatabase<{
+    cards: RxCollection<CardDoc>;
+    settings: RxCollection<SettingsDoc>;
+    reviewlogs: RxCollection<ReviewLogDoc>;
+  }>({
+    name: 'flashcarddb',
+    storage: getRxStorageDexie(),
+    multiInstance: false,
+    eventReduce: true,
+  });
+  await db.addCollections({
+    cards: { schema: cardsSchema },
+    settings: { schema: settingsSchema },
+    reviewlogs: { schema: reviewLogsSchema },
+  });
+  dbInstance = db;
+  return db;
+}
+
 export function getDatabase(): Promise<AppDatabase> {
   if (!dbPromise) {
-    dbPromise = createRxDatabase<{
-      cards: RxCollection<CardDoc>;
-      settings: RxCollection<SettingsDoc>;
-      reviewlogs: RxCollection<ReviewLogDoc>;
-    }>({
-      name: 'flashcarddb',
-      storage: getRxStorageDexie(),
-      multiInstance: false,
-      eventReduce: true,
-    }).then(async (db) => {
-      await db.addCollections({
-        cards: { schema: cardsSchema },
-        settings: { schema: settingsSchema },
-        reviewlogs: { schema: reviewLogsSchema },
-      });
-      dbInstance = db;
-      return db;
+    dbPromise = createAndSetup().catch(async (err) => {
+      // Schema incompatible — destroy and recreate
+      console.warn('Database schema incompatible, recreating...', err);
+      const dbs = await indexedDB.databases();
+      for (const dbInfo of dbs) {
+        if (dbInfo.name?.startsWith('flashcarddb')) {
+          indexedDB.deleteDatabase(dbInfo.name);
+        }
+      }
+      return createAndSetup();
     });
   }
   return dbPromise;

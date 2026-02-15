@@ -5,12 +5,11 @@ import type { AppDatabase } from './rxdb';
 
 // FlashCard: content + FSRS state in one structure (UI contract, deserialized dates)
 export interface FlashCard {
-  id: string;                  // composite key: "deckName|source"
+  id: string;                  // composite key: "deckName|term"
   deckName: string;
-  source: string;
-  translation: string;
-  example?: string;
-  notes?: string;
+  term: string;                // raw key (TTS-readable)
+  front?: string;              // markdown display for front (defaults to term)
+  back: string;                // markdown display for back
   tags?: string[];
   created: string;
   reversible: boolean;
@@ -33,8 +32,8 @@ export interface CardRepository {
 
 // --- Composite key helpers ---
 
-function makeCardId(deckName: string, source: string): string {
-  return `${deckName}|${source}`;
+function makeCardId(deckName: string, term: string): string {
+  return `${deckName}|${term}`;
 }
 
 // --- Date serialization for FSRS Card objects ---
@@ -81,10 +80,9 @@ function deserializeCardDates(card: FlashCard): FlashCard {
 type CardDoc = {
   id: string;
   deckName: string;
-  source: string;
-  translation: string;
-  example?: string;
-  notes?: string;
+  term: string;
+  front?: string;
+  back: string;
   tags?: string[];
   created: string;
   reversible: boolean;
@@ -97,10 +95,9 @@ function docToFlashCard(doc: CardDoc): FlashCard {
   return deserializeCardDates({
     id: doc.id,
     deckName: doc.deckName,
-    source: doc.source,
-    translation: doc.translation,
-    example: doc.example,
-    notes: doc.notes,
+    term: doc.term,
+    front: doc.front || undefined,
+    back: doc.back,
     tags: doc.tags,
     created: doc.created,
     reversible: doc.reversible,
@@ -113,10 +110,9 @@ function docToFlashCard(doc: CardDoc): FlashCard {
 function docToCardData(doc: CardDoc): CardData {
   return {
     deckName: doc.deckName,
-    source: doc.source,
-    translation: doc.translation,
-    example: doc.example,
-    notes: doc.notes,
+    term: doc.term,
+    front: doc.front,
+    back: doc.back,
     tags: doc.tags,
     created: doc.created,
     reversible: doc.reversible,
@@ -164,12 +160,11 @@ export class RxDbCardRepository implements CardRepository {
     if (cards.length > 0) {
       await this.db.cards.bulkInsert(
         cards.map((c) => ({
-          id: makeCardId(c.deckName, c.source),
+          id: makeCardId(c.deckName, c.term),
           deckName: c.deckName,
-          source: c.source,
-          translation: c.translation,
-          example: c.example ?? '',
-          notes: c.notes ?? '',
+          term: c.term,
+          front: c.front || undefined,
+          back: c.back,
           tags: c.tags ?? [],
           created: c.created,
           reversible: c.reversible,

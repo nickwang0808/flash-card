@@ -12,14 +12,15 @@ import { execSync } from 'child_process';
 // --- Repo creation / cleanup ---
 
 interface SeedDeck {
-  [cardSource: string]: {
-    source: string;
-    translation: string;
-    example?: string;
-    notes?: string;
+  [term: string]: {
+    front?: string;
+    back: string;
     tags?: string[];
     created: string;
     reversible?: boolean;
+    state?: Record<string, unknown> | null;
+    reverseState?: Record<string, unknown> | null;
+    suspended?: boolean;
   };
 }
 

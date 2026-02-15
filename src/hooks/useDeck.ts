@@ -7,11 +7,9 @@ import { notifyChange } from '../services/replication';
 export type StudyItem = FlashCard & { isReverse: boolean };
 
 interface CurrentCard {
-  source: string;
-  front: string;
-  back: string;
-  example?: string;
-  notes?: string;
+  term: string;              // raw key (TTS-readable)
+  front: string;             // resolved display front (markdown)
+  back: string;              // resolved display back (markdown)
   isReverse: boolean;
   isNew: boolean;
 }
@@ -40,7 +38,7 @@ export function computeStudyItems(
   // First pass: collect forward directions
   for (const card of activeCards) {
     if (!card.state) {
-      const isIntroduced = introducedToday.has(card.source);
+      const isIntroduced = introducedToday.has(card.term);
       if (isIntroduced || newSlotsUsed < remainingNewSlots) {
         newForward.push({ ...card, isReverse: false });
         if (!isIntroduced) newSlotsUsed++;
@@ -53,7 +51,7 @@ export function computeStudyItems(
   // Second pass: collect reverse directions
   for (const card of activeCards) {
     if (card.reversible) {
-      const reverseKey = `${card.source}:reverse`;
+      const reverseKey = `${card.term}:reverse`;
       if (!card.reverseState) {
         const isIntroduced = introducedToday.has(reverseKey);
         if (isIntroduced || newSlotsUsed < remainingNewSlots) {
@@ -99,8 +97,8 @@ export async function rateCard(
 
   // Store ReviewLog via repository
   const storedLog: StoredReviewLog = {
-    id: `${card.source}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
-    cardSource: card.source,
+    id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
+    cardId: card.id,
     isReverse: card.isReverse,
     rating: log.rating,
     state: log.state,
@@ -142,7 +140,11 @@ export function useDeck(deckName: string) {
   const introducedToday = new Set(
     logsList
       .filter((l) => l.state === 0 && l.review.startsWith(today))
-      .map((l) => l.isReverse ? `${l.cardSource}:reverse` : l.cardSource)
+      .map((l) => {
+        // Extract term from cardId (format: "deckName|term")
+        const term = l.cardId.split('|')[1] ?? l.cardId;
+        return l.isReverse ? `${term}:reverse` : term;
+      })
   );
 
   const { newItems, dueItems } = computeStudyItems(
@@ -157,13 +159,16 @@ export function useDeck(deckName: string) {
   const studyItem = allItems[0] ?? null;
 
   // Compute current card display info
+  // front defaults to term if not set; reverse swaps front↔back
   const currentCard: CurrentCard | null = studyItem
     ? {
-        source: studyItem.source,
-        front: studyItem.isReverse ? studyItem.translation : studyItem.source,
-        back: studyItem.isReverse ? studyItem.source : studyItem.translation,
-        example: studyItem.example,
-        notes: studyItem.notes,
+        term: studyItem.term,
+        front: studyItem.isReverse
+          ? studyItem.back
+          : (studyItem.front || studyItem.term),
+        back: studyItem.isReverse
+          ? (studyItem.front || studyItem.term)
+          : studyItem.back,
         isReverse: studyItem.isReverse,
         isNew: studyItem.isReverse ? !studyItem.reverseState : !studyItem.state,
       }
@@ -186,7 +191,7 @@ export function useDeck(deckName: string) {
 
     // Find the most recent log for this card+direction
     const relevantLogs = logsList
-      .filter((l: StoredReviewLog) => l.cardSource === studyItem.source && l.isReverse === studyItem.isReverse)
+      .filter((l: StoredReviewLog) => l.cardId === studyItem.id && l.isReverse === studyItem.isReverse)
       .sort((a: StoredReviewLog, b: StoredReviewLog) => parseInt(b.id.split(':')[2]) - parseInt(a.id.split(':')[2]));
 
     const lastLog = relevantLogs[0];
@@ -228,7 +233,7 @@ export function useDeck(deckName: string) {
 
   // Check if undo is available for the current card
   const canUndo = studyItem
-    ? logsList.some((l: StoredReviewLog) => l.cardSource === studyItem.source && l.isReverse === studyItem.isReverse)
+    ? logsList.some((l: StoredReviewLog) => l.cardId === studyItem.id && l.isReverse === studyItem.isReverse)
     : false;
 
   return {

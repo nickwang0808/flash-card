@@ -3,8 +3,8 @@ import type { AppDatabase } from './rxdb';
 
 // Stored version of ReviewLog with serialized dates
 export interface StoredReviewLog {
-  id: string;                  // cardSource:direction:timestamp
-  cardSource: string;
+  id: string;                  // cardId:direction:timestamp
+  cardId: string;
   isReverse: boolean;
   rating: number;              // Rating enum value
   state: number;               // State enum value

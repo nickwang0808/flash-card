@@ -15,28 +15,26 @@ import type { FlashCard } from '../../src/services/card-repository';
 // ============================================================================
 
 function createFlashCard(
-  source: string,
+  term: string,
   opts: {
-    translation?: string;
+    back?: string;
+    front?: string;
     state?: Card | null;
     reverseState?: Card | null;
     reversible?: boolean;
-    example?: string;
-    notes?: string;
     deckName?: string;
   } = {}
 ): FlashCard {
   const deckName = opts.deckName ?? 'test-deck';
   return {
-    id: `${deckName}|${source}`,
+    id: `${deckName}|${term}`,
     deckName,
-    source,
-    translation: opts.translation ?? `${source}-translation`,
+    term,
+    front: opts.front,
+    back: opts.back ?? `${term}-translation`,
     tags: [],
     created: '2025-01-01',
     reversible: opts.reversible ?? false,
-    example: opts.example,
-    notes: opts.notes,
     state: opts.state ?? null,
     reverseState: opts.reverseState ?? null,
   };
@@ -86,7 +84,7 @@ describe('computeStudyItems', () => {
       const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
 
       expect(newItems).toHaveLength(1);
-      expect(newItems[0].source).toBe('hello');
+      expect(newItems[0].term).toBe('hello');
       expect(newItems[0].isReverse).toBe(false);
       expect(dueItems).toHaveLength(0);
     });
@@ -97,7 +95,7 @@ describe('computeStudyItems', () => {
 
       expect(newItems).toHaveLength(0);
       expect(dueItems).toHaveLength(1);
-      expect(dueItems[0].source).toBe('hello');
+      expect(dueItems[0].term).toBe('hello');
     });
 
     it('includes cards due today in dueItems', () => {
@@ -131,8 +129,8 @@ describe('computeStudyItems', () => {
       const { newItems } = computeStudyItems(cards, 2, endOfDay);
 
       expect(newItems).toHaveLength(2);
-      expect(newItems[0].source).toBe('one');
-      expect(newItems[1].source).toBe('two');
+      expect(newItems[0].term).toBe('one');
+      expect(newItems[1].term).toBe('two');
     });
 
     it('does not limit due cards', () => {
@@ -175,7 +173,7 @@ describe('computeStudyItems', () => {
 
       // All forwards first, then reverses (limit of 3 reached)
       expect(newItems).toHaveLength(3);
-      expect(newItems.map((i) => `${i.source}-${i.isReverse}`)).toEqual([
+      expect(newItems.map((i) => `${i.term}-${i.isReverse}`)).toEqual([
         'one-false',
         'two-false',
         'one-true',
@@ -254,9 +252,9 @@ describe('computeStudyItems', () => {
       const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
 
       expect(newItems).toHaveLength(1);
-      expect(newItems[0].source).toBe('new-card');
+      expect(newItems[0].term).toBe('new-card');
       expect(dueItems).toHaveLength(1);
-      expect(dueItems[0].source).toBe('due-card');
+      expect(dueItems[0].term).toBe('due-card');
     });
 
     it('processes cards in order', () => {
@@ -267,7 +265,7 @@ describe('computeStudyItems', () => {
       ];
       const { newItems } = computeStudyItems(cards, 10, endOfDay);
 
-      expect(newItems.map((i) => i.source)).toEqual(['a', 'b', 'c']);
+      expect(newItems.map((i) => i.term)).toEqual(['a', 'b', 'c']);
     });
   });
 
@@ -289,7 +287,7 @@ describe('computeStudyItems', () => {
       // Limit is 3, 2 already introduced, so only 1 new slot remains
       // Should include: one (introduced), two (introduced), three (new slot)
       expect(newItems).toHaveLength(3);
-      expect(newItems.map((i) => i.source)).toEqual(['one', 'two', 'three']);
+      expect(newItems.map((i) => i.term)).toEqual(['one', 'two', 'three']);
     });
 
     it('includes already-introduced cards even if over limit', () => {
@@ -319,7 +317,7 @@ describe('computeStudyItems', () => {
 
       // Limit is 2, both slots filled by introduced cards
       expect(newItems).toHaveLength(2);
-      expect(newItems.map((i) => i.source)).toEqual(['introduced-a', 'introduced-b']);
+      expect(newItems.map((i) => i.term)).toEqual(['introduced-a', 'introduced-b']);
     });
 
     it('tracks reverse cards separately with :reverse suffix', () => {
@@ -401,13 +399,13 @@ describe('computeStudyItems', () => {
       expect(dueItems).toHaveLength(0); // reverse ignored
     });
 
-    it('handles empty translation', () => {
+    it('handles empty back', () => {
       const endOfDay = getEndOfDay();
-      const card = createFlashCard('test', { translation: '' });
+      const card = createFlashCard('test', { back: '' });
       const { newItems } = computeStudyItems([card], 10, endOfDay);
 
       expect(newItems).toHaveLength(1);
-      expect(newItems[0].translation).toBe('');
+      expect(newItems[0].back).toBe('');
     });
 
     it('handles very large newCardsLimit', () => {
@@ -436,8 +434,8 @@ describe('computeStudyItems', () => {
 
       expect(dueItems).toHaveLength(2);
       // Overdue review card should come first, not the just-rated learning card
-      expect(dueItems[0].source).toBe('overdue-review');
-      expect(dueItems[1].source).toBe('just-rated-again');
+      expect(dueItems[0].term).toBe('overdue-review');
+      expect(dueItems[1].term).toBe('just-rated-again');
     });
 
     it('sorts multiple learning cards by due time (oldest due first)', () => {
@@ -459,8 +457,8 @@ describe('computeStudyItems', () => {
 
       expect(dueItems).toHaveLength(2);
       // Older learning card (due earlier) should come first
-      expect(dueItems[0].source).toBe('older-again');
-      expect(dueItems[1].source).toBe('newer-again');
+      expect(dueItems[0].term).toBe('older-again');
+      expect(dueItems[1].term).toBe('newer-again');
     });
   });
 });
@@ -668,7 +666,7 @@ describe('rateCard', () => {
 
     expect(mockInsert).toHaveBeenCalledTimes(1);
     const insertedLog = (mockInsert.mock.calls as any[][])[0][0];
-    expect(insertedLog.cardSource).toBe('hello');
+    expect(insertedLog.cardId).toBe('test-deck|hello');
     expect(insertedLog.isReverse).toBe(false);
     expect(insertedLog.rating).toBe(Rating.Good);
   });
@@ -786,7 +784,7 @@ describe('useDeck hook', () => {
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
-      expect(result.current.currentCard?.source).toBe('new-card');
+      expect(result.current.currentCard?.term).toBe('new-card');
       expect(result.current.newItems).toHaveLength(1);
       expect(result.current.dueItems).toHaveLength(1);
     });
@@ -801,7 +799,7 @@ describe('useDeck hook', () => {
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
-      expect(result.current.newItems.map((i) => i.source)).toEqual([
+      expect(result.current.newItems.map((i) => i.term)).toEqual([
         'new-a',
         'new-b',
         'new-c',
@@ -811,26 +809,33 @@ describe('useDeck hook', () => {
 
   describe('currentCard display data', () => {
     it('sets front/back correctly for forward direction', () => {
-      mockCards = [createFlashCard('hola', { translation: 'hello' })];
+      mockCards = [createFlashCard('hola', { back: 'hello' })];
       setupMock(mockCards);
 
       const { result } = renderHook(() => useDeck('test-deck'));
 
       expect(result.current.currentCard).toEqual({
-        source: 'hola',
-        front: 'hola',
+        term: 'hola',
+        front: 'hola',    // defaults to term when no custom front
         back: 'hello',
-        example: undefined,
-        notes: undefined,
         isReverse: false,
         isNew: true,
       });
     });
 
+    it('uses custom front when provided', () => {
+      mockCards = [createFlashCard('hola', { front: '# Hola', back: 'hello' })];
+      setupMock(mockCards);
+
+      const { result } = renderHook(() => useDeck('test-deck'));
+
+      expect(result.current.currentCard?.front).toBe('# Hola');
+    });
+
     it('sets front/back correctly for reverse direction', () => {
       mockCards = [
         createFlashCard('hola', {
-          translation: 'hello',
+          back: 'hello',
           reversible: true,
           state: createFutureState(5), // forward scheduled
           reverseState: null, // reverse is new
@@ -841,30 +846,12 @@ describe('useDeck hook', () => {
       const { result } = renderHook(() => useDeck('test-deck'));
 
       expect(result.current.currentCard).toEqual({
-        source: 'hola',
-        front: 'hello', // translation shown as front in reverse
-        back: 'hola', // source shown as back in reverse
-        example: undefined,
-        notes: undefined,
+        term: 'hola',
+        front: 'hello', // back shown as front in reverse
+        back: 'hola',   // term (default front) shown as back in reverse
         isReverse: true,
         isNew: true,
       });
-    });
-
-    it('includes example and notes when present', () => {
-      mockCards = [
-        createFlashCard('hola', {
-          translation: 'hello',
-          example: 'Hola, amigo!',
-          notes: 'Common greeting',
-        }),
-      ];
-      setupMock(mockCards);
-
-      const { result } = renderHook(() => useDeck('test-deck'));
-
-      expect(result.current.currentCard?.example).toBe('Hola, amigo!');
-      expect(result.current.currentCard?.notes).toBe('Common greeting');
     });
 
     it('marks new cards as isNew true', () => {
@@ -1149,7 +1136,7 @@ describe('Study Session Flow', () => {
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
     expect(result.current.remaining).toBe(2);
-    expect(result.current.currentCard?.source).toBe('card-a');
+    expect(result.current.currentCard?.term).toBe('card-a');
     expect(result.current.currentCard?.isNew).toBe(true);
 
     // Simulate rating card-a as Easy
@@ -1163,7 +1150,7 @@ describe('Study Session Flow', () => {
     rerender();
 
     expect(result.current.remaining).toBe(1);
-    expect(result.current.currentCard?.source).toBe('card-b');
+    expect(result.current.currentCard?.term).toBe('card-b');
 
     // Simulate rating card-b as Easy
     const { card: state2 } = computeNewState(null, Rating.Easy);
@@ -1194,7 +1181,7 @@ describe('Study Session Flow', () => {
     rerender();
 
     expect(result.current.remaining).toBe(1);
-    expect(result.current.currentCard?.source).toBe('test-card');
+    expect(result.current.currentCard?.term).toBe('test-card');
     expect(result.current.currentCard?.isNew).toBe(false);
   });
 
@@ -1221,7 +1208,7 @@ describe('Study Session Flow', () => {
   });
 
   it('handles reversible card session with both directions', () => {
-    const cards = [createFlashCard('gato', { translation: 'cat', reversible: true })];
+    const cards = [createFlashCard('gato', { back: 'cat', reversible: true })];
     setupMock(cards);
 
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
@@ -1235,7 +1222,7 @@ describe('Study Session Flow', () => {
 
     const updatedCards = [
       {
-        ...createFlashCard('gato', { translation: 'cat', reversible: true }),
+        ...createFlashCard('gato', { back: 'cat', reversible: true }),
         state: forwardState,
         reverseState: null,
       },

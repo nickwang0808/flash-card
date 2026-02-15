@@ -1,9 +1,8 @@
 export interface CardData {
   deckName: string;
-  source: string;
-  translation: string;
-  example?: string;
-  notes?: string;
+  term: string;              // raw key (TTS-readable, derived from JSON key)
+  front?: string;            // markdown display for front (defaults to term)
+  back: string;              // markdown display for back
   tags?: string[];
   created: string;
   reversible: boolean;

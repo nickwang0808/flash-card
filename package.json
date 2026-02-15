@@ -16,7 +16,8 @@
     "check": "tsc -b && knip",
     "seed": "npx tsx scripts/seed-test-repo.ts seed",
     "seed:reset": "npx tsx scripts/seed-test-repo.ts reset",
-    "seed:status": "npx tsx scripts/seed-test-repo.ts status"
+    "seed:status": "npx tsx scripts/seed-test-repo.ts status",
+    "migrate:v2": "npx tsx scripts/migrate-v2.ts"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",
@@ -24,6 +25,8 @@
     "@tailwindcss/vite": "^4.1.18",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "rxdb": "^16.21.1",
     "ts-fsrs": "^4.5.0"
   },
