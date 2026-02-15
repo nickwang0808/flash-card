@@ -60,6 +60,7 @@ export class GitHubStorageService implements GitStorageService {
         const cardsMap: Record<string, CardJSON> = JSON.parse(content);
 
         for (const [term, card] of Object.entries(cardsMap)) {
+          if (term.startsWith('$')) continue; // skip $schema and other meta keys
           allCards.push({
             deckName: entry.name,
             term,
