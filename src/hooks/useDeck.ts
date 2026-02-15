@@ -35,31 +35,64 @@ export function computeStudyItems(
   const remainingNewSlots = Math.max(0, newCardsLimit - introducedCount);
   let newSlotsUsed = 0;
 
-  // First pass: collect forward directions
+  // Single pass: process forward and reverse directions together
+  // Reversible cards where both directions are new reserve slots atomically
   for (const card of activeCards) {
+    // === Forward direction ===
     if (!card.state) {
-      const isIntroduced = introducedToday.has(card.term);
-      if (isIntroduced || newSlotsUsed < remainingNewSlots) {
-        newForward.push({ ...card, isReverse: false });
-        if (!isIntroduced) newSlotsUsed++;
+      const forwardIntroduced = introducedToday.has(card.term);
+
+      if (card.reversible && !card.reverseState) {
+        // Both directions are new — reserve slots atomically
+        const reverseKey = `${card.term}:reverse`;
+        const reverseIntroduced = introducedToday.has(reverseKey);
+        const slotsNeeded = (forwardIntroduced ? 0 : 1) + (reverseIntroduced ? 0 : 1);
+
+        if (slotsNeeded <= remainingNewSlots - newSlotsUsed) {
+          // Enough slots for both directions
+          newForward.push({ ...card, isReverse: false });
+          newReverse.push({ ...card, isReverse: true });
+          newSlotsUsed += slotsNeeded;
+        } else {
+          // Not enough slots for both — add introduced directions (free)
+          if (forwardIntroduced) {
+            newForward.push({ ...card, isReverse: false });
+          }
+          if (reverseIntroduced) {
+            newReverse.push({ ...card, isReverse: true });
+          }
+          // Try to fit forward with a remaining slot
+          if (!forwardIntroduced && newSlotsUsed < remainingNewSlots) {
+            newForward.push({ ...card, isReverse: false });
+            newSlotsUsed++;
+          }
+        }
+      } else {
+        // Not both-new-reversible — standard forward handling
+        if (forwardIntroduced || newSlotsUsed < remainingNewSlots) {
+          newForward.push({ ...card, isReverse: false });
+          if (!forwardIntroduced) newSlotsUsed++;
+        }
       }
     } else if (card.state.due <= endOfDay) {
       dueForward.push({ ...card, isReverse: false });
     }
-  }
 
-  // Second pass: collect reverse directions
-  for (const card of activeCards) {
+    // === Reverse direction (independent — not both-new case) ===
     if (card.reversible) {
-      const reverseKey = `${card.term}:reverse`;
-      if (!card.reverseState) {
-        const isIntroduced = introducedToday.has(reverseKey);
-        if (isIntroduced || newSlotsUsed < remainingNewSlots) {
-          newReverse.push({ ...card, isReverse: true });
-          if (!isIntroduced) newSlotsUsed++;
+      const handledAtomically = !card.state && !card.reverseState;
+      if (!handledAtomically) {
+        if (!card.reverseState) {
+          // Reverse is new, forward is not new
+          const reverseKey = `${card.term}:reverse`;
+          const isIntroduced = introducedToday.has(reverseKey);
+          if (isIntroduced || newSlotsUsed < remainingNewSlots) {
+            newReverse.push({ ...card, isReverse: true });
+            if (!isIntroduced) newSlotsUsed++;
+          }
+        } else if (card.reverseState.due <= endOfDay) {
+          dueReverse.push({ ...card, isReverse: true });
         }
-      } else if (card.reverseState.due <= endOfDay) {
-        dueReverse.push({ ...card, isReverse: true });
       }
     }
   }
