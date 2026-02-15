@@ -32,7 +32,7 @@ test.describe('Setup flow', () => {
   test('deck list shows correct card counts', async ({ page }) => {
     await cloneTestRepo(page, testBranch);
 
-    // 30 cards, 2 reversible (gato, rojo), default limit 10 = 10 new, 0 due
+    // 30 reversible cards, default limit 10 → 5 cards × 2 directions = 10 new, 0 due
     await expect(page.getByText('0 due')).toBeVisible();
     await expect(page.getByText('10 new')).toBeVisible();
   });

@@ -235,6 +235,22 @@ describe('computeStudyItems', () => {
       ]);
     });
 
+    it('all reversible cards with limit produces equal forward and reverse items', () => {
+      const cards = Array.from({ length: 30 }, (_, i) =>
+        createFlashCard(`card-${i}`, { reversible: true })
+      );
+      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+
+      // 10 slots → 5 cards × 2 directions = 10 items
+      expect(newItems).toHaveLength(10);
+      const forward = newItems.filter((i) => !i.isReverse);
+      const reverse = newItems.filter((i) => i.isReverse);
+      expect(forward).toHaveLength(5);
+      expect(reverse).toHaveLength(5);
+      // Same 5 cards appear in both directions
+      expect(forward.map((i) => i.term)).toEqual(reverse.map((i) => i.term));
+    });
+
     it('handles forward reviewed but reverse new', () => {
       const cards = [
         createFlashCard('hello', {

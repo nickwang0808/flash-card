@@ -14,11 +14,10 @@ test.describe('Review session', () => {
     await deleteTestBranch(testBranch);
   });
 
-  test('shows correct count of new cards (30 cards, 2 reversible, limit 10 = 10 new)', async ({ page }) => {
+  test('shows correct count of new cards (30 reversible cards, limit 10 = 5 fwd + 5 rev)', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
-    // 30 cards with 2 reversible (gato, rojo), default limit 10
-    // hola(1) + gato fwd+rev(3) + perro(4) + rojo fwd+rev(6) + casa(7) + agua(8) + libro(9) + amigo(10)
+    // 30 reversible cards, default limit 10 → 5 cards × 2 directions = 10 items
     await expect(page.getByText('10 remaining')).toBeVisible();
     await expect(page.getByText('New')).toBeVisible();
   });
