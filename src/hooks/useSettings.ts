@@ -31,7 +31,7 @@ export function useSettings() {
 
   function update(partial: Partial<Omit<Settings, 'id'>>) {
     const updated = { ...settings, ...partial } as SettingsDoc;
-    db.settings.upsert(updated);
+    return db.settings.upsert(updated);
   }
 
   async function clear() {

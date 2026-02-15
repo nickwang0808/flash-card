@@ -82,7 +82,7 @@ export function AuthScreen({ onComplete }: Props) {
         return;
       }
 
-      update({ repoUrl: url });
+      await update({ repoUrl: url });
       setStatus('Done!');
       onComplete();
     } catch (e: any) {
