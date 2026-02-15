@@ -887,7 +887,7 @@ describe('useDeck hook', () => {
 
       expect(result.current.currentCard).toEqual({
         term: 'hola',
-        front: 'hola',    // defaults to term when no custom front
+        front: '# hola',  // defaults to term as h1 when no custom front
         back: 'hello',
         isReverse: false,
         isNew: true,
@@ -919,7 +919,7 @@ describe('useDeck hook', () => {
       expect(result.current.currentCard).toEqual({
         term: 'hola',
         front: 'hello', // back shown as front in reverse
-        back: 'hola',   // term (default front) shown as back in reverse
+        back: '# hola', // term (default front, auto h1) shown as back in reverse
         isReverse: true,
         isNew: true,
       });
@@ -1285,7 +1285,7 @@ describe('Study Session Flow', () => {
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
     expect(result.current.remaining).toBe(2);
-    expect(result.current.currentCard?.front).toBe('gato');
+    expect(result.current.currentCard?.front).toBe('# gato');
     expect(result.current.currentCard?.isReverse).toBe(false);
 
     // Simulate forward rated as Easy (scheduled for future)
@@ -1303,7 +1303,7 @@ describe('Study Session Flow', () => {
 
     expect(result.current.remaining).toBe(1);
     expect(result.current.currentCard?.front).toBe('cat');
-    expect(result.current.currentCard?.back).toBe('gato');
+    expect(result.current.currentCard?.back).toBe('# gato');
     expect(result.current.currentCard?.isReverse).toBe(true);
   });
 

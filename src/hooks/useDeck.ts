@@ -198,9 +198,9 @@ export function useDeck(deckName: string) {
         term: studyItem.term,
         front: studyItem.isReverse
           ? studyItem.back
-          : (studyItem.front || studyItem.term),
+          : (studyItem.front || `# ${studyItem.term}`),
         back: studyItem.isReverse
-          ? (studyItem.front || studyItem.term)
+          ? (studyItem.front || `# ${studyItem.term}`)
           : studyItem.back,
         isReverse: studyItem.isReverse,
         isNew: studyItem.isReverse ? !studyItem.reverseState : !studyItem.state,

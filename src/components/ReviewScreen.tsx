@@ -114,7 +114,7 @@ export function ReviewScreen({ deck, onBack }: Props) {
         {answerRevealed ? (
           <div className="text-center space-y-3 animate-fade-in" data-testid="card-back">
             <div className="flex items-center justify-center gap-2">
-              <div><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{currentCard.back}</Markdown></div>
+              <div className="card-markdown"><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{currentCard.back}</Markdown></div>
               {currentCard.isReverse && (
                 <button
                   onClick={() => speak(currentCard.term)}
