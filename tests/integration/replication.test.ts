@@ -35,6 +35,7 @@ function createMockService(initialCards: CardData[] = []): GitStorageService & {
   return mock;
 }
 
+let nextOrder = 0;
 function makeCard(term: string, deckName = 'test-deck', overrides: Partial<CardData> = {}): CardData {
   return {
     deckName,
@@ -42,6 +43,7 @@ function makeCard(term: string, deckName = 'test-deck', overrides: Partial<CardD
     back: `${term}-translation`,
     created: '2025-01-01T00:00:00Z',
     reversible: false,
+    order: nextOrder++,
     state: null,
     reverseState: null,
     ...overrides,
@@ -194,6 +196,7 @@ describe('Replication with mocked GitStorageService', () => {
       tags: [] as string[],
       created: '2025-01-01T00:00:00Z',
       reversible: false,
+      order: 0,
       state: null,
       reverseState: null,
       suspended: false,
@@ -232,11 +235,11 @@ describe('Replication with mocked GitStorageService', () => {
     setServiceFactory(async () => mockService);
 
     // Seed cards
-    for (const term of ['a', 'b', 'c']) {
+    for (const [i, term] of ['a', 'b', 'c'].entries()) {
       const card = {
         id: `deck|${term}`, deckName: 'deck', term,
         back: term, tags: [] as string[],
-        created: '2025-01-01', reversible: false,
+        created: '2025-01-01', reversible: false, order: i,
         state: null, reverseState: null, suspended: false,
       };
       mockCardsStore.set(`deck|${term}`, card);
