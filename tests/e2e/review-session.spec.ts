@@ -269,6 +269,27 @@ test.describe('Review session', () => {
     await expect(page.getByRole('button', { name: 'Undo' })).toBeVisible();
   });
 
+  test('new cards appear in JSON declaration order (same-timestamp cards)', async ({ page }) => {
+    await page.getByText('spanish-vocab').click();
+
+    // The first 5 cards share the same created timestamp.
+    // They should appear in JSON declaration order: hola, gato, perro, rojo, casa.
+    // With limit 10 and 30 reversible cards, we get 5 forward + 5 reverse.
+    // Forward cards come first in the queue.
+    const expectedForwardOrder = ['hola', 'gato', 'perro', 'rojo', 'casa'];
+
+    for (let i = 0; i < expectedForwardOrder.length; i++) {
+      const remaining = 10 - i;
+      await expect(page.getByText(`${remaining} remaining`)).toBeVisible();
+
+      const front = await page.locator('[data-testid="card-front"]').textContent();
+      expect(front?.toLowerCase()).toContain(expectedForwardOrder[i]);
+
+      await page.getByRole('button', { name: 'Show Answer' }).click();
+      await page.getByRole('button', { name: 'Easy' }).click();
+    }
+  });
+
   test('all four rating buttons are visible after revealing answer', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
