@@ -16,11 +16,12 @@ const cardsSchema = {
     tags: { type: 'array', items: { type: 'string' } },
     created: { type: 'string' },
     reversible: { type: 'boolean' },
+    order: { type: 'number' },                           // position in cards.json
     state: {},                                         // FSRS Card (free-form JSON)
     reverseState: {},                                  // FSRS Card (free-form JSON)
     suspended: { type: 'boolean' },
   },
-  required: ['id', 'deckName', 'term', 'back', 'created', 'reversible'],
+  required: ['id', 'deckName', 'term', 'back', 'created', 'reversible', 'order'],
   indexes: ['deckName'],
 } as const;
 
@@ -73,6 +74,7 @@ export type CardDoc = {
   tags?: string[];
   created: string;
   reversible: boolean;
+  order: number;
   state: Record<string, unknown> | null;
   reverseState: Record<string, unknown> | null;
   suspended?: boolean;

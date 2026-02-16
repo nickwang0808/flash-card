@@ -13,6 +13,7 @@ export interface FlashCard {
   tags?: string[];
   created: string;
   reversible: boolean;
+  order: number;               // position in cards.json (for stable sort)
   state: Card | null;
   reverseState: Card | null;
   suspended?: boolean;
@@ -86,6 +87,7 @@ type CardDoc = {
   tags?: string[];
   created: string;
   reversible: boolean;
+  order: number;
   state: Record<string, unknown> | null;
   reverseState: Record<string, unknown> | null;
   suspended?: boolean;
@@ -101,6 +103,7 @@ function docToFlashCard(doc: CardDoc): FlashCard {
     tags: doc.tags,
     created: doc.created,
     reversible: doc.reversible,
+    order: doc.order,
     state: doc.state as any,
     reverseState: doc.reverseState as any,
     suspended: doc.suspended,
@@ -116,6 +119,7 @@ function docToCardData(doc: CardDoc): CardData {
     tags: doc.tags,
     created: doc.created,
     reversible: doc.reversible,
+    order: doc.order,
     state: doc.state,
     reverseState: doc.reverseState,
     suspended: doc.suspended,
@@ -168,6 +172,7 @@ export class RxDbCardRepository implements CardRepository {
           tags: c.tags ?? [],
           created: c.created,
           reversible: c.reversible,
+          order: c.order,
           state: c.state,
           reverseState: c.reverseState,
           suspended: c.suspended ?? false,
@@ -189,7 +194,7 @@ export class RxDbCardRepository implements CardRepository {
 
   subscribeCards(deckName: string, cb: (cards: FlashCard[]) => void): () => void {
     const sub = this.db.cards
-      .find({ selector: { deckName }, sort: [{ created: 'asc' }] })
+      .find({ selector: { deckName }, sort: [{ order: 'asc' }] })
       .$.subscribe((docs) => {
         cb(docs.map((d) => docToFlashCard(d.toJSON() as CardDoc)));
       });

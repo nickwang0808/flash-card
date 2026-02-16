@@ -6,6 +6,7 @@ export interface CardData {
   tags?: string[];
   created: string;
   reversible: boolean;
+  order: number;             // position in cards.json (for stable sort)
   state: Record<string, unknown> | null;
   reverseState: Record<string, unknown> | null;
   suspended?: boolean;

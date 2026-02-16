@@ -23,6 +23,7 @@ function createFlashCard(
     reverseState?: Card | null;
     reversible?: boolean;
     deckName?: string;
+    order?: number;
   } = {}
 ): FlashCard {
   const deckName = opts.deckName ?? 'test-deck';
@@ -35,6 +36,7 @@ function createFlashCard(
     tags: [],
     created: '2025-01-01',
     reversible: opts.reversible ?? false,
+    order: opts.order ?? 0,
     state: opts.state ?? null,
     reverseState: opts.reverseState ?? null,
   };
@@ -337,6 +339,20 @@ describe('computeStudyItems', () => {
       const { newItems } = computeStudyItems(cards, 10, endOfDay);
 
       expect(newItems.map((i) => i.term)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('preserves input order for cards with identical created timestamps', () => {
+      // All cards have the same created date (default '2025-01-01')
+      const cards = [
+        createFlashCard('一', { order: 0 }),
+        createFlashCard('二', { order: 1 }),
+        createFlashCard('三', { order: 2 }),
+        createFlashCard('四', { order: 3 }),
+        createFlashCard('五', { order: 4 }),
+      ];
+      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+
+      expect(newItems.map((i) => i.term)).toEqual(['一', '二', '三', '四', '五']);
     });
   });
 

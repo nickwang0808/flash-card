@@ -59,6 +59,7 @@ export class GitHubStorageService implements GitStorageService {
         const { content } = await this.readFile(`${entry.name}/cards.json`);
         const cardsMap: Record<string, CardJSON> = JSON.parse(content);
 
+        let order = 0;
         for (const [term, card] of Object.entries(cardsMap)) {
           if (term.startsWith('$')) continue; // skip $schema and other meta keys
           allCards.push({
@@ -69,10 +70,12 @@ export class GitHubStorageService implements GitStorageService {
             tags: card.tags,
             created: card.created,
             reversible: card.reversible ?? false,
+            order,
             state: card.state ?? null,
             reverseState: card.reverseState ?? null,
             suspended: card.suspended,
           });
+          order++;
         }
       } catch {
         // Not a deck directory or no cards.json — skip
