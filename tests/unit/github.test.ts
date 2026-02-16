@@ -145,3 +145,60 @@ describe('GitHubStorageService.pullAllCards', () => {
     expect(cards[1].order).toBe(1);
   });
 });
+
+// ============================================================================
+// JSON.parse + Object.entries order determinism
+// ============================================================================
+
+describe('JSON key order determinism', () => {
+  // JSON.parse → Object.entries must preserve declaration order for our
+  // order-assignment strategy to work. The JS spec guarantees insertion
+  // order for non-integer-index string keys. These tests verify that
+  // guarantee holds for realistic card term patterns.
+
+  function keysFromJson(json: string): string[] {
+    return Object.keys(JSON.parse(json));
+  }
+
+  it('preserves order for Latin alphabet terms', () => {
+    const json = '{"hola":1,"gato":2,"perro":3,"casa":4,"agua":5}';
+    expect(keysFromJson(json)).toEqual(['hola', 'gato', 'perro', 'casa', 'agua']);
+  });
+
+  it('preserves order for CJK characters', () => {
+    const json = '{"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"十":10}';
+    expect(keysFromJson(json)).toEqual(['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']);
+  });
+
+  it('preserves order for mixed scripts (Spanish, Japanese, Arabic)', () => {
+    const json = '{"مرحبا":1,"こんにちは":2,"hola":3,"你好":4}';
+    expect(keysFromJson(json)).toEqual(['مرحبا', 'こんにちは', 'hola', '你好']);
+  });
+
+  it('preserves order for multi-word phrases', () => {
+    const json = '{"buenos días":1,"buenas noches":2,"por favor":3,"muchas gracias":4}';
+    expect(keysFromJson(json)).toEqual(['buenos días', 'buenas noches', 'por favor', 'muchas gracias']);
+  });
+
+  it('preserves order for emoji keys', () => {
+    const json = '{"🐱":1,"🐶":2,"🏠":3,"💧":4}';
+    expect(keysFromJson(json)).toEqual(['🐱', '🐶', '🏠', '💧']);
+  });
+
+  it('WARNING: integer-like keys get sorted numerically (JS spec behavior)', () => {
+    // This is a known JS spec behavior: array-index-like keys (non-negative
+    // integers) are enumerated first in numeric order, before string keys.
+    // Card terms like "1", "2", "10" would NOT preserve declaration order.
+    const json = '{"10":1,"2":2,"1":3}';
+    // JS sorts these numerically: 1, 2, 10 — NOT declaration order 10, 2, 1
+    expect(keysFromJson(json)).toEqual(['1', '2', '10']);
+  });
+
+  it('is deterministic across 100 repeated parses', () => {
+    const json = '{"一":1,"二":2,"三":3,"四":4,"五":5}';
+    const expected = ['一', '二', '三', '四', '五'];
+    for (let i = 0; i < 100; i++) {
+      expect(keysFromJson(json)).toEqual(expected);
+    }
+  });
+});
