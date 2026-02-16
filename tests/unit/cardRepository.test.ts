@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createRxDatabase, type RxDatabase, type RxCollection } from 'rxdb/plugins/core';
+import { createRxDatabase, type RxDatabase } from 'rxdb/plugins/core';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { RxDbCardRepository } from '../../src/services/card-repository';
 import type { CardData } from '../../src/services/git-storage';
