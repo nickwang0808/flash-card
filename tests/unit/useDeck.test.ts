@@ -24,6 +24,7 @@ function createFlashCard(
     reversible?: boolean;
     deckName?: string;
     order?: number;
+    suspended?: boolean;
   } = {}
 ): FlashCard {
   const deckName = opts.deckName ?? 'test-deck';
@@ -39,6 +40,7 @@ function createFlashCard(
     order: opts.order ?? 0,
     state: opts.state ?? null,
     reverseState: opts.reverseState ?? null,
+    suspended: opts.suspended,
   };
 }
 
@@ -445,6 +447,92 @@ describe('computeStudyItems', () => {
       const { newItems } = computeStudyItems(cards, 10, endOfDay);
 
       expect(newItems).toHaveLength(2);
+    });
+  });
+
+  describe('suspended card filtering', () => {
+    const endOfDay = getEndOfDay();
+
+    it('excludes suspended cards from new items', () => {
+      const cards = [
+        createFlashCard('active'),
+        createFlashCard('suspended-card', { suspended: true }),
+      ];
+      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+
+      expect(newItems).toHaveLength(1);
+      expect(newItems[0].term).toBe('active');
+      expect(dueItems).toHaveLength(0);
+    });
+
+    it('excludes suspended cards from due items', () => {
+      const cards = [
+        createFlashCard('active-due', { state: createPastState(1) }),
+        createFlashCard('suspended-due', { state: createPastState(1), suspended: true }),
+      ];
+      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+
+      expect(newItems).toHaveLength(0);
+      expect(dueItems).toHaveLength(1);
+      expect(dueItems[0].term).toBe('active-due');
+    });
+
+    it('excludes suspended reversible cards from both directions', () => {
+      const cards = [
+        createFlashCard('active-rev', { reversible: true }),
+        createFlashCard('suspended-rev', { reversible: true, suspended: true }),
+      ];
+      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+
+      expect(newItems).toHaveLength(2);
+      expect(newItems.every(i => i.term === 'active-rev')).toBe(true);
+    });
+
+    it('does not count suspended cards toward newCardsLimit', () => {
+      const cards = [
+        createFlashCard('suspended-1', { suspended: true }),
+        createFlashCard('suspended-2', { suspended: true }),
+        createFlashCard('active-1'),
+        createFlashCard('active-2'),
+        createFlashCard('active-3'),
+      ];
+      const { newItems } = computeStudyItems(cards, 3, endOfDay);
+
+      expect(newItems).toHaveLength(3);
+      expect(newItems.map(i => i.term)).toEqual(['active-1', 'active-2', 'active-3']);
+    });
+
+    it('treats suspended: false as active', () => {
+      const cards = [
+        createFlashCard('explicit-false', { suspended: false }),
+      ];
+      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+
+      expect(newItems).toHaveLength(1);
+      expect(newItems[0].term).toBe('explicit-false');
+    });
+
+    it('treats suspended: undefined as active', () => {
+      const cards = [
+        createFlashCard('no-suspended-field'),
+      ];
+      // suspended is undefined by default in createFlashCard
+      expect(cards[0].suspended).toBeUndefined();
+      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+
+      expect(newItems).toHaveLength(1);
+    });
+
+    it('returns empty when all cards are suspended', () => {
+      const cards = [
+        createFlashCard('a', { suspended: true }),
+        createFlashCard('b', { suspended: true }),
+        createFlashCard('c', { state: createPastState(1), suspended: true }),
+      ];
+      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+
+      expect(newItems).toHaveLength(0);
+      expect(dueItems).toHaveLength(0);
     });
   });
 
