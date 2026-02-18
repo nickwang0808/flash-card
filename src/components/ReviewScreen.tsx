@@ -13,13 +13,19 @@ interface Props {
 }
 
 export function ReviewScreen({ deck, onBack }: Props) {
-  const { currentCard, remaining, rate, suspend, undo, canUndo, isLoading } = useDeck(deck);
+  const { currentCard, remaining, rate, superEasy, schedulePreview, suspend, undo, canUndo, isLoading } = useDeck(deck);
   const { speak, showPicker, selectLocale, dismissPicker, voices } = useTts(deck);
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [cardKey, setCardKey] = useState(0);
 
   function handleRate(rating: Grade) {
     rate(rating);
+    setAnswerRevealed(false);
+    setCardKey(k => k + 1);
+  }
+
+  function handleSuperEasy() {
+    superEasy();
     setAnswerRevealed(false);
     setCardKey(k => k + 1);
   }
@@ -139,31 +145,46 @@ export function ReviewScreen({ deck, onBack }: Props) {
 
       {/* Rating buttons */}
       {answerRevealed && (
-        <div className="grid grid-cols-4 gap-2 pt-4 pb-4 shrink-0">
-          <button
-            onClick={() => handleRate(Rating.Again)}
-            className="rounded-md bg-red-500/10 text-red-500 border border-red-500/20 px-2 py-3 text-sm font-medium hover:bg-red-500/20"
-          >
-            Again
-          </button>
-          <button
-            onClick={() => handleRate(Rating.Hard)}
-            className="rounded-md bg-orange-500/10 text-orange-500 border border-orange-500/20 px-2 py-3 text-sm font-medium hover:bg-orange-500/20"
-          >
-            Hard
-          </button>
-          <button
-            onClick={() => handleRate(Rating.Good)}
-            className="rounded-md bg-green-500/10 text-green-500 border border-green-500/20 px-2 py-3 text-sm font-medium hover:bg-green-500/20"
-          >
-            Good
-          </button>
-          <button
-            onClick={() => handleRate(Rating.Easy)}
-            className="rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20 px-2 py-3 text-sm font-medium hover:bg-blue-500/20"
-          >
-            Easy
-          </button>
+        <div className="flex flex-col gap-2 pt-4 pb-4 shrink-0">
+          <div className="grid grid-cols-4 gap-2">
+            <button
+              onClick={() => handleRate(Rating.Again)}
+              className="rounded-md bg-red-500/10 text-red-500 border border-red-500/20 px-2 py-3 text-sm font-medium hover:bg-red-500/20 flex flex-col items-center"
+            >
+              <span>Again</span>
+              <span className="text-xs opacity-70">{schedulePreview?.[Rating.Again]}</span>
+            </button>
+            <button
+              onClick={() => handleRate(Rating.Hard)}
+              className="rounded-md bg-orange-500/10 text-orange-500 border border-orange-500/20 px-2 py-3 text-sm font-medium hover:bg-orange-500/20 flex flex-col items-center"
+            >
+              <span>Hard</span>
+              <span className="text-xs opacity-70">{schedulePreview?.[Rating.Hard]}</span>
+            </button>
+            <button
+              onClick={() => handleRate(Rating.Good)}
+              className="rounded-md bg-green-500/10 text-green-500 border border-green-500/20 px-2 py-3 text-sm font-medium hover:bg-green-500/20 flex flex-col items-center"
+            >
+              <span>Good</span>
+              <span className="text-xs opacity-70">{schedulePreview?.[Rating.Good]}</span>
+            </button>
+            <button
+              onClick={() => handleRate(Rating.Easy)}
+              className="rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20 px-2 py-3 text-sm font-medium hover:bg-blue-500/20 flex flex-col items-center"
+            >
+              <span>Easy</span>
+              <span className="text-xs opacity-70">{schedulePreview?.[Rating.Easy]}</span>
+            </button>
+          </div>
+          {currentCard.isNew && (
+            <button
+              onClick={handleSuperEasy}
+              className="rounded-md bg-violet-500/10 text-violet-500 border border-violet-500/20 px-2 py-3 text-sm font-medium hover:bg-violet-500/20 w-full"
+              data-testid="super-easy-button"
+            >
+              Already Know · 60d
+            </button>
+          )}
         </div>
       )}
 

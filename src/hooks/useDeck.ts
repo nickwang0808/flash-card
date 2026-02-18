@@ -1,4 +1,4 @@
-import { fsrs, createEmptyCard, type Grade, type Card, type ReviewLog, type Rating, type State } from 'ts-fsrs';
+import { fsrs, createEmptyCard, Rating, State, type Grade, type Card, type ReviewLog } from 'ts-fsrs';
 import { type FlashCard, useCards, getCardRepository, serializeFsrsCard } from '../services/card-repository';
 import { type StoredReviewLog, useReviewLogs, getReviewLogRepository } from '../services/review-log-repository';
 import { useSettings } from './useSettings';
@@ -12,6 +12,19 @@ interface CurrentCard {
   back: string;              // resolved display back (markdown)
   isReverse: boolean;
   isNew: boolean;
+}
+
+export function formatInterval(due: Date, now: Date = new Date()): string {
+  const diffMs = due.getTime() - now.getTime();
+  const diffMin = diffMs / (1000 * 60);
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  const diffMonths = diffDays / 30;
+
+  if (diffMin < 60) return `${Math.round(diffMin)}m`;
+  if (diffHours < 24) return `${Math.round(diffHours)}h`;
+  if (diffDays < 30) return `${Math.round(diffDays)}d`;
+  return `${Math.round(diffMonths)}mo`;
 }
 
 // Pure function to compute study items from cards
@@ -155,6 +168,53 @@ export async function rateCard(
   notifyChange(card.id);
 }
 
+// Rate a card as "Super Easy" — bypasses FSRS, schedules N days out
+// Only for new cards the user already knows well (e.g. from Anki)
+export async function rateCardSuperEasy(
+  card: StudyItem,
+  days = 60,
+  now = new Date()
+): Promise<void> {
+  const due = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  const newState: Card = {
+    due,
+    stability: days,
+    difficulty: 4,
+    elapsed_days: 0,
+    scheduled_days: days,
+    reps: 1,
+    lapses: 0,
+    state: State.Review,
+    last_review: now,
+  };
+
+  // state: State.New (0) in the log is critical — undo checks state===0 to restore to null
+  const storedLog: StoredReviewLog = {
+    id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
+    cardId: card.id,
+    isReverse: card.isReverse,
+    rating: Rating.Easy,
+    state: State.New,
+    due: due.toISOString(),
+    stability: days,
+    difficulty: 4,
+    elapsed_days: 0,
+    last_elapsed_days: 0,
+    scheduled_days: days,
+    review: now.toISOString(),
+  };
+
+  const logRepo = getReviewLogRepository();
+  await logRepo.insert(storedLog);
+
+  const serializedState = serializeFsrsCard(newState);
+  const cardRepo = getCardRepository();
+  const field = card.isReverse ? 'reverseState' : 'state';
+  await cardRepo.updateState(card.id, field, serializedState);
+
+  notifyChange(card.id);
+}
+
 export function useDeck(deckName: string) {
   const { settings, isLoading: settingsLoading } = useSettings();
   const newCardsLimit = settings.newCardsPerDay;
@@ -207,9 +267,26 @@ export function useDeck(deckName: string) {
       }
     : null;
 
+  // Compute schedule preview for each rating (shown on UI buttons)
+  const previewNow = new Date();
+  const existingFsrsState = studyItem
+    ? (studyItem.isReverse ? studyItem.reverseState : studyItem.state)
+    : null;
+  const schedulePreview = studyItem ? {
+    [Rating.Again]: formatInterval(computeNewState(existingFsrsState, Rating.Again, previewNow).card.due, previewNow),
+    [Rating.Hard]:  formatInterval(computeNewState(existingFsrsState, Rating.Hard,  previewNow).card.due, previewNow),
+    [Rating.Good]:  formatInterval(computeNewState(existingFsrsState, Rating.Good,  previewNow).card.due, previewNow),
+    [Rating.Easy]:  formatInterval(computeNewState(existingFsrsState, Rating.Easy,  previewNow).card.due, previewNow),
+  } : null;
+
   function rate(rating: Grade) {
     if (!studyItem) return;
     rateCard(studyItem, rating);
+  }
+
+  function superEasy() {
+    if (!studyItem) return;
+    rateCardSuperEasy(studyItem);
   }
 
   async function suspend() {
@@ -273,6 +350,8 @@ export function useDeck(deckName: string) {
     currentCard,
     remaining: allItems.length,
     rate,
+    superEasy,
+    schedulePreview,
     suspend,
     undo,
     canUndo,

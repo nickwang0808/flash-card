@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { createEmptyCard, Rating, type Card, type Grade } from 'ts-fsrs';
+import { createEmptyCard, Rating, State, type Card, type Grade } from 'ts-fsrs';
 import {
   computeStudyItems,
   computeNewState,
   rateCard,
+  rateCardSuperEasy,
+  formatInterval,
   useDeck,
   type StudyItem,
 } from '../../src/hooks/useDeck';
@@ -991,7 +993,7 @@ describe('useDeck hook', () => {
 
       expect(result.current.currentCard).toEqual({
         term: 'hola',
-        front: '# hola',  // defaults to term as h1 when no custom front
+        front: 'hola',
         back: 'hello',
         isReverse: false,
         isNew: true,
@@ -1022,8 +1024,8 @@ describe('useDeck hook', () => {
 
       expect(result.current.currentCard).toEqual({
         term: 'hola',
-        front: 'hello', // back shown as front in reverse
-        back: '# hola', // term (default front, auto h1) shown as back in reverse
+        front: 'hello',
+        back: 'hola',
         isReverse: true,
         isNew: true,
       });
@@ -1389,7 +1391,7 @@ describe('Study Session Flow', () => {
     const { result, rerender } = renderHook(() => useDeck('test-deck'));
 
     expect(result.current.remaining).toBe(2);
-    expect(result.current.currentCard?.front).toBe('# gato');
+    expect(result.current.currentCard?.front).toBe('gato');
     expect(result.current.currentCard?.isReverse).toBe(false);
 
     // Simulate forward rated as Easy (scheduled for future)
@@ -1407,7 +1409,7 @@ describe('Study Session Flow', () => {
 
     expect(result.current.remaining).toBe(1);
     expect(result.current.currentCard?.front).toBe('cat');
-    expect(result.current.currentCard?.back).toBe('# gato');
+    expect(result.current.currentCard?.back).toBe('gato');
     expect(result.current.currentCard?.isReverse).toBe(true);
   });
 
@@ -1808,5 +1810,276 @@ describe('Undo', () => {
         expect.objectContaining({ due: expect.any(String), stability: expect.any(Number) })
       );
     });
+  });
+});
+
+// ============================================================================
+// formatInterval Tests
+// ============================================================================
+
+describe('formatInterval', () => {
+  const now = new Date('2025-06-01T12:00:00Z');
+
+  it('returns minutes for intervals under 1 hour', () => {
+    const due = new Date(now.getTime() + 5 * 60 * 1000); // 5 min
+    expect(formatInterval(due, now)).toBe('5m');
+  });
+
+  it('rounds minutes', () => {
+    const due = new Date(now.getTime() + 90 * 1000); // 1.5 min
+    expect(formatInterval(due, now)).toBe('2m');
+  });
+
+  it('returns hours for intervals 1h to 24h', () => {
+    const due = new Date(now.getTime() + 3 * 60 * 60 * 1000); // 3 hours
+    expect(formatInterval(due, now)).toBe('3h');
+  });
+
+  it('returns days for intervals 1d to 29d', () => {
+    const due = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    expect(formatInterval(due, now)).toBe('7d');
+  });
+
+  it('returns months for intervals 30d+', () => {
+    const due = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000); // 60 days
+    expect(formatInterval(due, now)).toBe('2mo');
+  });
+
+  it('boundary: exactly 60 minutes returns hours', () => {
+    const due = new Date(now.getTime() + 60 * 60 * 1000);
+    expect(formatInterval(due, now)).toBe('1h');
+  });
+
+  it('boundary: exactly 24 hours returns days', () => {
+    const due = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    expect(formatInterval(due, now)).toBe('1d');
+  });
+
+  it('boundary: exactly 30 days returns months', () => {
+    const due = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    expect(formatInterval(due, now)).toBe('1mo');
+  });
+
+  it('uses current time as default now', () => {
+    const due = new Date(Date.now() + 5 * 60 * 1000);
+    expect(formatInterval(due)).toBe('5m');
+  });
+});
+
+// ============================================================================
+// rateCardSuperEasy Tests
+// ============================================================================
+
+describe('rateCardSuperEasy', () => {
+  it('stores a review log with state=0 so undo restores to null', async () => {
+    const mockUpdateState = vi.fn(() => Promise.resolve());
+    const mockInsert = vi.fn(() => Promise.resolve());
+    vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+
+    const card: StudyItem = { ...createFlashCard('hola'), isReverse: false };
+    await rateCardSuperEasy(card);
+
+    expect(mockInsert).toHaveBeenCalledTimes(1);
+    const log = mockInsert.mock.calls[0][0];
+    expect(log.state).toBe(State.New);      // 0 — ensures undo path restores to null
+    expect(log.rating).toBe(Rating.Easy);   // 4
+    expect(log.scheduled_days).toBe(60);
+    expect(log.cardId).toBe('test-deck|hola');
+    expect(log.isReverse).toBe(false);
+  });
+
+  it('schedules the card 60 days out with Review state', async () => {
+    const mockUpdateState = vi.fn(() => Promise.resolve());
+    const mockInsert = vi.fn(() => Promise.resolve());
+    vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+
+    const now = new Date('2025-06-01T12:00:00Z');
+    const card: StudyItem = { ...createFlashCard('hola'), isReverse: false };
+    await rateCardSuperEasy(card, 60, now);
+
+    const serialized = mockUpdateState.mock.calls[0][2] as any;
+    const due = new Date(serialized.due);
+    const diffDays = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    expect(diffDays).toBeCloseTo(60, 5);
+    expect(serialized.stability).toBe(60);
+    expect(serialized.state).toBe(State.Review);  // 2
+    expect(serialized.scheduled_days).toBe(60);
+  });
+
+  it('updates forward state field for non-reverse card', async () => {
+    const mockUpdateState = vi.fn(() => Promise.resolve());
+    const mockInsert = vi.fn(() => Promise.resolve());
+    vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+
+    const card: StudyItem = { ...createFlashCard('hola'), isReverse: false };
+    await rateCardSuperEasy(card);
+
+    expect(mockUpdateState).toHaveBeenCalledWith('test-deck|hola', 'state', expect.any(Object));
+  });
+
+  it('updates reverseState field for reverse card', async () => {
+    const mockUpdateState = vi.fn(() => Promise.resolve());
+    const mockInsert = vi.fn(() => Promise.resolve());
+    vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+
+    const card: StudyItem = { ...createFlashCard('hola', { reversible: true }), isReverse: true };
+    await rateCardSuperEasy(card);
+
+    expect(mockUpdateState).toHaveBeenCalledWith('test-deck|hola', 'reverseState', expect.any(Object));
+  });
+
+  it('respects custom days parameter', async () => {
+    const mockUpdateState = vi.fn(() => Promise.resolve());
+    const mockInsert = vi.fn(() => Promise.resolve());
+    vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+
+    const now = new Date('2025-06-01T12:00:00Z');
+    const card: StudyItem = { ...createFlashCard('hola'), isReverse: false };
+    await rateCardSuperEasy(card, 90, now);
+
+    const log = mockInsert.mock.calls[0][0];
+    expect(log.scheduled_days).toBe(90);
+    const serialized = mockUpdateState.mock.calls[0][2] as any;
+    const diffDays = (new Date(serialized.due).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    expect(diffDays).toBeCloseTo(90, 5);
+    expect(serialized.stability).toBe(90);
+  });
+
+  it('log isReverse matches card direction', async () => {
+    const mockUpdateState = vi.fn(() => Promise.resolve());
+    const mockInsert = vi.fn(() => Promise.resolve());
+    vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+
+    const card: StudyItem = { ...createFlashCard('hola', { reversible: true }), isReverse: true };
+    await rateCardSuperEasy(card);
+
+    const log = mockInsert.mock.calls[0][0];
+    expect(log.isReverse).toBe(true);
+    expect(log.id).toContain('reverse');
+  });
+});
+
+// ============================================================================
+// schedulePreview + superEasy hook tests
+// ============================================================================
+
+describe('useDeck hook — schedulePreview and superEasy', () => {
+  function setupMock(cards: FlashCard[], logs: any[] = []) {
+    vi.mocked(useCards).mockReturnValue({ data: cards, isLoading: false });
+    vi.mocked(useReviewLogs).mockReturnValue({ data: logs, isLoading: false });
+  }
+
+  beforeEach(() => {
+    vi.mocked(getCardRepository).mockReturnValue({
+      updateState: vi.fn(() => Promise.resolve()),
+      suspend: vi.fn(() => Promise.resolve()),
+    } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({
+      insert: vi.fn(() => Promise.resolve()),
+      remove: vi.fn(() => Promise.resolve()),
+    } as any);
+    vi.mocked(useSettings).mockReturnValue({
+      settings: { newCardsPerDay: 10 },
+      isLoading: false,
+      update: vi.fn(),
+      clear: vi.fn(),
+    } as any);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('schedulePreview is non-null when a card is available', () => {
+    setupMock([createFlashCard('test-card')]);
+    const { result } = renderHook(() => useDeck('test-deck'));
+
+    expect(result.current.schedulePreview).not.toBeNull();
+  });
+
+  it('schedulePreview returns string values for all four ratings', () => {
+    setupMock([createFlashCard('test-card')]);
+    const { result } = renderHook(() => useDeck('test-deck'));
+
+    const preview = result.current.schedulePreview!;
+    expect(typeof preview[Rating.Again]).toBe('string');
+    expect(typeof preview[Rating.Hard]).toBe('string');
+    expect(typeof preview[Rating.Good]).toBe('string');
+    expect(typeof preview[Rating.Easy]).toBe('string');
+  });
+
+  it('schedulePreview is null when no cards', () => {
+    setupMock([]);
+    const { result } = renderHook(() => useDeck('test-deck'));
+
+    expect(result.current.schedulePreview).toBeNull();
+  });
+
+  it('schedulePreview Again interval is shorter than Easy interval for new card', () => {
+    setupMock([createFlashCard('test-card')]);
+    const { result } = renderHook(() => useDeck('test-deck'));
+
+    const preview = result.current.schedulePreview!;
+    // Again should be minutes (ends with 'm'), Easy should be days/months
+    expect(preview[Rating.Again]).toMatch(/m$/);
+    expect(preview[Rating.Easy]).not.toMatch(/m$/);
+  });
+
+  it('exposes superEasy function', () => {
+    setupMock([createFlashCard('test-card')]);
+    const { result } = renderHook(() => useDeck('test-deck'));
+
+    expect(typeof result.current.superEasy).toBe('function');
+  });
+
+  it('superEasy calls rateCardSuperEasy with 60-day stability', async () => {
+    const mockUpdateState = vi.fn(() => Promise.resolve());
+    const mockInsert = vi.fn(() => Promise.resolve());
+    vi.mocked(getCardRepository).mockReturnValue({
+      updateState: mockUpdateState,
+      suspend: vi.fn(() => Promise.resolve()),
+    } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({
+      insert: mockInsert,
+      remove: vi.fn(() => Promise.resolve()),
+    } as any);
+
+    setupMock([createFlashCard('test-card')]);
+    const { result } = renderHook(() => useDeck('test-deck'));
+
+    act(() => {
+      result.current.superEasy();
+    });
+
+    await vi.waitFor(() => {
+      expect(mockUpdateState).toHaveBeenCalledWith(
+        'test-deck|test-card',
+        'state',
+        expect.objectContaining({ stability: 60, state: State.Review })
+      );
+    });
+  });
+
+  it('superEasy does nothing when no current card', () => {
+    const mockUpdateState = vi.fn();
+    const mockInsert = vi.fn();
+    vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
+    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+
+    setupMock([]);
+    const { result } = renderHook(() => useDeck('test-deck'));
+
+    act(() => {
+      result.current.superEasy();
+    });
+
+    expect(mockUpdateState).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
   });
 });
