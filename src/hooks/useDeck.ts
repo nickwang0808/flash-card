@@ -169,10 +169,10 @@ export function useDeck(deckName: string) {
   const isLoading = cardsLoading || logsLoading || settingsLoading;
 
   // Derive introduced-today from review logs (state=0 means "was New when reviewed")
-  const today = new Date().toISOString().split('T')[0];
+  const todayLocal = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
   const introducedToday = new Set(
     logsList
-      .filter((l) => l.state === 0 && l.review.startsWith(today))
+      .filter((l) => l.state === 0 && new Date(l.review).toLocaleDateString('en-CA') === todayLocal)
       .map((l) => {
         // Extract term from cardId (format: "deckName|term")
         const term = l.cardId.split('|')[1] ?? l.cardId;
