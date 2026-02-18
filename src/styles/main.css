@@ -91,6 +91,7 @@
    Tailwind v4 preflight resets all elements (headings, lists, blockquotes, etc.)
    to unstyled defaults. This class re-applies semantic styles so card authors
    can use standard markdown and have it render as expected. */
+.card-markdown { font-size: 2em; }
 .card-markdown h1 { font-size: 2em; font-weight: bold; }
 .card-markdown h2 { font-size: 1.5em; font-weight: bold; }
 .card-markdown h3 { font-size: 1.25em; font-weight: bold; }
