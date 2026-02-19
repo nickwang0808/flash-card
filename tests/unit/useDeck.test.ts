@@ -1881,7 +1881,7 @@ describe('rateCardSuperEasy', () => {
     await rateCardSuperEasy(card);
 
     expect(mockInsert).toHaveBeenCalledTimes(1);
-    const log = mockInsert.mock.calls[0][0];
+    const log = (mockInsert.mock.calls as any[][])[0][0];
     expect(log.state).toBe(State.New);      // 0 — ensures undo path restores to null
     expect(log.rating).toBe(Rating.Easy);   // 4
     expect(log.scheduled_days).toBe(60);
@@ -1899,7 +1899,7 @@ describe('rateCardSuperEasy', () => {
     const card: StudyItem = { ...createFlashCard('hola'), isReverse: false };
     await rateCardSuperEasy(card, 60, now);
 
-    const serialized = mockUpdateState.mock.calls[0][2] as any;
+    const serialized = (mockUpdateState.mock.calls as any[][])[0][2];
     const due = new Date(serialized.due);
     const diffDays = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
     expect(diffDays).toBeCloseTo(60, 5);
@@ -1942,9 +1942,9 @@ describe('rateCardSuperEasy', () => {
     const card: StudyItem = { ...createFlashCard('hola'), isReverse: false };
     await rateCardSuperEasy(card, 90, now);
 
-    const log = mockInsert.mock.calls[0][0];
+    const log = (mockInsert.mock.calls as any[][])[0][0];
     expect(log.scheduled_days).toBe(90);
-    const serialized = mockUpdateState.mock.calls[0][2] as any;
+    const serialized = (mockUpdateState.mock.calls as any[][])[0][2];
     const diffDays = (new Date(serialized.due).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
     expect(diffDays).toBeCloseTo(90, 5);
     expect(serialized.stability).toBe(90);
@@ -1959,7 +1959,7 @@ describe('rateCardSuperEasy', () => {
     const card: StudyItem = { ...createFlashCard('hola', { reversible: true }), isReverse: true };
     await rateCardSuperEasy(card);
 
-    const log = mockInsert.mock.calls[0][0];
+    const log = (mockInsert.mock.calls as any[][])[0][0];
     expect(log.isReverse).toBe(true);
     expect(log.id).toContain('reverse');
   });
