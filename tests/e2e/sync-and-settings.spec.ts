@@ -83,7 +83,7 @@ test.describe('Settings screen', () => {
 
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
     await expect(page.getByText('https://github.com/test/flash-card-test')).toBeVisible();
-    await expect(page.getByText(/New cards per day: 10/)).toBeVisible();
+    await expect(page.getByRole('spinbutton')).toHaveValue('10');
   });
 
   test('has review order dropdown with options', async ({ page }) => {
@@ -121,13 +121,14 @@ test.describe('Settings screen', () => {
     await expect(page.locator('html')).not.toHaveClass(/dark/);
   });
 
-  test('new cards per day slider persists value', async ({ page }) => {
+  test('new cards per day input persists value', async ({ page }) => {
     await page.getByRole('button', { name: 'Settings' }).click();
 
-    const slider = page.getByRole('slider');
-    await slider.fill('5');
+    const input = page.getByRole('spinbutton');
+    await input.fill('25');
+    await input.blur();
 
-    await expect(page.getByText(/New cards per day: 5/)).toBeVisible();
+    await expect(input).toHaveValue('25');
 
     // Settings are stored in RxDB
     const stored = await page.evaluate(async () => {
@@ -135,7 +136,7 @@ test.describe('Settings screen', () => {
       const doc = await db.settings.findOne('settings').exec();
       return doc ? doc.toJSON().newCardsPerDay : null;
     });
-    expect(stored).toBe(5);
+    expect(stored).toBe(25);
   });
 
   test('back button returns to deck list', async ({ page }) => {
