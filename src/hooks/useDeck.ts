@@ -29,12 +29,25 @@ export function formatInterval(due: Date, now: Date = new Date()): string {
 
 // Pure function to compute study items from cards
 // Forward and reverse directions are kept separate to avoid showing them back-to-back
+function isDue(card: Card, now: Date, endOfDay: Date): boolean {
+  // Learning/Relearning cards have short intervals and should stay in-session
+  // even if their next due time is a few minutes in the future.
+  // Review cards should only appear once their scheduled time has passed.
+  if (card.state === State.Learning || card.state === State.Relearning) {
+    return card.due <= endOfDay;
+  }
+  return card.due <= now;
+}
+
 export function computeStudyItems(
   cards: FlashCard[],
   newCardsLimit: number,
-  endOfDay: Date,
+  now: Date,
   introducedToday: Set<string> = new Set()
 ): { newItems: StudyItem[]; dueItems: StudyItem[] } {
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
+
   const newForward: StudyItem[] = [];
   const newReverse: StudyItem[] = [];
   const dueForward: StudyItem[] = [];
@@ -87,7 +100,7 @@ export function computeStudyItems(
           if (!forwardIntroduced) newSlotsUsed++;
         }
       }
-    } else if (card.state.due <= endOfDay) {
+    } else if (isDue(card.state, now, endOfDay)) {
       dueForward.push({ ...card, isReverse: false });
     }
 
@@ -103,7 +116,7 @@ export function computeStudyItems(
             newReverse.push({ ...card, isReverse: true });
             if (!isIntroduced) newSlotsUsed++;
           }
-        } else if (card.reverseState.due <= endOfDay) {
+        } else if (isDue(card.reverseState, now, endOfDay)) {
           dueReverse.push({ ...card, isReverse: true });
         }
       }
@@ -219,9 +232,6 @@ export function useDeck(deckName: string) {
   const { settings, isLoading: settingsLoading } = useSettings();
   const newCardsLimit = settings.newCardsPerDay;
 
-  const endOfDay = new Date();
-  endOfDay.setHours(23, 59, 59, 999);
-
   // Query via repository hooks
   const { data: cardsList, isLoading: cardsLoading } = useCards(deckName);
   const { data: logsList, isLoading: logsLoading } = useReviewLogs();
@@ -243,7 +253,7 @@ export function useDeck(deckName: string) {
   const { newItems, dueItems } = computeStudyItems(
     cardsList,
     newCardsLimit,
-    endOfDay,
+    new Date(),
     introducedToday
   );
 

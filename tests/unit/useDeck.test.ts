@@ -70,24 +70,21 @@ function createPastState(daysAgo: number): Card {
 // ============================================================================
 
 describe('computeStudyItems', () => {
-  // Compute endOfDay fresh for each test to avoid midnight boundary issues
-  function getEndOfDay(): Date {
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-    return endOfDay;
+  function getNow(): Date {
+    return new Date();
   }
 
   describe('basic filtering', () => {
-    const endOfDay = getEndOfDay();
+    const now = getNow();
     it('returns empty arrays for empty cards', () => {
-      const { newItems, dueItems } = computeStudyItems([], 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems([], 10, now);
       expect(newItems).toEqual([]);
       expect(dueItems).toEqual([]);
     });
 
     it('includes cards without state as new items', () => {
       const cards = [createFlashCard('hello')];
-      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(1);
       expect(newItems[0].term).toBe('hello');
@@ -97,25 +94,23 @@ describe('computeStudyItems', () => {
 
     it('includes due cards (past due date) in dueItems', () => {
       const cards = [createFlashCard('hello', { state: createPastState(1) })];
-      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(0);
       expect(dueItems).toHaveLength(1);
       expect(dueItems[0].term).toBe('hello');
     });
 
-    it('includes cards due today in dueItems', () => {
-      const todayDue = new Date();
-      todayDue.setHours(12, 0, 0, 0); // noon today
-      const cards = [createFlashCard('hello', { state: createDueState(todayDue) })];
-      const { dueItems } = computeStudyItems(cards, 10, endOfDay);
+    it('includes cards due in the past in dueItems', () => {
+      const cards = [createFlashCard('hello', { state: createPastState(1) })];
+      const { dueItems } = computeStudyItems(cards, 10, now);
 
       expect(dueItems).toHaveLength(1);
     });
 
     it('excludes cards scheduled for the future', () => {
       const cards = [createFlashCard('hello', { state: createFutureState(5) })];
-      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(0);
       expect(dueItems).toHaveLength(0);
@@ -123,7 +118,7 @@ describe('computeStudyItems', () => {
   });
 
   describe('newCardsLimit', () => {
-    const endOfDay = getEndOfDay();
+    const now = getNow();
 
     it('respects newCardsLimit for new cards', () => {
       const cards = [
@@ -132,7 +127,7 @@ describe('computeStudyItems', () => {
         createFlashCard('three'),
         createFlashCard('four'),
       ];
-      const { newItems } = computeStudyItems(cards, 2, endOfDay);
+      const { newItems } = computeStudyItems(cards, 2, now);
 
       expect(newItems).toHaveLength(2);
       expect(newItems[0].term).toBe('one');
@@ -145,25 +140,25 @@ describe('computeStudyItems', () => {
         createFlashCard('two', { state: createPastState(1) }),
         createFlashCard('three', { state: createPastState(1) }),
       ];
-      const { dueItems } = computeStudyItems(cards, 1, endOfDay);
+      const { dueItems } = computeStudyItems(cards, 1, now);
 
       expect(dueItems).toHaveLength(3);
     });
 
     it('limit of 0 means no new cards', () => {
       const cards = [createFlashCard('one'), createFlashCard('two')];
-      const { newItems } = computeStudyItems(cards, 0, endOfDay);
+      const { newItems } = computeStudyItems(cards, 0, now);
 
       expect(newItems).toHaveLength(0);
     });
   });
 
   describe('reversible cards', () => {
-    const endOfDay = getEndOfDay();
+    const now = getNow();
 
     it('includes both directions for reversible cards', () => {
       const cards = [createFlashCard('hello', { reversible: true })];
-      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(2);
       expect(newItems[0].isReverse).toBe(false);
@@ -175,7 +170,7 @@ describe('computeStudyItems', () => {
         createFlashCard('one', { reversible: true }),
         createFlashCard('two', { reversible: true }),
       ];
-      const { newItems } = computeStudyItems(cards, 3, endOfDay);
+      const { newItems } = computeStudyItems(cards, 3, now);
 
       // one reserves 2 slots (fwd+rev), two gets only forward (1 slot left)
       expect(newItems).toHaveLength(3);
@@ -192,7 +187,7 @@ describe('computeStudyItems', () => {
         createFlashCard('non-rev-1'),
         createFlashCard('non-rev-2'),
       ];
-      const { newItems } = computeStudyItems(cards, 3, endOfDay);
+      const { newItems } = computeStudyItems(cards, 3, now);
 
       // rev takes 2 slots (fwd+rev), non-rev-1 takes 1 slot, non-rev-2 excluded
       expect(newItems).toHaveLength(3);
@@ -209,7 +204,7 @@ describe('computeStudyItems', () => {
         createFlashCard('non-rev-2'),
         createFlashCard('rev', { reversible: true }),
       ];
-      const { newItems } = computeStudyItems(cards, 3, endOfDay);
+      const { newItems } = computeStudyItems(cards, 3, now);
 
       // non-rev-1 and non-rev-2 take 2 slots, rev gets only forward (1 slot left)
       expect(newItems).toHaveLength(3);
@@ -228,7 +223,7 @@ describe('computeStudyItems', () => {
         createFlashCard('d', { reversible: true }),
         createFlashCard('e'),
       ];
-      const { newItems } = computeStudyItems(cards, 5, endOfDay);
+      const { newItems } = computeStudyItems(cards, 5, now);
 
       // a(1), b-fwd+b-rev(3), c(4), d needs 2 but only 1 left → d-fwd(5)
       expect(newItems).toHaveLength(5);
@@ -245,7 +240,7 @@ describe('computeStudyItems', () => {
       const cards = Array.from({ length: 30 }, (_, i) =>
         createFlashCard(`card-${i}`, { reversible: true })
       );
-      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems } = computeStudyItems(cards, 10, now);
 
       // 10 slots → 5 cards × 2 directions = 10 items
       expect(newItems).toHaveLength(10);
@@ -265,7 +260,7 @@ describe('computeStudyItems', () => {
           reverseState: null, // reverse is new
         }),
       ];
-      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(1);
       expect(newItems[0].isReverse).toBe(true);
@@ -280,7 +275,7 @@ describe('computeStudyItems', () => {
           reverseState: createPastState(1), // reverse is due
         }),
       ];
-      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(1);
       expect(newItems[0].isReverse).toBe(false);
@@ -296,7 +291,7 @@ describe('computeStudyItems', () => {
           reverseState: createPastState(2),
         }),
       ];
-      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(0);
       expect(dueItems).toHaveLength(2);
@@ -310,7 +305,7 @@ describe('computeStudyItems', () => {
           reverseState: createFutureState(5),
         }),
       ];
-      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(0);
       expect(dueItems).toHaveLength(0);
@@ -318,7 +313,7 @@ describe('computeStudyItems', () => {
   });
 
   describe('mixed scenarios', () => {
-    const endOfDay = getEndOfDay();
+    const now = getNow();
 
     it('separates new and due cards correctly', () => {
       const cards = [
@@ -326,7 +321,7 @@ describe('computeStudyItems', () => {
         createFlashCard('due-card', { state: createPastState(1) }),
         createFlashCard('future-card', { state: createFutureState(5) }),
       ];
-      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(1);
       expect(newItems[0].term).toBe('new-card');
@@ -340,7 +335,7 @@ describe('computeStudyItems', () => {
         createFlashCard('b'),
         createFlashCard('c'),
       ];
-      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems.map((i) => i.term)).toEqual(['a', 'b', 'c']);
     });
@@ -354,14 +349,14 @@ describe('computeStudyItems', () => {
         createFlashCard('四', { order: 3 }),
         createFlashCard('五', { order: 4 }),
       ];
-      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems.map((i) => i.term)).toEqual(['一', '二', '三', '四', '五']);
     });
   });
 
   describe('introducedToday tracking', () => {
-    const endOfDay = getEndOfDay();
+    const now = getNow();
 
     it('counts already-introduced cards toward limit', () => {
       const cards = [
@@ -373,7 +368,7 @@ describe('computeStudyItems', () => {
       // Simulate 2 cards already introduced today
       const introducedToday = new Set(['one', 'two']);
 
-      const { newItems } = computeStudyItems(cards, 3, endOfDay, introducedToday);
+      const { newItems } = computeStudyItems(cards, 3, now, introducedToday);
 
       // Limit is 3, 2 already introduced, so only 1 new slot remains
       // Should include: one (introduced), two (introduced), three (new slot)
@@ -390,7 +385,7 @@ describe('computeStudyItems', () => {
       // 3 cards already introduced, but limit is 2
       const introducedToday = new Set(['one', 'two', 'three']);
 
-      const { newItems } = computeStudyItems(cards, 2, endOfDay, introducedToday);
+      const { newItems } = computeStudyItems(cards, 2, now, introducedToday);
 
       // All 3 should be included because they were already introduced
       expect(newItems).toHaveLength(3);
@@ -404,7 +399,7 @@ describe('computeStudyItems', () => {
       ];
       const introducedToday = new Set(['introduced-a', 'introduced-b']);
 
-      const { newItems } = computeStudyItems(cards, 2, endOfDay, introducedToday);
+      const { newItems } = computeStudyItems(cards, 2, now, introducedToday);
 
       // Limit is 2, both slots filled by introduced cards
       expect(newItems).toHaveLength(2);
@@ -418,7 +413,7 @@ describe('computeStudyItems', () => {
       // Only the reverse was introduced
       const introducedToday = new Set(['hello:reverse']);
 
-      const { newItems } = computeStudyItems(cards, 1, endOfDay, introducedToday);
+      const { newItems } = computeStudyItems(cards, 1, now, introducedToday);
 
       // Limit is 1, reverse is introduced (counts toward limit)
       // Forward: not introduced, 0 < 0 = false, not included
@@ -434,7 +429,7 @@ describe('computeStudyItems', () => {
       ];
       const introducedToday = new Set<string>();
 
-      const { newItems } = computeStudyItems(cards, 10, endOfDay, introducedToday);
+      const { newItems } = computeStudyItems(cards, 10, now, introducedToday);
 
       expect(newItems).toHaveLength(2);
     });
@@ -446,21 +441,21 @@ describe('computeStudyItems', () => {
       ];
 
       // Call without introducedToday parameter
-      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(2);
     });
   });
 
   describe('suspended card filtering', () => {
-    const endOfDay = getEndOfDay();
+    const now = getNow();
 
     it('excludes suspended cards from new items', () => {
       const cards = [
         createFlashCard('active'),
         createFlashCard('suspended-card', { suspended: true }),
       ];
-      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(1);
       expect(newItems[0].term).toBe('active');
@@ -472,7 +467,7 @@ describe('computeStudyItems', () => {
         createFlashCard('active-due', { state: createPastState(1) }),
         createFlashCard('suspended-due', { state: createPastState(1), suspended: true }),
       ];
-      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(0);
       expect(dueItems).toHaveLength(1);
@@ -484,7 +479,7 @@ describe('computeStudyItems', () => {
         createFlashCard('active-rev', { reversible: true }),
         createFlashCard('suspended-rev', { reversible: true, suspended: true }),
       ];
-      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(2);
       expect(newItems.every(i => i.term === 'active-rev')).toBe(true);
@@ -498,7 +493,7 @@ describe('computeStudyItems', () => {
         createFlashCard('active-2'),
         createFlashCard('active-3'),
       ];
-      const { newItems } = computeStudyItems(cards, 3, endOfDay);
+      const { newItems } = computeStudyItems(cards, 3, now);
 
       expect(newItems).toHaveLength(3);
       expect(newItems.map(i => i.term)).toEqual(['active-1', 'active-2', 'active-3']);
@@ -508,7 +503,7 @@ describe('computeStudyItems', () => {
       const cards = [
         createFlashCard('explicit-false', { suspended: false }),
       ];
-      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(1);
       expect(newItems[0].term).toBe('explicit-false');
@@ -520,7 +515,7 @@ describe('computeStudyItems', () => {
       ];
       // suspended is undefined by default in createFlashCard
       expect(cards[0].suspended).toBeUndefined();
-      const { newItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(1);
     });
@@ -531,7 +526,7 @@ describe('computeStudyItems', () => {
         createFlashCard('b', { suspended: true }),
         createFlashCard('c', { state: createPastState(1), suspended: true }),
       ];
-      const { newItems, dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems(cards, 10, now);
 
       expect(newItems).toHaveLength(0);
       expect(dueItems).toHaveLength(0);
@@ -539,36 +534,36 @@ describe('computeStudyItems', () => {
   });
 
   describe('edge cases', () => {
-    it('card due at exact end of day boundary is included', () => {
-      const endOfDay = getEndOfDay();
-      const cardDueAtBoundary = createFlashCard('boundary', {
-        state: createDueState(endOfDay), // exactly at 23:59:59.999
+    it('card due exactly now is included', () => {
+      const now = getNow();
+      const cardDueNow = createFlashCard('boundary', {
+        state: createDueState(now),
       });
-      const { dueItems } = computeStudyItems([cardDueAtBoundary], 10, endOfDay);
+      const { dueItems } = computeStudyItems([cardDueNow], 10, now);
 
       expect(dueItems).toHaveLength(1);
     });
 
-    it('card due 1ms after end of day is excluded', () => {
-      const endOfDay = getEndOfDay();
-      const tomorrow = new Date(endOfDay.getTime() + 1);
-      const cardDueTomorrow = createFlashCard('tomorrow', {
-        state: createDueState(tomorrow),
+    it('card due 1ms in the future is excluded', () => {
+      const now = getNow();
+      const soon = new Date(now.getTime() + 1);
+      const cardDueSoon = createFlashCard('soon', {
+        state: createDueState(soon),
       });
-      const { dueItems } = computeStudyItems([cardDueTomorrow], 10, endOfDay);
+      const { dueItems } = computeStudyItems([cardDueSoon], 10, now);
 
       expect(dueItems).toHaveLength(0);
     });
 
     it('non-reversible card ignores reverseState', () => {
-      const endOfDay = getEndOfDay();
+      const now = getNow();
       // Card marked as non-reversible but has reverseState (data inconsistency)
       const card = createFlashCard('inconsistent', {
         reversible: false,
         state: null, // forward is new
         reverseState: createPastState(1), // should be ignored
       });
-      const { newItems, dueItems } = computeStudyItems([card], 10, endOfDay);
+      const { newItems, dueItems } = computeStudyItems([card], 10, now);
 
       // Only forward direction should appear
       expect(newItems).toHaveLength(1);
@@ -577,18 +572,18 @@ describe('computeStudyItems', () => {
     });
 
     it('handles empty back', () => {
-      const endOfDay = getEndOfDay();
+      const now = getNow();
       const card = createFlashCard('test', { back: '' });
-      const { newItems } = computeStudyItems([card], 10, endOfDay);
+      const { newItems } = computeStudyItems([card], 10, now);
 
       expect(newItems).toHaveLength(1);
       expect(newItems[0].back).toBe('');
     });
 
     it('handles very large newCardsLimit', () => {
-      const endOfDay = getEndOfDay();
+      const now = getNow();
       const cards = [createFlashCard('one'), createFlashCard('two')];
-      const { newItems } = computeStudyItems(cards, Number.MAX_SAFE_INTEGER, endOfDay);
+      const { newItems } = computeStudyItems(cards, Number.MAX_SAFE_INTEGER, now);
 
       expect(newItems).toHaveLength(2);
     });
@@ -596,7 +591,7 @@ describe('computeStudyItems', () => {
 
   describe('learning card ordering', () => {
     it('sorts learning cards after overdue review cards in dueItems', () => {
-      const endOfDay = getEndOfDay();
+      const now = getNow();
 
       // Simulate: card1 was just rated "Again" (Learning state, due in 1 min)
       const { card: learningState } = computeNewState(null, Rating.Again);
@@ -607,7 +602,7 @@ describe('computeStudyItems', () => {
         createFlashCard('overdue-review', { state: createPastState(1) }),
       ];
 
-      const { dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { dueItems } = computeStudyItems(cards, 10, now);
 
       expect(dueItems).toHaveLength(2);
       // Overdue review card should come first, not the just-rated learning card
@@ -616,7 +611,7 @@ describe('computeStudyItems', () => {
     });
 
     it('sorts multiple learning cards by due time (oldest due first)', () => {
-      const endOfDay = getEndOfDay();
+      const now = getNow();
 
       // card1 rated "Again" 5 minutes ago (due 4 min ago)
       const pastTime = new Date(Date.now() - 5 * 60 * 1000);
@@ -630,7 +625,7 @@ describe('computeStudyItems', () => {
         createFlashCard('older-again', { state: olderLearning }),
       ];
 
-      const { dueItems } = computeStudyItems(cards, 10, endOfDay);
+      const { dueItems } = computeStudyItems(cards, 10, now);
 
       expect(dueItems).toHaveLength(2);
       // Older learning card (due earlier) should come first
