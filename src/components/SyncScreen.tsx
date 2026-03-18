@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { getCommits } from '../services/collections';
 import { runSync } from '../services/replication';
 
 interface Props {
@@ -10,10 +9,8 @@ export function SyncScreen({ onBack }: Props) {
   const [online, setOnline] = useState(navigator.onLine);
   const [status, setStatus] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const [log, setLog] = useState<Array<{ message: string; sha: string; date: string }>>([]);
 
   useEffect(() => {
-    loadInfo();
     const handleOnline = () => setOnline(true);
     const handleOffline = () => setOnline(false);
     window.addEventListener('online', handleOnline);
@@ -24,22 +21,12 @@ export function SyncScreen({ onBack }: Props) {
     };
   }, []);
 
-  async function loadInfo() {
-    try {
-      const commits = await getCommits(10);
-      setLog(commits);
-    } catch {
-      // offline or error
-    }
-  }
-
   async function handleSync() {
     setLoading(true);
     setStatus('Syncing...');
     try {
       await runSync();
       setStatus('Synced successfully');
-      await loadInfo();
     } catch (e: any) {
       setStatus(`Error: ${e.message}`);
     }
@@ -63,7 +50,7 @@ export function SyncScreen({ onBack }: Props) {
           <span className="text-sm">{online ? 'Online' : 'Offline'}</span>
         </div>
         <p className="text-xs text-muted-foreground">
-          Reviews are saved locally. Use Sync to push changes to GitHub and pull the latest data.
+          Reviews are saved locally. Use Sync to push changes to Supabase and pull the latest data.
         </p>
         {status && (
           <p className="text-sm text-muted-foreground">{status}</p>
@@ -79,25 +66,6 @@ export function SyncScreen({ onBack }: Props) {
         >
           Sync
         </button>
-      </div>
-
-      {/* Commit log */}
-      <div>
-        <h2 className="text-sm font-medium mb-2">Recent Commits</h2>
-        <div className="space-y-2">
-          {log.map((entry) => (
-            <div key={entry.sha} className="text-xs border-l-2 border-border pl-3 py-1">
-              <p className="font-mono text-muted-foreground">{entry.sha}</p>
-              <p>{entry.message.split('\n')[0]}</p>
-              <p className="text-muted-foreground">
-                {new Date(entry.date).toLocaleString()}
-              </p>
-            </div>
-          ))}
-          {log.length === 0 && (
-            <p className="text-xs text-muted-foreground">No commits yet</p>
-          )}
-        </div>
       </div>
     </div>
   );

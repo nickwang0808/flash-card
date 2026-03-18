@@ -94,7 +94,7 @@ export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
 
         {deckNames.length === 0 && (
           <p className="text-center text-muted-foreground py-8">
-            No decks found. Add directories with cards.json to your repo.
+            No decks found. Sync to pull your cards.
           </p>
         )}
       </div>

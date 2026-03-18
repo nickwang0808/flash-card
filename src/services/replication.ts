@@ -1,44 +1,32 @@
-import type { GitStorageService } from './git-storage';
-import { GitHubStorageService, parseRepoUrl, type GitHubConfig } from './github';
-import { defaultSettings } from '../hooks/useSettings';
-import { getDatabaseSync } from './rxdb';
+import { supabase } from './supabase';
+import { SupabaseStorageService } from './supabase-storage';
 import { getCardRepository } from './card-repository';
+import type { StoredReviewLog } from './review-log-repository';
+import { getDatabaseSync } from './rxdb';
+import { defaultSettings } from '../hooks/useSettings';
+import type { Database } from '../types/supabase';
 
-// --- Config helpers ---
+// --- Supabase storage service (singleton) ---
 
-async function getConfig(): Promise<GitHubConfig> {
-  const db = getDatabaseSync();
-  const doc = await db.settings.findOne('settings').exec();
-  const settings = doc ? doc.toJSON() : defaultSettings;
-  const { owner, repo } = parseRepoUrl(settings.repoUrl);
-  return {
-    owner,
-    repo,
-    token: settings.token,
-    branch: settings.branch,
-    baseUrl: settings.apiBaseUrl || undefined,
-  };
+let storageService: SupabaseStorageService | null = null;
+
+function getStorage(): SupabaseStorageService {
+  if (!storageService) {
+    storageService = new SupabaseStorageService(supabase);
+  }
+  return storageService;
 }
+
+// Allow injection for testing
+export function setStorageService(service: SupabaseStorageService | null): void {
+  storageService = service;
+}
+
+// --- Auth check ---
 
 async function isConfigured(): Promise<boolean> {
-  const db = getDatabaseSync();
-  const doc = await db.settings.findOne('settings').exec();
-  const settings = doc ? doc.toJSON() : defaultSettings;
-  return settings.repoUrl.length > 0 && settings.token.length > 0;
-}
-
-// --- Service factory for injection ---
-
-let serviceFactory: (() => Promise<GitStorageService>) | null = null;
-
-export function setServiceFactory(factory: () => Promise<GitStorageService>) {
-  serviceFactory = factory;
-}
-
-async function getService(): Promise<GitStorageService> {
-  if (serviceFactory) return serviceFactory();
-  const config = await getConfig();
-  return new GitHubStorageService(config);
+  const { data: { user } } = await supabase.auth.getUser();
+  return !!user;
 }
 
 // --- Sync state ---
@@ -48,6 +36,7 @@ let syncInProgress: Promise<void> | null = null;
 // --- Debounce-based push ---
 
 const dirtyCardIds = new Set<string>();
+const dirtyReviewLogIds = new Set<string>();
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 const DEBOUNCE_MS = 10_000;
 const MAX_BATCH_SIZE = 10;
@@ -55,11 +44,26 @@ const MAX_BATCH_SIZE = 10;
 async function pushDirtyCards(ids: string[]): Promise<void> {
   if (!(await isConfigured()) || !navigator.onLine) return;
 
-  const service = await getService();
+  const storage = getStorage();
   const repo = getCardRepository();
   const cards = await repo.getCardDataByIds(ids);
 
-  if (cards.length > 0) await service.pushCards(cards);
+  if (cards.length > 0) await storage.pushCards(cards);
+}
+
+async function pushDirtyReviewLogs(ids: string[]): Promise<void> {
+  if (!(await isConfigured()) || !navigator.onLine) return;
+
+  const storage = getStorage();
+  const db = getDatabaseSync();
+
+  const logs: StoredReviewLog[] = [];
+  for (const id of ids) {
+    const doc = await db.reviewlogs.findOne(id).exec();
+    if (doc) logs.push(doc.toJSON() as unknown as StoredReviewLog);
+  }
+
+  if (logs.length > 0) await storage.pushReviewLogs(logs);
 }
 
 function flushChanges(): void {
@@ -70,16 +74,22 @@ function flushChanges(): void {
 
   if (syncInProgress) {
     syncInProgress.finally(() => {
-      if (dirtyCardIds.size > 0) flushChanges();
+      if (dirtyCardIds.size > 0 || dirtyReviewLogIds.size > 0) flushChanges();
     });
     return;
   }
 
-  if (dirtyCardIds.size === 0) return;
-
-  const ids = [...dirtyCardIds];
+  const cardIds = [...dirtyCardIds];
+  const logIds = [...dirtyReviewLogIds];
   dirtyCardIds.clear();
-  pushDirtyCards(ids).catch(() => {});
+  dirtyReviewLogIds.clear();
+
+  if (cardIds.length === 0 && logIds.length === 0) return;
+
+  Promise.all([
+    cardIds.length > 0 ? pushDirtyCards(cardIds) : Promise.resolve(),
+    logIds.length > 0 ? pushDirtyReviewLogs(logIds) : Promise.resolve(),
+  ]).catch(() => {});
 }
 
 export function notifyChange(cardId: string): void {
@@ -92,8 +102,18 @@ export function notifyChange(cardId: string): void {
   debounceTimer = setTimeout(flushChanges, DEBOUNCE_MS);
 }
 
+export function notifyReviewLogChange(logId: string): void {
+  dirtyReviewLogIds.add(logId);
+  if (dirtyReviewLogIds.size >= MAX_BATCH_SIZE) {
+    flushChanges();
+    return;
+  }
+  if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(flushChanges, DEBOUNCE_MS);
+}
+
 export function flushSync(): void {
-  if (dirtyCardIds.size > 0) {
+  if (dirtyCardIds.size > 0 || dirtyReviewLogIds.size > 0) {
     flushChanges();
   }
 }
@@ -114,23 +134,63 @@ export async function runSync(): Promise<void> {
 }
 
 async function doSync(): Promise<void> {
-  const service = await getService();
+  const storage = getStorage();
   const repo = getCardRepository();
 
-  // Flush any pending pushes first (so we don't lose them)
-  if (dirtyCardIds.size > 0) {
-    const ids = [...dirtyCardIds];
+  // Flush any pending pushes first
+  if (dirtyCardIds.size > 0 || dirtyReviewLogIds.size > 0) {
+    const cardIds = [...dirtyCardIds];
+    const logIds = [...dirtyReviewLogIds];
     dirtyCardIds.clear();
+    dirtyReviewLogIds.clear();
     if (debounceTimer) {
       clearTimeout(debounceTimer);
       debounceTimer = null;
     }
-    await pushDirtyCards(ids);
+    await Promise.all([
+      cardIds.length > 0 ? pushDirtyCards(cardIds) : Promise.resolve(),
+      logIds.length > 0 ? pushDirtyReviewLogs(logIds) : Promise.resolve(),
+    ]);
   }
 
-  // Pull: bulk replace
-  const cards = await service.pullAllCards();
+  // Pull cards
+  const cards = await storage.pullAllCards();
   await repo.replaceAll(cards);
+
+  // Pull review logs
+  const remoteLogs = await storage.pullReviewLogs();
+  const db = getDatabaseSync();
+  await db.reviewlogs.find().remove();
+  if (remoteLogs.length > 0) {
+    await db.reviewlogs.bulkInsert(remoteLogs.map((log) => ({
+      id: log.id,
+      cardId: log.cardId,
+      isReverse: log.isReverse,
+      rating: log.rating,
+      state: log.state,
+      due: log.due,
+      stability: log.stability,
+      difficulty: log.difficulty,
+      elapsed_days: log.elapsed_days,
+      last_elapsed_days: log.last_elapsed_days,
+      scheduled_days: log.scheduled_days,
+      review: log.review,
+    })));
+  }
+
+  // Pull settings
+  const remoteSettings = await storage.pullSettings();
+  if (remoteSettings) {
+    const settingsDoc = await db.settings.findOne('settings').exec();
+    const current = settingsDoc ? settingsDoc.toJSON() : defaultSettings;
+    await db.settings.upsert({
+      ...current,
+      id: 'settings',
+      newCardsPerDay: remoteSettings.newCardsPerDay,
+      reviewOrder: remoteSettings.reviewOrder,
+      theme: remoteSettings.theme,
+    });
+  }
 }
 
 export async function cancelSync(): Promise<void> {
@@ -139,4 +199,32 @@ export async function cancelSync(): Promise<void> {
     debounceTimer = null;
   }
   dirtyCardIds.clear();
+  dirtyReviewLogIds.clear();
+}
+
+// --- Realtime subscription for cards (e.g., AI-generated cards) ---
+
+let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+
+export function startRealtime(onCardChange?: () => void): void {
+  if (realtimeChannel) return;
+
+  realtimeChannel = supabase
+    .channel('cards-realtime')
+    .on<Database['public']['Tables']['cards']['Row']>(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'cards' },
+      () => {
+        // A card was changed remotely — trigger a full sync
+        onCardChange?.();
+      },
+    )
+    .subscribe();
+}
+
+export function stopRealtime(): void {
+  if (realtimeChannel) {
+    supabase.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
 }

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useSettings } from '../hooks/useSettings';
-import { runSync, flushSync } from '../services/replication';
+import { useAuth } from '../hooks/useAuth';
+import { runSync, flushSync, startRealtime, stopRealtime } from '../services/replication';
 import { AuthScreen } from './AuthScreen';
 import { DeckListScreen } from './DeckListScreen';
 import { ReviewScreen } from './ReviewScreen';
@@ -16,28 +17,32 @@ type Screen =
   | { name: 'settings' };
 
 export function App() {
-  const { settings, isConfigured, isLoading } = useSettings();
-  const [screen, setScreen] = useState<Screen>(() =>
-    // Can't check isConfigured here (initial render), will fix in effect below
-    ({ name: 'auth' })
-  );
+  const { settings, isLoading: settingsLoading } = useSettings();
+  const { isSignedIn, loading: authLoading } = useAuth();
+  const [screen, setScreen] = useState<Screen>({ name: 'auth' });
 
-  // Set initial screen once settings load
+  // Set initial screen once auth state is known
   useEffect(() => {
-    if (isLoading) return;
-    if (isConfigured) {
+    if (authLoading) return;
+    if (isSignedIn) {
       setScreen({ name: 'deck-list' });
     } else {
       setScreen({ name: 'auth' });
     }
-  // Only run when loading completes, not on every isConfigured change
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading]);
+  }, [authLoading]);
 
-  // Initial sync — once after bootstrap
+  // Initial sync + realtime — once after sign-in
   useEffect(() => {
+    if (!isSignedIn) return;
+
     runSync().catch(() => {});
-  }, []);
+    startRealtime(() => {
+      runSync().catch(() => {});
+    });
+
+    return () => stopRealtime();
+  }, [isSignedIn]);
 
   // Tab hide — flush pending debounced pushes immediately
   useEffect(() => {
@@ -67,7 +72,7 @@ export function App() {
 
   const navigate = (s: Screen) => setScreen(s);
 
-  if (isLoading) {
+  if (authLoading || settingsLoading) {
     return <div className="h-dvh flex items-center justify-center">Loading...</div>;
   }
 

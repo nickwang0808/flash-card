@@ -2,7 +2,7 @@ import { fsrs, createEmptyCard, Rating, State, type Grade, type Card, type Revie
 import { type FlashCard, useCards, getCardRepository, serializeFsrsCard } from '../services/card-repository';
 import { type StoredReviewLog, useReviewLogs, getReviewLogRepository } from '../services/review-log-repository';
 import { useSettings } from './useSettings';
-import { notifyChange } from '../services/replication';
+import { notifyChange, notifyReviewLogChange } from '../services/replication';
 
 export type StudyItem = FlashCard & { isReverse: boolean };
 
@@ -179,6 +179,7 @@ export async function rateCard(
   await cardRepo.updateState(card.id, field, serializedState);
 
   notifyChange(card.id);
+  notifyReviewLogChange(storedLog.id);
 }
 
 // Rate a card as "Super Easy" — bypasses FSRS, schedules N days out
@@ -226,6 +227,7 @@ export async function rateCardSuperEasy(
   await cardRepo.updateState(card.id, field, serializedState);
 
   notifyChange(card.id);
+  notifyReviewLogChange(storedLog.id);
 }
 
 export function useDeck(deckName: string) {

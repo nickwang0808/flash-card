@@ -1,7 +1,7 @@
-import { useState } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../hooks/useAuth';
 import { destroyDatabase } from '../services/rxdb';
+import { cancelSync } from '../services/replication';
 
 interface Props {
   onBack: () => void;
@@ -11,11 +11,12 @@ interface Props {
 export function SettingsScreen({ onBack }: Props) {
   const { settings, update } = useSettings();
   const { signOut } = useAuth();
-  const [editingRepo, setEditingRepo] = useState(false);
-  const [repoUrl, setRepoUrl] = useState(settings.repoUrl);
 
   async function handleLogout() {
     if (!confirm('Clear all local data and log out?')) return;
+    try {
+      await cancelSync();
+    } catch (_) { /* best-effort */ }
     try {
       await signOut();
     } catch (_) { /* best-effort */ }
@@ -36,57 +37,11 @@ export function SettingsScreen({ onBack }: Props) {
       </div>
 
       <div className="space-y-6">
-        {/* Repository URL */}
+        {/* Account */}
         <div>
-          <label className="block text-sm font-medium mb-1">Repository</label>
-          {editingRepo ? (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={repoUrl}
-                onChange={(e) => setRepoUrl(e.target.value)}
-                placeholder="owner/repo"
-                className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
-              />
-              <button
-                onClick={() => {
-                  update({ repoUrl });
-                  setEditingRepo(false);
-                }}
-                className="rounded-md bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => {
-                  setRepoUrl(settings.repoUrl);
-                  setEditingRepo(false);
-                }}
-                className="rounded-md border border-input px-3 py-2 text-sm font-medium hover:bg-accent"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground break-all">
-                {settings.repoUrl || 'Not configured'}
-              </p>
-              <button
-                onClick={() => setEditingRepo(true)}
-                className="text-sm text-primary hover:underline ml-2"
-              >
-                Edit
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* GitHub Auth */}
-        <div>
-          <label className="block text-sm font-medium mb-1">GitHub</label>
+          <label className="block text-sm font-medium mb-1">Account</label>
           <p className="text-sm text-muted-foreground">
-            Connected via GitHub OAuth
+            Signed in via GitHub
           </p>
         </div>
 

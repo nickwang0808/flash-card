@@ -21,36 +21,9 @@ root.render(
   </React.StrictMode>,
 );
 
-// One-time migration: move settings from localStorage (TanStack DB format) to RxDB
-async function migrateSettings(db: AppDatabase): Promise<void> {
-  const raw = localStorage.getItem('flash-card-settings');
-  if (!raw) return;
-
-  try {
-    const parsed = JSON.parse(raw);
-    const data = parsed['s:settings']?.data;
-    if (data && data.repoUrl) {
-      await db.settings.upsert({
-        id: data.id ?? 'settings',
-        repoUrl: data.repoUrl ?? '',
-        token: data.token ?? '',
-        newCardsPerDay: data.newCardsPerDay ?? 10,
-        reviewOrder: data.reviewOrder ?? 'random',
-        theme: data.theme ?? 'system',
-        ...(data.branch ? { branch: data.branch } : {}),
-      });
-    }
-  } catch {
-    // Corrupt data — ignore
-  }
-
-  localStorage.removeItem('flash-card-settings');
-}
-
 // Initialize RxDB, then render app
 async function bootstrap() {
   const db = await getDatabase();
-  await migrateSettings(db);
 
   // Initialize repositories
   setCardRepository(new RxDbCardRepository(db));

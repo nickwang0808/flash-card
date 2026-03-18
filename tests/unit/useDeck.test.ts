@@ -876,6 +876,7 @@ vi.mock('../../src/services/review-log-repository', async (importOriginal) => {
 
 vi.mock('../../src/services/replication', () => ({
   notifyChange: vi.fn(),
+  notifyReviewLogChange: vi.fn(),
   cancelSync: vi.fn(),
 }));
 

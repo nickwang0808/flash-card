@@ -32,13 +32,9 @@ const settingsSchema = {
   type: 'object',
   properties: {
     id: { type: 'string', maxLength: 100 },
-    repoUrl: { type: 'string' },
-    token: { type: 'string' },
     newCardsPerDay: { type: 'number' },
     reviewOrder: { type: 'string', maxLength: 50 },
     theme: { type: 'string', maxLength: 20 },
-    branch: { type: 'string' },
-    apiBaseUrl: { type: 'string' },
   },
   required: ['id'],
 } as const;
@@ -82,13 +78,9 @@ export type CardDoc = {
 
 export type SettingsDoc = {
   id: string;
-  repoUrl: string;
-  token: string;
   newCardsPerDay: number;
   reviewOrder: string;
   theme: string;
-  branch?: string;
-  apiBaseUrl?: string;
 };
 
 export type ReviewLogDoc = {

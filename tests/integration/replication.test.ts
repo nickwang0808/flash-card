@@ -1,54 +1,60 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { CardData, GitStorageService } from '../../src/services/git-storage';
+import type { CardData } from '../../src/services/git-storage';
 import type { CardRepository } from '../../src/services/card-repository';
+import { SupabaseStorageService } from '../../src/services/supabase-storage';
 
-// Create a mock service that records calls
-function createMockService(initialCards: CardData[] = []): GitStorageService & {
-  pushCardsCalls: CardData[][];
-  pullCallCount: number;
-} {
-  const mock = {
-    pushCardsCalls: [] as CardData[][],
-    pullCallCount: 0,
+// Mock Supabase client with authenticated user
+const mockGetUser = vi.fn(() => Promise.resolve({
+  data: { user: { id: 'test-user-id' } },
+  error: null,
+}));
 
-    async pullAllCards(): Promise<CardData[]> {
-      mock.pullCallCount++;
-      return initialCards;
+// Track upsert/select calls per table
+const mockTableData: Record<string, any[]> = {
+  cards: [],
+  srs_state: [],
+  review_logs: [],
+  settings: [],
+};
+
+const mockUpsert = vi.fn(() => Promise.resolve({ error: null }));
+const mockBulkInsert = vi.fn(() => Promise.resolve());
+
+vi.mock('../../src/services/supabase', () => ({
+  supabase: {
+    auth: { getUser: () => mockGetUser() },
+    from: vi.fn((table: string) => ({
+      upsert: mockUpsert,
+      select: vi.fn(() => {
+        const chain: any = {};
+        chain.eq = vi.fn(() => chain);
+        chain.limit = vi.fn(() => chain);
+        chain.maybeSingle = vi.fn(() => Promise.resolve({ data: null, error: null }));
+        chain.then = vi.fn((resolve: any) => resolve({ data: mockTableData[table] ?? [], error: null }));
+        return chain;
+      }),
+    })),
+    channel: vi.fn(() => ({ on: vi.fn(() => ({ subscribe: vi.fn() })), subscribe: vi.fn() })),
+    removeChannel: vi.fn(),
+  },
+}));
+
+vi.mock('../../src/services/rxdb', () => ({
+  getDatabaseSync: vi.fn(() => ({
+    reviewlogs: {
+      findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })),
+      find: vi.fn(() => ({
+        remove: vi.fn(() => Promise.resolve()),
+        $: { subscribe: vi.fn() },
+      })),
+      bulkInsert: mockBulkInsert,
     },
-
-    async pushCards(cards: CardData[]): Promise<void> {
-      mock.pushCardsCalls.push([...cards]);
+    settings: {
+      findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })),
+      upsert: vi.fn(() => Promise.resolve()),
     },
-
-    async getCommits(_limit?: number) {
-      return [{ message: 'test commit', sha: 'abc1234', date: '2025-01-01T00:00:00Z' }];
-    },
-
-    async validateConnection() {
-      return true;
-    },
-
-    async listDecks() {
-      return [...new Set(initialCards.map((c) => c.deckName))];
-    },
-  };
-  return mock;
-}
-
-let nextOrder = 0;
-function makeCard(term: string, deckName = 'test-deck', overrides: Partial<CardData> = {}): CardData {
-  return {
-    deckName,
-    term,
-    back: `${term}-translation`,
-    created: '2025-01-01T00:00:00Z',
-    reversible: false,
-    order: nextOrder++,
-    state: null,
-    reverseState: null,
-    ...overrides,
-  };
-}
+  })),
+}));
 
 // Mock CardRepository
 const mockCardsStore: Map<string, CardData & { id: string }> = new Map();
@@ -87,31 +93,9 @@ vi.mock('../../src/services/card-repository', () => ({
   makeCardId: (deckName: string, term: string) => `${deckName}|${term}`,
 }));
 
-// We need to mock RxDB for settings access only
-const mockSettings = {
-  repoUrl: 'https://github.com/test/repo',
-  token: 'test-token',
-  newCardsPerDay: 10,
-  reviewOrder: 'random',
-  theme: 'system',
-};
-
-vi.mock('../../src/services/rxdb', () => ({
-  getDatabaseSync: vi.fn(() => ({
-    settings: {
-      findOne: vi.fn(() => ({
-        exec: vi.fn(async () => ({
-          toJSON: () => mockSettings,
-        })),
-      })),
-    },
-  })),
-}));
-
 vi.mock('../../src/hooks/useSettings', () => ({
   defaultSettings: {
-    repoUrl: '',
-    token: '',
+    id: 'settings',
     newCardsPerDay: 10,
     reviewOrder: 'random',
     theme: 'system',
@@ -124,33 +108,63 @@ Object.defineProperty(globalThis, 'navigator', {
   writable: true,
 });
 
-import { setServiceFactory, runSync, notifyChange, cancelSync } from '../../src/services/replication';
+import { setStorageService, runSync, notifyChange, cancelSync } from '../../src/services/replication';
 
-describe('Replication with mocked GitStorageService', () => {
+let nextOrder = 0;
+function makeCard(term: string, deckName = 'test-deck', overrides: Partial<CardData> = {}): CardData {
+  return {
+    deckName,
+    term,
+    back: `${term}-translation`,
+    created: '2025-01-01T00:00:00Z',
+    reversible: false,
+    order: nextOrder++,
+    state: null,
+    reverseState: null,
+    ...overrides,
+  };
+}
+
+describe('Replication with SupabaseStorageService', () => {
+  let mockStorage: SupabaseStorageService;
+  let storedCards: CardData[];
+
   beforeEach(async () => {
     vi.useFakeTimers();
     await cancelSync();
     mockCardsStore.clear();
     vi.mocked(mockCardRepository.replaceAll).mockClear();
     vi.mocked(mockCardRepository.getCardDataByIds).mockClear();
+    mockUpsert.mockClear();
+    storedCards = [];
+
+    // Create a mock storage service
+    mockStorage = {
+      pullAllCards: vi.fn(async () => storedCards),
+      pushCards: vi.fn(async (cards: CardData[]) => { storedCards = cards; }),
+      pushReviewLogs: vi.fn(async () => {}),
+      pushSettings: vi.fn(async () => {}),
+      pullSettings: vi.fn(async () => null),
+      pullReviewLogs: vi.fn(async () => []),
+    } as any;
+
+    setStorageService(mockStorage);
   });
 
   afterEach(() => {
-    setServiceFactory(null as any);
+    setStorageService(null);
     vi.useRealTimers();
   });
 
   it('runSync pulls and replaces cards via repository', async () => {
-    const seedCards = [
+    storedCards = [
       makeCard('hello', 'spanish'),
       makeCard('world', 'spanish'),
     ];
-    const mockService = createMockService(seedCards);
-    setServiceFactory(async () => mockService);
 
     await runSync();
 
-    expect(mockService.pullCallCount).toBe(1);
+    expect(mockStorage.pullAllCards).toHaveBeenCalledTimes(1);
     expect(mockCardRepository.replaceAll).toHaveBeenCalledTimes(1);
 
     const replacedCards = vi.mocked(mockCardRepository.replaceAll).mock.calls[0][0];
@@ -160,14 +174,11 @@ describe('Replication with mocked GitStorageService', () => {
   });
 
   it('runSync populates card store after pull', async () => {
-    const seedCards = [
+    storedCards = [
       makeCard('hello', 'spanish'),
       makeCard('bonjour', 'french'),
     ];
-    const mockService = createMockService(seedCards);
-    setServiceFactory(async () => mockService);
 
-    // Allow replaceAll to actually populate the store
     vi.mocked(mockCardRepository.replaceAll).mockImplementation(async (cards) => {
       mockCardsStore.clear();
       for (const c of cards) {
@@ -184,10 +195,6 @@ describe('Replication with mocked GitStorageService', () => {
   });
 
   it('pushDirtyCards sends correct CardData via service', async () => {
-    const mockService = createMockService();
-    setServiceFactory(async () => mockService);
-
-    // Seed a card in the store
     const card = {
       id: 'deck|hello',
       deckName: 'deck',
@@ -203,7 +210,6 @@ describe('Replication with mocked GitStorageService', () => {
     };
     mockCardsStore.set('deck|hello', card);
 
-    // Re-mock getCardDataByIds to actually use the store
     vi.mocked(mockCardRepository.getCardDataByIds).mockImplementation(async (ids) => {
       const result: CardData[] = [];
       for (const id of ids) {
@@ -218,12 +224,10 @@ describe('Replication with mocked GitStorageService', () => {
 
     notifyChange('deck|hello');
     await vi.advanceTimersByTimeAsync(10_000);
-
-    // Allow promises to settle
     await vi.runAllTimersAsync();
 
-    expect(mockService.pushCardsCalls.length).toBe(1);
-    const pushed = mockService.pushCardsCalls[0];
+    expect(mockStorage.pushCards).toHaveBeenCalledTimes(1);
+    const pushed = vi.mocked(mockStorage.pushCards).mock.calls[0][0];
     expect(pushed).toHaveLength(1);
     expect(pushed[0].term).toBe('hello');
     expect(pushed[0].deckName).toBe('deck');
@@ -231,10 +235,6 @@ describe('Replication with mocked GitStorageService', () => {
   });
 
   it('debounce batches multiple changes into one push', async () => {
-    const mockService = createMockService();
-    setServiceFactory(async () => mockService);
-
-    // Seed cards
     for (const [i, term] of ['a', 'b', 'c'].entries()) {
       const card = {
         id: `deck|${term}`, deckName: 'deck', term,
@@ -264,9 +264,9 @@ describe('Replication with mocked GitStorageService', () => {
     await vi.advanceTimersByTimeAsync(10_000);
     await vi.runAllTimersAsync();
 
-    // Should be 1 pushCards call with all 3 cards
-    expect(mockService.pushCardsCalls.length).toBe(1);
-    expect(mockService.pushCardsCalls[0]).toHaveLength(3);
+    expect(mockStorage.pushCards).toHaveBeenCalledTimes(1);
+    const pushed = vi.mocked(mockStorage.pushCards).mock.calls[0][0];
+    expect(pushed).toHaveLength(3);
   });
 
   it('round-trip: push cards then pull same data back', async () => {
@@ -278,18 +278,8 @@ describe('Replication with mocked GitStorageService', () => {
       reverseState: null,
     });
 
-    // Mock service that remembers pushed cards and returns them on pull
-    let storedCards: CardData[] = [originalCard];
-    const service: GitStorageService = {
-      async pullAllCards() { return storedCards; },
-      async pushCards(cards) { storedCards = cards; },
-      async getCommits() { return []; },
-      async validateConnection() { return true; },
-      async listDecks() { return ['spanish']; },
-    };
-    setServiceFactory(async () => service);
+    storedCards = [originalCard];
 
-    // Track what gets passed to replaceAll
     let replacedCards: CardData[] = [];
     vi.mocked(mockCardRepository.replaceAll).mockImplementation(async (cards) => {
       replacedCards = cards;
@@ -300,10 +290,8 @@ describe('Replication with mocked GitStorageService', () => {
       }
     });
 
-    // Pull
     await runSync();
 
-    // Verify card passed to repository
     expect(replacedCards).toHaveLength(1);
     expect(replacedCards[0].term).toBe('gato');
     expect(replacedCards[0].back).toBe('cat\n\n*El gato*');
