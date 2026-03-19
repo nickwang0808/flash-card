@@ -202,10 +202,12 @@ export class RxDbCardRepository implements CardRepository {
   }
 
   subscribeDeckNames(cb: (names: string[]) => void): () => void {
+    let first = true;
     let prev: string[] = [];
     const sub = this.db.cards.find().$.subscribe((docs) => {
       const names = [...new Set(docs.map((d) => d.deckName))].sort();
-      if (names.length !== prev.length || names.some((n, i) => n !== prev[i])) {
+      if (first || names.length !== prev.length || names.some((n, i) => n !== prev[i])) {
+        first = false;
         prev = names;
         cb(names);
       }

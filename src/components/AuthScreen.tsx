@@ -5,7 +5,7 @@ interface Props {
 }
 
 export function AuthScreen({ onComplete }: Props) {
-  const { signInWithGitHub, isSignedIn, loading: authLoading } = useAuth();
+  const { signInWithGitHub, devSignIn, isSignedIn, loading: authLoading } = useAuth();
 
   // Auto-navigate once signed in
   if (isSignedIn && !authLoading) {
@@ -38,6 +38,14 @@ export function AuthScreen({ onComplete }: Props) {
           >
             Sign in with GitHub
           </button>
+          {import.meta.env.DEV && (
+            <button
+              onClick={devSignIn}
+              className="w-full rounded-md border border-input px-4 py-2 text-sm font-medium hover:bg-accent"
+            >
+              Dev Login (local only)
+            </button>
+          )}
         </div>
       </div>
     </div>

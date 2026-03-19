@@ -47,5 +47,18 @@ export function useAuth() {
     setIsSignedIn(false);
   }, []);
 
-  return { signInWithGitHub, signOut, isSignedIn, loading };
+  // Dev-only: sign in with email/password against local Supabase (no OAuth needed)
+  const devSignIn = useCallback(async () => {
+    const email = 'dev@localhost';
+    const password = 'devdevdev';
+
+    // Try sign in first, fall back to sign up
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      const { error: signUpError } = await supabase.auth.signUp({ email, password });
+      if (signUpError) throw signUpError;
+    }
+  }, []);
+
+  return { signInWithGitHub, devSignIn, signOut, isSignedIn, loading };
 }
