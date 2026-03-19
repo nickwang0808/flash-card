@@ -6,7 +6,6 @@ interface Props {
 
 export function SyncScreen({ onBack }: Props) {
   const [online, setOnline] = useState(navigator.onLine);
-  const [status, setStatus] = useState<string>('');
 
   useEffect(() => {
     const handleOnline = () => setOnline(true);
@@ -18,10 +17,6 @@ export function SyncScreen({ onBack }: Props) {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
-
-  function handleSync() {
-    setStatus('Sync is automatic — data syncs in real-time when online.');
-  }
 
   return (
     <div className="h-dvh overflow-y-auto p-4 max-w-md mx-auto">
@@ -41,19 +36,6 @@ export function SyncScreen({ onBack }: Props) {
         <p className="text-xs text-muted-foreground">
           Changes sync automatically when online. Reviews are always saved locally first.
         </p>
-        {status && (
-          <p className="text-sm text-muted-foreground">{status}</p>
-        )}
-      </div>
-
-      <div className="flex gap-2 mb-8">
-        <button
-          onClick={handleSync}
-          disabled={!online}
-          className="flex-1 rounded-md bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-        >
-          Check Status
-        </button>
       </div>
     </div>
   );

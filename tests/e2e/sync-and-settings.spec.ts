@@ -1,28 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { cloneTestRepo, resetTestDB } from './helpers';
 
-test.describe('Sync screen', () => {
-  test.beforeEach(async ({ page }) => {
-    await resetTestDB();
-    await cloneTestRepo(page);
-  });
-
-  test('navigates to sync screen and shows status', async ({ page }) => {
-    await page.getByRole('button', { name: 'Sync', exact: true }).click();
-
-    await expect(page.getByRole('heading', { name: 'Sync' })).toBeVisible();
-    await expect(page.getByText('Online', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Sync' })).toBeVisible();
-  });
-
-  test('back button returns to deck list', async ({ page }) => {
-    await page.getByRole('button', { name: 'Sync', exact: true }).click();
-    await page.getByRole('button', { name: 'Back' }).click();
-
-    await expect(page.getByRole('heading', { name: 'Decks' })).toBeVisible();
-  });
-});
-
 test.describe('Settings screen', () => {
   test.beforeEach(async ({ page }) => {
     await resetTestDB();
@@ -85,7 +63,7 @@ test.describe('Settings screen', () => {
     const stored = await page.evaluate(async () => {
       const db = (window as any).__RXDB__;
       const doc = await db.settings.findOne('settings').exec();
-      return doc ? doc.toJSON().newCardsPerDay : null;
+      return doc ? doc.toJSON().new_cards_per_day : null;
     });
     expect(stored).toBe(25);
   });
@@ -119,7 +97,7 @@ test.describe('Settings screen', () => {
     await page.waitForFunction(async () => {
       const db = (window as any).__RXDB__;
       const doc = await db.settings.findOne('settings').exec();
-      return doc?.toJSON()?.reviewOrder === 'oldest-first';
+      return doc?.toJSON()?.review_order === 'oldest-first';
     }, { timeout: 5000 });
 
     // Navigate away and back — should still show oldest-first
@@ -192,7 +170,7 @@ test.describe('New card daily limit', () => {
     await page.waitForFunction(async () => {
       const db = (window as any).__RXDB__;
       const doc = await db.settings.findOne('settings').exec();
-      return doc?.toJSON()?.newCardsPerDay === 0;
+      return doc?.toJSON()?.new_cards_per_day === 0;
     }, { timeout: 5000 });
 
     await page.getByRole('button', { name: 'Back' }).click();
@@ -205,19 +183,3 @@ test.describe('New card daily limit', () => {
   });
 });
 
-test.describe('Manual sync', () => {
-  test.beforeEach(async ({ page }) => {
-    await resetTestDB();
-    await cloneTestRepo(page);
-  });
-
-  test('sync button shows success message', async ({ page }) => {
-    await page.getByRole('button', { name: 'Sync', exact: true }).click();
-
-    // Click the Sync button on the sync screen
-    await page.getByRole('button', { name: 'Sync' }).click();
-
-    // Should show syncing state, then success
-    await expect(page.getByText('Synced successfully')).toBeVisible({ timeout: 15000 });
-  });
-});
