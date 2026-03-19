@@ -1,7 +1,20 @@
 import { useState, useEffect } from 'react';
 import { type Card } from 'ts-fsrs';
-import type { CardData } from './git-storage';
 import type { AppDatabase } from './rxdb';
+
+export interface CardData {
+  deckName: string;
+  term: string;              // raw key (TTS-readable)
+  front?: string;            // markdown display for front (defaults to term)
+  back: string;              // markdown display for back
+  tags?: string[];
+  created: string;
+  reversible: boolean;
+  order: number;             // position for stable sort
+  state: Record<string, unknown> | null;
+  reverseState: Record<string, unknown> | null;
+  suspended?: boolean;
+}
 
 // FlashCard: content + FSRS state in one structure (UI contract, deserialized dates)
 export interface FlashCard {

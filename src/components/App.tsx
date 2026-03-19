@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../hooks/useAuth';
-import { runSync, flushSync, startRealtime, stopRealtime } from '../services/replication';
+import { runSync, flushSync } from '../services/replication';
 import { AuthScreen } from './AuthScreen';
 import { DeckListScreen } from './DeckListScreen';
 import { ReviewScreen } from './ReviewScreen';
@@ -32,16 +32,10 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading]);
 
-  // Initial sync + realtime — once after sign-in
+  // Initial sync — once after sign-in
   useEffect(() => {
     if (!isSignedIn) return;
-
     runSync().catch(() => {});
-    startRealtime(() => {
-      runSync().catch(() => {});
-    });
-
-    return () => stopRealtime();
   }, [isSignedIn]);
 
   // Tab hide — flush pending debounced pushes immediately

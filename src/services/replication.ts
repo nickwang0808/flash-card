@@ -4,7 +4,6 @@ import { getCardRepository } from './card-repository';
 import type { StoredReviewLog } from './review-log-repository';
 import { getDatabaseSync } from './rxdb';
 import { defaultSettings } from '../hooks/useSettings';
-import type { Database } from '../types/supabase';
 
 // --- Supabase storage service (singleton) ---
 
@@ -112,6 +111,23 @@ export function notifyReviewLogChange(logId: string): void {
   debounceTimer = setTimeout(flushChanges, DEBOUNCE_MS);
 }
 
+export async function notifySettingsChange(): Promise<void> {
+  if (!(await isConfigured()) || !navigator.onLine) return;
+
+  const storage = getStorage();
+  const db = getDatabaseSync();
+  const doc = await db.settings.findOne('settings').exec();
+  if (!doc) return;
+
+  const s = doc.toJSON();
+  await storage.pushSettings({
+    id: 'settings',
+    newCardsPerDay: s.newCardsPerDay,
+    reviewOrder: s.reviewOrder,
+    theme: s.theme,
+  });
+}
+
 export function flushSync(): void {
   if (dirtyCardIds.size > 0 || dirtyReviewLogIds.size > 0) {
     flushChanges();
@@ -202,29 +218,3 @@ export async function cancelSync(): Promise<void> {
   dirtyReviewLogIds.clear();
 }
 
-// --- Realtime subscription for cards (e.g., AI-generated cards) ---
-
-let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
-
-export function startRealtime(onCardChange?: () => void): void {
-  if (realtimeChannel) return;
-
-  realtimeChannel = supabase
-    .channel('cards-realtime')
-    .on<Database['public']['Tables']['cards']['Row']>(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'cards' },
-      () => {
-        // A card was changed remotely — trigger a full sync
-        onCardChange?.();
-      },
-    )
-    .subscribe();
-}
-
-export function stopRealtime(): void {
-  if (realtimeChannel) {
-    supabase.removeChannel(realtimeChannel);
-    realtimeChannel = null;
-  }
-}

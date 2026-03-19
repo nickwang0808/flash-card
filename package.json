@@ -20,7 +20,6 @@
     "migrate:v2": "npx tsx scripts/migrate-v2.ts"
   },
   "dependencies": {
-    "@octokit/rest": "^22.0.1",
     "@supabase/supabase-js": "^2.95.3",
     "@tailwindcss/vite": "^4.1.18",
     "react": "^18.3.1",

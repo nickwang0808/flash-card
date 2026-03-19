@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb/plugins/core';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { RxDbCardRepository } from '../../src/services/card-repository';
-import type { CardData } from '../../src/services/git-storage';
+import type { CardData } from '../../src/services/card-repository';
 
 // Minimal schema matching the app's cardsSchema (only the cards collection)
 const cardsSchema = {

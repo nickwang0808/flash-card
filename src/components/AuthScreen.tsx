@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 
 interface Props {
@@ -8,10 +9,9 @@ export function AuthScreen({ onComplete }: Props) {
   const { signInWithGitHub, devSignIn, isSignedIn, loading: authLoading } = useAuth();
 
   // Auto-navigate once signed in
-  if (isSignedIn && !authLoading) {
-    // Use setTimeout to avoid calling onComplete during render
-    setTimeout(() => onComplete(), 0);
-  }
+  useEffect(() => {
+    if (isSignedIn && !authLoading) onComplete();
+  }, [isSignedIn, authLoading, onComplete]);
 
   if (authLoading) {
     return (

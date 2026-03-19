@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { CardData } from '../../src/services/git-storage';
+import type { CardData } from '../../src/services/card-repository';
 import type { CardRepository } from '../../src/services/card-repository';
 import { SupabaseStorageService } from '../../src/services/supabase-storage';
 

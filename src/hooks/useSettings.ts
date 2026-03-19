@@ -1,5 +1,6 @@
 import { useRxQuery } from './useRxQuery';
 import { getDatabaseSync, type SettingsDoc } from '../services/rxdb';
+import { notifySettingsChange } from '../services/replication';
 
 interface Settings {
   id: string;
@@ -23,9 +24,10 @@ export function useSettings() {
     ? { ...defaultSettings, ...data[0] } as Settings
     : defaultSettings;
 
-  function update(partial: Partial<Omit<Settings, 'id'>>) {
+  async function update(partial: Partial<Omit<Settings, 'id'>>) {
     const updated = { ...settings, ...partial, id: 'settings' } as SettingsDoc;
-    return db.settings.upsert(updated);
+    await db.settings.upsert(updated);
+    notifySettingsChange().catch(() => {});
   }
 
   async function clear() {

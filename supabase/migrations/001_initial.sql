@@ -206,8 +206,3 @@ create trigger snapshot_card_trigger
   after insert or update on cards
   for each row execute function snapshot_card();
 
--- =============================================================================
--- Realtime: enable for cards table (for AI push notifications)
--- =============================================================================
-
-alter publication supabase_realtime add table cards;

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '../types/supabase';
-import type { CardData } from './git-storage';
+import type { CardData } from './card-repository';
 
 type CardsRow = Database['public']['Tables']['cards']['Row'];
 type SrsStateRow = Database['public']['Tables']['srs_state']['Row'];
@@ -226,9 +226,13 @@ export class SupabaseStorageService {
 
   // --- Private helpers ---
 
+  private cachedUserId: string | null = null;
+
   private async getUserId(): Promise<string> {
+    if (this.cachedUserId) return this.cachedUserId;
     const { data: { user } } = await this.supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
+    this.cachedUserId = user.id;
     return user.id;
   }
 
