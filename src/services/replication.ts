@@ -28,87 +28,26 @@ async function isConfigured(): Promise<boolean> {
   return !!user;
 }
 
-// --- Sync state ---
+// --- Immediate push (fire-and-forget) ---
 
-let syncInProgress: Promise<void> | null = null;
-
-// --- Debounce-based push ---
-
-const dirtyCardIds = new Set<string>();
-const dirtyReviewLogIds = new Set<string>();
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-const DEBOUNCE_MS = 10_000;
-const MAX_BATCH_SIZE = 10;
-
-async function pushDirtyCards(ids: string[]): Promise<void> {
-  if (!(await isConfigured()) || !navigator.onLine) return;
+export function notifyChange(cardId: string): void {
+  if (!navigator.onLine) return;
 
   const storage = getStorage();
   const repo = getCardRepository();
-  const cards = await repo.getCardDataByIds(ids);
-
-  if (cards.length > 0) await storage.pushCards(cards);
-}
-
-async function pushDirtyReviewLogs(ids: string[]): Promise<void> {
-  if (!(await isConfigured()) || !navigator.onLine) return;
-
-  const storage = getStorage();
-  const db = getDatabaseSync();
-
-  const logs: StoredReviewLog[] = [];
-  for (const id of ids) {
-    const doc = await db.reviewlogs.findOne(id).exec();
-    if (doc) logs.push(doc.toJSON() as unknown as StoredReviewLog);
-  }
-
-  if (logs.length > 0) await storage.pushReviewLogs(logs);
-}
-
-function flushChanges(): void {
-  if (debounceTimer) {
-    clearTimeout(debounceTimer);
-    debounceTimer = null;
-  }
-
-  if (syncInProgress) {
-    syncInProgress.finally(() => {
-      if (dirtyCardIds.size > 0 || dirtyReviewLogIds.size > 0) flushChanges();
-    });
-    return;
-  }
-
-  const cardIds = [...dirtyCardIds];
-  const logIds = [...dirtyReviewLogIds];
-  dirtyCardIds.clear();
-  dirtyReviewLogIds.clear();
-
-  if (cardIds.length === 0 && logIds.length === 0) return;
-
-  Promise.all([
-    cardIds.length > 0 ? pushDirtyCards(cardIds) : Promise.resolve(),
-    logIds.length > 0 ? pushDirtyReviewLogs(logIds) : Promise.resolve(),
-  ]).catch(() => {});
-}
-
-export function notifyChange(cardId: string): void {
-  dirtyCardIds.add(cardId);
-  if (dirtyCardIds.size >= MAX_BATCH_SIZE) {
-    flushChanges();
-    return;
-  }
-  if (debounceTimer) clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(flushChanges, DEBOUNCE_MS);
+  repo.getCardDataByIds([cardId]).then((cards) => {
+    if (cards.length > 0) storage.pushCards(cards);
+  }).catch(() => {});
 }
 
 export function notifyReviewLogChange(logId: string): void {
-  dirtyReviewLogIds.add(logId);
-  if (dirtyReviewLogIds.size >= MAX_BATCH_SIZE) {
-    flushChanges();
-    return;
-  }
-  if (debounceTimer) clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(flushChanges, DEBOUNCE_MS);
+  if (!navigator.onLine) return;
+
+  const storage = getStorage();
+  const db = getDatabaseSync();
+  db.reviewlogs.findOne(logId).exec().then((doc) => {
+    if (doc) storage.pushReviewLogs([doc.toJSON() as unknown as StoredReviewLog]);
+  }).catch(() => {});
 }
 
 export async function notifySettingsChange(): Promise<void> {
@@ -128,13 +67,9 @@ export async function notifySettingsChange(): Promise<void> {
   });
 }
 
-export function flushSync(): void {
-  if (dirtyCardIds.size > 0 || dirtyReviewLogIds.size > 0) {
-    flushChanges();
-  }
-}
+// --- Full sync (pull from Supabase → replace local) ---
 
-// --- Full sync ---
+let syncInProgress: Promise<void> | null = null;
 
 export async function runSync(): Promise<void> {
   if (!(await isConfigured()) || !navigator.onLine) return;
@@ -152,22 +87,6 @@ export async function runSync(): Promise<void> {
 async function doSync(): Promise<void> {
   const storage = getStorage();
   const repo = getCardRepository();
-
-  // Flush any pending pushes first
-  if (dirtyCardIds.size > 0 || dirtyReviewLogIds.size > 0) {
-    const cardIds = [...dirtyCardIds];
-    const logIds = [...dirtyReviewLogIds];
-    dirtyCardIds.clear();
-    dirtyReviewLogIds.clear();
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
-    await Promise.all([
-      cardIds.length > 0 ? pushDirtyCards(cardIds) : Promise.resolve(),
-      logIds.length > 0 ? pushDirtyReviewLogs(logIds) : Promise.resolve(),
-    ]);
-  }
 
   // Pull cards
   const cards = await storage.pullAllCards();
@@ -210,11 +129,9 @@ async function doSync(): Promise<void> {
 }
 
 export async function cancelSync(): Promise<void> {
-  if (debounceTimer) {
-    clearTimeout(debounceTimer);
-    debounceTimer = null;
-  }
-  dirtyCardIds.clear();
-  dirtyReviewLogIds.clear();
+  // No-op — pushes are immediate now, nothing to cancel
 }
 
+// flushSync kept for API compatibility (tab-hide handler in App.tsx)
+// but is a no-op since pushes are immediate
+export function flushSync(): void {}

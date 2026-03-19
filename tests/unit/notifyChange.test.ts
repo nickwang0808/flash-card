@@ -1,17 +1,20 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock Supabase client — auth.getUser returns null by default (not configured)
-const mockGetUser = vi.fn(() => Promise.resolve({ data: { user: null }, error: null }));
+// Mock Supabase client
 const mockUpsert = vi.fn(() => Promise.resolve({ error: null }));
 vi.mock('../../src/services/supabase', () => ({
   supabase: {
-    auth: { getUser: () => mockGetUser() },
+    auth: { getUser: vi.fn(() => Promise.resolve({ data: { user: null }, error: null })) },
     from: vi.fn(() => ({
       upsert: mockUpsert,
-      select: vi.fn(() => ({ eq: vi.fn(() => ({ eq: vi.fn(() => ({ data: [], error: null })) })) })),
+      select: vi.fn(() => {
+        const chain: any = {};
+        chain.eq = vi.fn(() => chain);
+        chain.limit = vi.fn(() => chain);
+        chain.maybeSingle = vi.fn(() => Promise.resolve({ data: null, error: null }));
+        return chain;
+      }),
     })),
-    channel: vi.fn(() => ({ on: vi.fn(() => ({ subscribe: vi.fn() })), subscribe: vi.fn() })),
-    removeChannel: vi.fn(),
   },
 }));
 
@@ -19,20 +22,24 @@ vi.mock('../../src/services/rxdb', () => ({
   getDatabaseSync: vi.fn(() => ({
     reviewlogs: {
       findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })),
-      find: vi.fn(() => ({ remove: vi.fn(() => Promise.resolve()) })),
-      bulkInsert: vi.fn(() => Promise.resolve()),
-    },
-    settings: {
-      findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve(null)) })),
-      upsert: vi.fn(() => Promise.resolve()),
     },
   })),
 }));
 
 const mockGetCardDataByIds = vi.fn(() => Promise.resolve([]));
+const mockPushCards = vi.fn(() => Promise.resolve());
+const mockPushReviewLogs = vi.fn(() => Promise.resolve());
+
 vi.mock('../../src/services/card-repository', () => ({
   getCardRepository: vi.fn(() => ({
     getCardDataByIds: mockGetCardDataByIds,
+  })),
+}));
+
+vi.mock('../../src/services/supabase-storage', () => ({
+  SupabaseStorageService: vi.fn().mockImplementation(() => ({
+    pushCards: mockPushCards,
+    pushReviewLogs: mockPushReviewLogs,
   })),
 }));
 
@@ -46,91 +53,49 @@ vi.mock('../../src/hooks/useSettings', () => ({
 }));
 
 import {
-  notifyChange, flushSync, cancelSync,
+  notifyChange, cancelSync,
 } from '../../src/services/replication';
 
-describe('notifyChange debounce', () => {
+describe('notifyChange immediate push', () => {
   beforeEach(async () => {
-    vi.useFakeTimers();
     await cancelSync();
-    mockGetUser.mockClear();
-    mockUpsert.mockClear();
     mockGetCardDataByIds.mockClear();
-    // Default: not configured (null user) so pushDirtyCards exits early
-    mockGetUser.mockImplementation(() => Promise.resolve({ data: { user: null }, error: null }));
-    mockGetCardDataByIds.mockImplementation(() => Promise.resolve([]));
+    mockPushCards.mockClear();
+    mockPushReviewLogs.mockClear();
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
+  it('pushes card immediately on notifyChange', async () => {
+    mockGetCardDataByIds.mockImplementation((async () => [
+      { deckName: 'deck', term: 'hello', back: 'hi', tags: [], created: '2025-01-01', reversible: false, order: 0, state: null, reverseState: null },
+    ]) as any);
+
+    notifyChange('deck|hello');
+
+    // Wait for the fire-and-forget promise to settle
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockGetCardDataByIds).toHaveBeenCalledWith(['deck|hello']);
+    expect(mockPushCards).toHaveBeenCalledTimes(1);
   });
 
-  // pushDirtyCards calls isConfigured → supabase.auth.getUser. We use its call count
-  // as evidence that the push was triggered.
-  function pushCallCount() {
-    return mockGetUser.mock.calls.length;
-  }
+  it('does not push when offline', async () => {
+    const original = navigator.onLine;
+    Object.defineProperty(navigator, 'onLine', { value: false, writable: true });
 
-  it('debounce resets on each call, fires once after idle', async () => {
-    notifyChange('card-1');
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(pushCallCount()).toBe(0);
+    notifyChange('deck|hello');
+    await new Promise((r) => setTimeout(r, 50));
 
-    notifyChange('card-1'); // reset timer (same card, deduped in Set)
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(pushCallCount()).toBe(0);
+    expect(mockGetCardDataByIds).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(5_000); // 10s after second call — fires
-    expect(pushCallCount()).toBeGreaterThanOrEqual(1);
+    Object.defineProperty(navigator, 'onLine', { value: original, writable: true });
   });
 
-  it('max batch (10 changes) triggers immediate flush', async () => {
-    for (let i = 0; i < 9; i++) {
-      notifyChange(`card-${i}`);
-    }
-    await vi.advanceTimersByTimeAsync(0);
-    expect(pushCallCount()).toBe(0);
+  it('does not push when card not found', async () => {
+    mockGetCardDataByIds.mockImplementation(async () => []);
 
-    notifyChange('card-9'); // 10th unique card — immediate flush
-    await vi.advanceTimersByTimeAsync(0);
-    expect(pushCallCount()).toBeGreaterThanOrEqual(1);
-  });
+    notifyChange('deck|missing');
+    await new Promise((r) => setTimeout(r, 50));
 
-  it('dirty set resets after flush', async () => {
-    for (let i = 0; i < 10; i++) {
-      notifyChange(`card-${i}`);
-    }
-    await vi.advanceTimersByTimeAsync(0);
-    expect(pushCallCount()).toBeGreaterThanOrEqual(1);
-
-    mockGetUser.mockClear();
-
-    for (let i = 10; i < 20; i++) {
-      notifyChange(`card-${i}`);
-    }
-    await vi.advanceTimersByTimeAsync(0);
-    expect(pushCallCount()).toBeGreaterThanOrEqual(1);
-  });
-
-  it('flushSync triggers push when dirty cards exist', async () => {
-    notifyChange('card-1');
-    flushSync();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(pushCallCount()).toBeGreaterThanOrEqual(1);
-  });
-
-  it('flushSync is a no-op when no dirty cards', async () => {
-    flushSync();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(pushCallCount()).toBe(0);
-  });
-
-  it('cancelSync cleans up timer and dirty set', async () => {
-    notifyChange('card-1');
-    await cancelSync();
-    mockGetUser.mockClear();
-
-    await vi.advanceTimersByTimeAsync(15_000);
-    expect(pushCallCount()).toBe(0);
+    expect(mockPushCards).not.toHaveBeenCalled();
   });
 });
