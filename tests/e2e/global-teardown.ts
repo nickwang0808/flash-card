@@ -1,8 +1,7 @@
-import { cleanupTestRepo, stopServer } from './test-server';
+import { cleanupTestData } from './test-server';
 
 async function globalTeardown() {
-  await stopServer();
-  cleanupTestRepo();
+  await cleanupTestData();
 }
 
 export default globalTeardown;

@@ -50,11 +50,11 @@ export function SettingsScreen({ onBack }: Props) {
           <label className="block text-sm font-medium mb-1">New cards per day</label>
           <input
             type="number"
-            min={1}
+            min={0}
             value={settings.newCardsPerDay}
             onChange={(e) => {
               const val = Math.floor(Number(e.target.value));
-              if (val >= 1) update({ newCardsPerDay: val });
+              if (val >= 0) update({ newCardsPerDay: val });
             }}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
