@@ -838,8 +838,8 @@ describe('rateCard', () => {
 
     expect(mockInsert).toHaveBeenCalledTimes(1);
     const insertedLog = (mockInsert.mock.calls as any[][])[0][0];
-    expect(insertedLog.cardId).toBe('test-deck|hello');
-    expect(insertedLog.isReverse).toBe(false);
+    expect(insertedLog.card_id).toBe('test-deck|hello');
+    expect(insertedLog.is_reverse).toBe(false);
     expect(insertedLog.rating).toBe(Rating.Good);
   });
 });
@@ -874,10 +874,12 @@ vi.mock('../../src/services/review-log-repository', async (importOriginal) => {
   };
 });
 
-vi.mock('../../src/services/replication', () => ({
-  notifyChange: vi.fn(),
-  notifyReviewLogChange: vi.fn(),
-  cancelSync: vi.fn(),
+vi.mock('../../src/services/rxdb', () => ({
+  getDatabaseSync: vi.fn(() => ({
+    cards: {
+      findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })),
+    },
+  })),
 }));
 
 vi.mock('../../src/hooks/useSettings', () => ({
@@ -1479,8 +1481,9 @@ describe('Undo', () => {
     const direction = opts.isReverse ? 'reverse' : 'forward';
     return {
       id: `${cardId}:${direction}:${ts}`,
-      cardId,
-      isReverse: opts.isReverse ?? false,
+      user_id: 'test-user',
+      card_id: cardId,
+      is_reverse: opts.isReverse ?? false,
       rating: opts.rating ?? Rating.Good,
       state: opts.state ?? 0,
       due: new Date().toISOString(),
@@ -1779,8 +1782,9 @@ describe('Undo', () => {
       const cards = [{ ...createFlashCard('card-a'), state: state2 }];
       const logs = [{
         id: `test-deck|card-a:forward:2000`,
-        cardId: 'test-deck|card-a',
-        isReverse: false,
+        user_id: 'test-user',
+        card_id: 'test-deck|card-a',
+        is_reverse: false,
         rating: log2.rating,
         state: log2.state, // state > 0 (not New)
         due: log2.due.toISOString(),
@@ -1881,8 +1885,8 @@ describe('rateCardSuperEasy', () => {
     expect(log.state).toBe(State.New);      // 0 — ensures undo path restores to null
     expect(log.rating).toBe(Rating.Easy);   // 4
     expect(log.scheduled_days).toBe(60);
-    expect(log.cardId).toBe('test-deck|hola');
-    expect(log.isReverse).toBe(false);
+    expect(log.card_id).toBe('test-deck|hola');
+    expect(log.is_reverse).toBe(false);
   });
 
   it('schedules the card 60 days out with Review state', async () => {
@@ -1956,7 +1960,7 @@ describe('rateCardSuperEasy', () => {
     await rateCardSuperEasy(card);
 
     const log = (mockInsert.mock.calls as any[][])[0][0];
-    expect(log.isReverse).toBe(true);
+    expect(log.is_reverse).toBe(true);
     expect(log.id).toContain('reverse');
   });
 });

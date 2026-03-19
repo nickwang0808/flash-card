@@ -1,7 +1,6 @@
 import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../hooks/useAuth';
 import { destroyDatabase } from '../services/rxdb';
-import { cancelSync } from '../services/replication';
 
 interface Props {
   onBack: () => void;
@@ -14,9 +13,6 @@ export function SettingsScreen({ onBack }: Props) {
 
   async function handleLogout() {
     if (!confirm('Clear all local data and log out?')) return;
-    try {
-      await cancelSync();
-    } catch (_) { /* best-effort */ }
     try {
       await signOut();
     } catch (_) { /* best-effort */ }

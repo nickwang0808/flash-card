@@ -1,53 +1,78 @@
 import { createRxDatabase, type RxDatabase, type RxCollection } from 'rxdb/plugins/core';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 
-// Schema for cards collection
-// FSRS state/reverseState stored as free-form objects (dates as ISO strings)
+// All schemas mirror Postgres tables 1:1 (snake_case) for replicateSupabase.
+// _deleted is handled by RxDB replication protocol (not in schema).
+// _modified is server-managed (not in schema).
+
 const cardsSchema = {
   version: 0,
   primaryKey: 'id',
   type: 'object',
   properties: {
-    id: { type: 'string', maxLength: 300 },          // "deckName|term"
-    deckName: { type: 'string', maxLength: 100 },
-    term: { type: 'string', maxLength: 200 },        // raw key (TTS-readable)
-    front: { type: 'string' },                        // markdown (optional, defaults to term)
-    back: { type: 'string' },                         // markdown
-    tags: { type: 'array', items: { type: 'string' } },
+    id: { type: 'string', maxLength: 300 },
+    user_id: { type: 'string', maxLength: 100 },
+    deck_name: { type: 'string', maxLength: 100 },
+    term: { type: 'string', maxLength: 200 },
+    front: { type: 'string' },
+    back: { type: 'string' },
+    tags: { type: 'string' },                        // JSON string, e.g. '["animal"]'
     created: { type: 'string' },
     reversible: { type: 'boolean' },
-    order: { type: 'number' },                           // position in cards.json
-    state: {},                                         // FSRS Card (free-form JSON)
-    reverseState: {},                                  // FSRS Card (free-form JSON)
+    order: { type: 'number' },
     suspended: { type: 'boolean' },
+    approved: { type: 'boolean' },
   },
-  required: ['id', 'deckName', 'term', 'back', 'created', 'reversible', 'order'],
-  indexes: ['deckName'],
+  required: ['id', 'user_id', 'deck_name', 'term', 'back', 'created'],
+  indexes: ['deck_name'],
 } as const;
 
-// Schema for settings collection
+const srsStateSchema = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id: { type: 'string', maxLength: 300 },           // "cardId:direction"
+    user_id: { type: 'string', maxLength: 100 },
+    card_id: { type: 'string', maxLength: 300 },
+    direction: { type: 'string', maxLength: 10 },     // 'forward' or 'reverse'
+    due: { type: 'string' },
+    stability: { type: 'number' },
+    difficulty: { type: 'number' },
+    elapsed_days: { type: 'number' },
+    scheduled_days: { type: 'number' },
+    reps: { type: 'number' },
+    lapses: { type: 'number' },
+    state: { type: 'number' },
+    last_review: { type: 'string' },
+  },
+  required: ['id', 'user_id', 'card_id', 'direction'],
+  indexes: ['card_id'],
+} as const;
+
 const settingsSchema = {
   version: 0,
   primaryKey: 'id',
   type: 'object',
   properties: {
     id: { type: 'string', maxLength: 100 },
-    newCardsPerDay: { type: 'number' },
-    reviewOrder: { type: 'string', maxLength: 50 },
+    user_id: { type: 'string', maxLength: 100 },
+    new_cards_per_day: { type: 'number' },
+    review_order: { type: 'string', maxLength: 50 },
     theme: { type: 'string', maxLength: 20 },
   },
-  required: ['id'],
+  required: ['id', 'user_id'],
 } as const;
 
-// Schema for review logs collection
 const reviewLogsSchema = {
   version: 0,
   primaryKey: 'id',
   type: 'object',
   properties: {
     id: { type: 'string', maxLength: 300 },
-    cardId: { type: 'string', maxLength: 300 },
-    isReverse: { type: 'boolean' },
+    user_id: { type: 'string', maxLength: 100 },
+    card_id: { type: 'string', maxLength: 300 },
+    is_reverse: { type: 'boolean' },
     rating: { type: 'number' },
     state: { type: 'number' },
     due: { type: 'string' },
@@ -58,35 +83,55 @@ const reviewLogsSchema = {
     scheduled_days: { type: 'number' },
     review: { type: 'string' },
   },
-  required: ['id', 'cardId'],
+  required: ['id', 'user_id', 'card_id'],
 } as const;
+
+// --- Doc types (mirror Postgres rows) ---
 
 export type CardDoc = {
   id: string;
-  deckName: string;
+  user_id: string;
+  deck_name: string;
   term: string;
   front?: string;
   back: string;
-  tags?: string[];
+  tags?: string;              // JSON string
   created: string;
   reversible: boolean;
   order: number;
-  state: Record<string, unknown> | null;
-  reverseState: Record<string, unknown> | null;
   suspended?: boolean;
+  approved?: boolean;
+};
+
+export type SrsStateDoc = {
+  id: string;
+  user_id: string;
+  card_id: string;
+  direction: string;
+  due?: string;
+  stability?: number;
+  difficulty?: number;
+  elapsed_days?: number;
+  scheduled_days?: number;
+  reps?: number;
+  lapses?: number;
+  state?: number;
+  last_review?: string;
 };
 
 export type SettingsDoc = {
   id: string;
-  newCardsPerDay: number;
-  reviewOrder: string;
+  user_id: string;
+  new_cards_per_day: number;
+  review_order: string;
   theme: string;
 };
 
 export type ReviewLogDoc = {
   id: string;
-  cardId: string;
-  isReverse: boolean;
+  user_id: string;
+  card_id: string;
+  is_reverse: boolean;
   rating: number;
   state: number;
   due: string;
@@ -100,8 +145,9 @@ export type ReviewLogDoc = {
 
 export type AppDatabase = RxDatabase<{
   cards: RxCollection<CardDoc>;
+  srs_state: RxCollection<SrsStateDoc>;
   settings: RxCollection<SettingsDoc>;
-  reviewlogs: RxCollection<ReviewLogDoc>;
+  review_logs: RxCollection<ReviewLogDoc>;
 }>;
 
 let dbPromise: Promise<AppDatabase> | null = null;
@@ -110,8 +156,9 @@ let dbInstance: AppDatabase | null = null;
 async function createAndSetup(): Promise<AppDatabase> {
   const db = await createRxDatabase<{
     cards: RxCollection<CardDoc>;
+    srs_state: RxCollection<SrsStateDoc>;
     settings: RxCollection<SettingsDoc>;
-    reviewlogs: RxCollection<ReviewLogDoc>;
+    review_logs: RxCollection<ReviewLogDoc>;
   }>({
     name: 'flashcarddb',
     storage: getRxStorageDexie(),
@@ -120,8 +167,9 @@ async function createAndSetup(): Promise<AppDatabase> {
   });
   await db.addCollections({
     cards: { schema: cardsSchema },
+    srs_state: { schema: srsStateSchema },
     settings: { schema: settingsSchema },
-    reviewlogs: { schema: reviewLogsSchema },
+    review_logs: { schema: reviewLogsSchema },
   });
   dbInstance = db;
   return db;

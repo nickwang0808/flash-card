@@ -1,32 +1,19 @@
 import { useState, useEffect } from 'react';
+import { combineLatest } from 'rxjs';
 import { type Card } from 'ts-fsrs';
-import type { AppDatabase } from './rxdb';
+import type { AppDatabase, CardDoc, SrsStateDoc } from './rxdb';
 
-export interface CardData {
-  deckName: string;
-  term: string;              // raw key (TTS-readable)
-  front?: string;            // markdown display for front (defaults to term)
-  back: string;              // markdown display for back
-  tags?: string[];
-  created: string;
-  reversible: boolean;
-  order: number;             // position for stable sort
-  state: Record<string, unknown> | null;
-  reverseState: Record<string, unknown> | null;
-  suspended?: boolean;
-}
-
-// FlashCard: content + FSRS state in one structure (UI contract, deserialized dates)
+// FlashCard: UI contract with camelCase and deserialized FSRS dates
 export interface FlashCard {
-  id: string;                  // composite key: "deckName|term"
+  id: string;
   deckName: string;
-  term: string;                // raw key (TTS-readable)
-  front?: string;              // markdown display for front (defaults to term)
-  back: string;                // markdown display for back
+  term: string;
+  front?: string;
+  back: string;
   tags?: string[];
   created: string;
   reversible: boolean;
-  order: number;               // position in cards.json (for stable sort)
+  order: number;
   state: Card | null;
   reverseState: Card | null;
   suspended?: boolean;
@@ -36,21 +23,11 @@ export interface CardRepository {
   getById(id: string): Promise<FlashCard | null>;
   getAll(): Promise<FlashCard[]>;
   getDeckNames(): Promise<string[]>;
-
   updateState(id: string, field: 'state' | 'reverseState', value: Record<string, unknown> | null): Promise<void>;
   suspend(id: string): Promise<void>;
-  replaceAll(cards: CardData[]): Promise<void>;
-
-  getCardDataByIds(ids: string[]): Promise<CardData[]>;
 }
 
-// --- Composite key helpers ---
-
-function makeCardId(deckName: string, term: string): string {
-  return `${deckName}|${term}`;
-}
-
-// --- Date serialization for FSRS Card objects ---
+// --- FSRS date serialization ---
 
 interface CardStateJSON extends Omit<Card, 'due' | 'last_review'> {
   due: string;
@@ -65,7 +42,6 @@ function parseCardState(json: CardStateJSON): Card {
   } as Card;
 }
 
-// Serialize FSRS Card for RxDB storage (Dates -> ISO strings)
 export function serializeFsrsCard(card: Card): Record<string, unknown> {
   return {
     due: card.due.toISOString(),
@@ -80,64 +56,45 @@ export function serializeFsrsCard(card: Card): Record<string, unknown> {
   };
 }
 
-function deserializeCardDates(card: FlashCard): FlashCard {
+// --- Join card doc + srs_state docs → FlashCard ---
+
+function srsDocToCard(doc: SrsStateDoc): Card | null {
+  if (!doc.due) return null;
+  return parseCardState({
+    due: doc.due,
+    stability: doc.stability ?? 0,
+    difficulty: doc.difficulty ?? 0,
+    elapsed_days: doc.elapsed_days ?? 0,
+    scheduled_days: doc.scheduled_days ?? 0,
+    reps: doc.reps ?? 0,
+    lapses: doc.lapses ?? 0,
+    state: doc.state ?? 0,
+    last_review: doc.last_review,
+  } as CardStateJSON);
+}
+
+function joinToFlashCard(
+  card: CardDoc,
+  forwardSrs?: SrsStateDoc,
+  reverseSrs?: SrsStateDoc,
+): FlashCard {
   return {
-    ...card,
-    state: card.state ? parseCardState(card.state as any) : null,
-    reverseState: card.reverseState ? parseCardState(card.reverseState as any) : null,
+    id: card.id,
+    deckName: card.deck_name,
+    term: card.term,
+    front: card.front || undefined,
+    back: card.back,
+    tags: card.tags ? JSON.parse(card.tags) : undefined,
+    created: card.created,
+    reversible: card.reversible ?? false,
+    order: card.order ?? 0,
+    state: forwardSrs ? srsDocToCard(forwardSrs) : null,
+    reverseState: reverseSrs ? srsDocToCard(reverseSrs) : null,
+    suspended: card.suspended,
   };
 }
 
 // --- RxDB implementation ---
-
-// Internal type matching RxDB card document shape
-type CardDoc = {
-  id: string;
-  deckName: string;
-  term: string;
-  front?: string;
-  back: string;
-  tags?: string[];
-  created: string;
-  reversible: boolean;
-  order: number;
-  state: Record<string, unknown> | null;
-  reverseState: Record<string, unknown> | null;
-  suspended?: boolean;
-};
-
-function docToFlashCard(doc: CardDoc): FlashCard {
-  return deserializeCardDates({
-    id: doc.id,
-    deckName: doc.deckName,
-    term: doc.term,
-    front: doc.front || undefined,
-    back: doc.back,
-    tags: doc.tags,
-    created: doc.created,
-    reversible: doc.reversible,
-    order: doc.order,
-    state: doc.state as any,
-    reverseState: doc.reverseState as any,
-    suspended: doc.suspended,
-  });
-}
-
-function docToCardData(doc: CardDoc): CardData {
-  return {
-    deckName: doc.deckName,
-    term: doc.term,
-    front: doc.front,
-    back: doc.back,
-    tags: doc.tags,
-    created: doc.created,
-    reversible: doc.reversible,
-    order: doc.order,
-    state: doc.state,
-    reverseState: doc.reverseState,
-    suspended: doc.suspended,
-  };
-}
 
 export class RxDbCardRepository implements CardRepository {
   constructor(private db: AppDatabase) {}
@@ -145,23 +102,63 @@ export class RxDbCardRepository implements CardRepository {
   async getById(id: string): Promise<FlashCard | null> {
     const doc = await this.db.cards.findOne(id).exec();
     if (!doc) return null;
-    return docToFlashCard(doc.toJSON() as CardDoc);
+    const card = doc.toJSON() as CardDoc;
+    const fwd = await this.db.srs_state.findOne(`${id}:forward`).exec();
+    const rev = await this.db.srs_state.findOne(`${id}:reverse`).exec();
+    return joinToFlashCard(
+      card,
+      fwd?.toJSON() as SrsStateDoc | undefined,
+      rev?.toJSON() as SrsStateDoc | undefined,
+    );
   }
 
   async getAll(): Promise<FlashCard[]> {
-    const docs = await this.db.cards.find().exec();
-    return docs.map((d) => docToFlashCard(d.toJSON() as CardDoc));
+    const [cardDocs, srsDocs] = await Promise.all([
+      this.db.cards.find().exec(),
+      this.db.srs_state.find().exec(),
+    ]);
+    const srsMap = new Map<string, SrsStateDoc>();
+    for (const d of srsDocs) srsMap.set(d.id, d.toJSON() as SrsStateDoc);
+
+    return cardDocs.map((d) => {
+      const card = d.toJSON() as CardDoc;
+      return joinToFlashCard(card, srsMap.get(`${card.id}:forward`), srsMap.get(`${card.id}:reverse`));
+    });
   }
 
   async getDeckNames(): Promise<string[]> {
     const docs = await this.db.cards.find().exec();
-    return [...new Set(docs.map((d) => d.deckName))];
+    return [...new Set(docs.map((d) => d.deck_name))];
   }
 
   async updateState(id: string, field: 'state' | 'reverseState', value: Record<string, unknown> | null): Promise<void> {
-    const doc = await this.db.cards.findOne(id).exec();
-    if (doc) {
-      await doc.incrementalPatch({ [field]: value });
+    const direction = field === 'state' ? 'forward' : 'reverse';
+    const srsId = `${id}:${direction}`;
+
+    if (value === null) {
+      // Remove the SRS state (card becomes "new" again)
+      const doc = await this.db.srs_state.findOne(srsId).exec();
+      if (doc) await doc.remove();
+    } else {
+      // Get card to find user_id
+      const card = await this.db.cards.findOne(id).exec();
+      if (!card) return;
+
+      await this.db.srs_state.upsert({
+        id: srsId,
+        user_id: card.user_id,
+        card_id: id,
+        direction,
+        due: value.due as string,
+        stability: value.stability as number,
+        difficulty: value.difficulty as number,
+        elapsed_days: value.elapsed_days as number,
+        scheduled_days: value.scheduled_days as number,
+        reps: value.reps as number,
+        lapses: value.lapses as number,
+        state: value.state as number,
+        last_review: value.last_review as string | undefined,
+      });
     }
   }
 
@@ -172,45 +169,21 @@ export class RxDbCardRepository implements CardRepository {
     }
   }
 
-  async replaceAll(cards: CardData[]): Promise<void> {
-    await this.db.cards.find().remove();
-    if (cards.length > 0) {
-      await this.db.cards.bulkInsert(
-        cards.map((c) => ({
-          id: makeCardId(c.deckName, c.term),
-          deckName: c.deckName,
-          term: c.term,
-          front: c.front || undefined,
-          back: c.back,
-          tags: c.tags ?? [],
-          created: c.created,
-          reversible: c.reversible,
-          order: c.order,
-          state: c.state,
-          reverseState: c.reverseState,
-          suspended: c.suspended ?? false,
-        })),
-      );
-    }
-  }
-
-  async getCardDataByIds(ids: string[]): Promise<CardData[]> {
-    const result: CardData[] = [];
-    for (const id of ids) {
-      const doc = await this.db.cards.findOne(id).exec();
-      if (doc) {
-        result.push(docToCardData(doc.toJSON() as CardDoc));
-      }
-    }
-    return result;
-  }
-
+  // Reactive subscription: joins cards + srs_state via combineLatest
   subscribeCards(deckName: string, cb: (cards: FlashCard[]) => void): () => void {
-    const sub = this.db.cards
-      .find({ selector: { deckName }, sort: [{ order: 'asc' }] })
-      .$.subscribe((docs) => {
-        cb(docs.map((d) => docToFlashCard(d.toJSON() as CardDoc)));
-      });
+    const cards$ = this.db.cards
+      .find({ selector: { deck_name: deckName }, sort: [{ order: 'asc' }] }).$;
+    const srs$ = this.db.srs_state.find().$;
+
+    const sub = combineLatest([cards$, srs$]).subscribe(([cardDocs, srsDocs]) => {
+      const srsMap = new Map<string, SrsStateDoc>();
+      for (const d of srsDocs) srsMap.set(d.id, d.toJSON() as SrsStateDoc);
+
+      cb(cardDocs.map((d) => {
+        const card = d.toJSON() as CardDoc;
+        return joinToFlashCard(card, srsMap.get(`${card.id}:forward`), srsMap.get(`${card.id}:reverse`));
+      }));
+    });
     return () => sub.unsubscribe();
   }
 
@@ -218,7 +191,7 @@ export class RxDbCardRepository implements CardRepository {
     let first = true;
     let prev: string[] = [];
     const sub = this.db.cards.find().$.subscribe((docs) => {
-      const names = [...new Set(docs.map((d) => d.deckName))].sort();
+      const names = [...new Set(docs.map((d) => d.deck_name))].sort();
       if (first || names.length !== prev.length || names.some((n, i) => n !== prev[i])) {
         first = false;
         prev = names;

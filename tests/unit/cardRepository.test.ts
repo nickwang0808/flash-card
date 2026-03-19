@@ -2,42 +2,66 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb/plugins/core';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { RxDbCardRepository } from '../../src/services/card-repository';
-import type { CardData } from '../../src/services/card-repository';
 
-// Minimal schema matching the app's cardsSchema (only the cards collection)
 const cardsSchema = {
   version: 0,
   primaryKey: 'id',
   type: 'object',
   properties: {
     id: { type: 'string', maxLength: 300 },
-    deckName: { type: 'string', maxLength: 100 },
+    user_id: { type: 'string', maxLength: 100 },
+    deck_name: { type: 'string', maxLength: 100 },
     term: { type: 'string', maxLength: 200 },
     front: { type: 'string' },
     back: { type: 'string' },
-    tags: { type: 'array', items: { type: 'string' } },
+    tags: { type: 'string' },
     created: { type: 'string' },
     reversible: { type: 'boolean' },
     order: { type: 'number' },
-    state: {},
-    reverseState: {},
     suspended: { type: 'boolean' },
+    approved: { type: 'boolean' },
   },
-  required: ['id', 'deckName', 'term', 'back', 'created', 'reversible', 'order'],
-  indexes: ['deckName'],
+  required: ['id', 'user_id', 'deck_name', 'term', 'back', 'created'],
+  indexes: ['deck_name'],
 } as const;
 
-function makeCard(term: string, order: number): CardData {
-  return {
-    deckName: 'test-deck',
+const srsStateSchema = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id: { type: 'string', maxLength: 300 },
+    user_id: { type: 'string', maxLength: 100 },
+    card_id: { type: 'string', maxLength: 300 },
+    direction: { type: 'string', maxLength: 10 },
+    due: { type: 'string' },
+    stability: { type: 'number' },
+    difficulty: { type: 'number' },
+    elapsed_days: { type: 'number' },
+    scheduled_days: { type: 'number' },
+    reps: { type: 'number' },
+    lapses: { type: 'number' },
+    state: { type: 'number' },
+    last_review: { type: 'string' },
+  },
+  required: ['id', 'user_id', 'card_id', 'direction'],
+  indexes: ['card_id'],
+} as const;
+
+async function insertCard(db: RxDatabase, term: string, order: number) {
+  await (db as any).cards.insert({
+    id: `test-deck|${term}`,
+    user_id: 'test-user',
+    deck_name: 'test-deck',
     term,
     back: `${term}-back`,
-    created: '2025-01-01T00:00:00Z', // all same timestamp
+    tags: '[]',
+    created: '2025-01-01T00:00:00Z',
     reversible: false,
     order,
-    state: null,
-    reverseState: null,
-  };
+    suspended: false,
+    approved: true,
+  });
 }
 
 describe('RxDbCardRepository integration', () => {
@@ -52,6 +76,7 @@ describe('RxDbCardRepository integration', () => {
     });
     await db.addCollections({
       cards: { schema: cardsSchema },
+      srs_state: { schema: srsStateSchema },
     });
     repo = new RxDbCardRepository(db as any);
   });
@@ -62,19 +87,12 @@ describe('RxDbCardRepository integration', () => {
 
   describe('subscribeCards sorts by order', () => {
     it('returns cards sorted by order, not by primary key or created date', async () => {
-      // Insert cards with same created timestamp but different order values
-      // Use terms whose Unicode order differs from declaration order
-      const cards: CardData[] = [
-        makeCard('一', 0),  // U+4E00
-        makeCard('二', 1),  // U+4E8C
-        makeCard('三', 2),  // U+4E09
-        makeCard('四', 3),  // U+56DB
-        makeCard('五', 4),  // U+4E94
-      ];
+      await insertCard(db, '一', 0);
+      await insertCard(db, '二', 1);
+      await insertCard(db, '三', 2);
+      await insertCard(db, '四', 3);
+      await insertCard(db, '五', 4);
 
-      await repo.replaceAll(cards);
-
-      // Subscribe and collect results
       const result = await new Promise<string[]>((resolve) => {
         repo.subscribeCards('test-deck', (flashCards) => {
           resolve(flashCards.map((c) => c.term));
@@ -85,16 +103,11 @@ describe('RxDbCardRepository integration', () => {
     });
 
     it('handles reverse insertion order correctly', async () => {
-      // Insert cards in reverse order to ensure sorting is by order field, not insertion order
-      const cards: CardData[] = [
-        makeCard('e', 4),
-        makeCard('d', 3),
-        makeCard('c', 2),
-        makeCard('b', 1),
-        makeCard('a', 0),
-      ];
-
-      await repo.replaceAll(cards);
+      await insertCard(db, 'e', 4);
+      await insertCard(db, 'd', 3);
+      await insertCard(db, 'c', 2);
+      await insertCard(db, 'b', 1);
+      await insertCard(db, 'a', 0);
 
       const result = await new Promise<string[]>((resolve) => {
         repo.subscribeCards('test-deck', (flashCards) => {
@@ -105,27 +118,29 @@ describe('RxDbCardRepository integration', () => {
       expect(result).toEqual(['a', 'b', 'c', 'd', 'e']);
     });
 
-    it('preserves order through replaceAll round-trip', async () => {
-      const cards: CardData[] = [
-        makeCard('alpha', 0),
-        makeCard('beta', 1),
-        makeCard('gamma', 2),
-      ];
+    it('joins srs_state into FlashCard state/reverseState', async () => {
+      await insertCard(db, 'hello', 0);
+      await (db as any).srs_state.insert({
+        id: 'test-deck|hello:forward',
+        user_id: 'test-user',
+        card_id: 'test-deck|hello',
+        direction: 'forward',
+        due: '2025-02-01T00:00:00Z',
+        stability: 1.5,
+        difficulty: 5,
+        elapsed_days: 0,
+        scheduled_days: 1,
+        reps: 1,
+        lapses: 0,
+        state: 2,
+      });
 
-      await repo.replaceAll(cards);
-
-      // Read back via getCardDataByIds and verify order is preserved
-      const retrieved = await repo.getCardDataByIds([
-        'test-deck|alpha',
-        'test-deck|beta',
-        'test-deck|gamma',
-      ]);
-
-      expect(retrieved.map((c) => ({ term: c.term, order: c.order }))).toEqual([
-        { term: 'alpha', order: 0 },
-        { term: 'beta', order: 1 },
-        { term: 'gamma', order: 2 },
-      ]);
+      const card = await repo.getById('test-deck|hello');
+      expect(card).not.toBeNull();
+      expect(card!.state).not.toBeNull();
+      expect(card!.state!.stability).toBe(1.5);
+      expect(card!.state!.due).toBeInstanceOf(Date);
+      expect(card!.reverseState).toBeNull();
     });
   });
 });

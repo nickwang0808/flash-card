@@ -127,7 +127,7 @@ async function seedTestCards(userId: string, accessToken: string): Promise<void>
     term,
     front: card.front ?? null,
     back: card.back,
-    tags: card.tags ?? [],
+    tags: JSON.stringify(card.tags ?? []),
     created: card.created,
     reversible: card.reversible ?? false,
     order: index,

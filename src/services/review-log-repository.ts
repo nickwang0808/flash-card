@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import type { AppDatabase } from './rxdb';
 
-// Stored version of ReviewLog with serialized dates
+// Stored version of ReviewLog with snake_case fields (mirrors Postgres)
 export interface StoredReviewLog {
   id: string;                  // cardId:direction:timestamp
-  cardId: string;
-  isReverse: boolean;
+  user_id: string;
+  card_id: string;
+  is_reverse: boolean;
   rating: number;              // Rating enum value
   state: number;               // State enum value
   due: string;                 // ISO date
@@ -29,16 +30,16 @@ export class RxDbReviewLogRepository implements ReviewLogRepository {
   constructor(private db: AppDatabase) {}
 
   async insert(log: StoredReviewLog): Promise<void> {
-    await this.db.reviewlogs.insert(log);
+    await this.db.review_logs.insert(log);
   }
 
   async remove(id: string): Promise<void> {
-    const doc = await this.db.reviewlogs.findOne(id).exec();
+    const doc = await this.db.review_logs.findOne(id).exec();
     if (doc) await doc.remove();
   }
 
   subscribe(cb: (logs: StoredReviewLog[]) => void): () => void {
-    const sub = this.db.reviewlogs.find().$.subscribe((docs) => {
+    const sub = this.db.review_logs.find().$.subscribe((docs) => {
       cb(docs.map((d) => d.toJSON() as unknown as StoredReviewLog));
     });
     return () => sub.unsubscribe();

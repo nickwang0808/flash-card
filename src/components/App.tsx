@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../hooks/useAuth';
-import { runSync, flushSync } from '../services/replication';
+import { supabase } from '../services/supabase';
+import { getDatabaseSync } from '../services/rxdb';
+import { startReplication, cancelReplication } from '../services/supabase-replication';
 import { AuthScreen } from './AuthScreen';
 import { DeckListScreen } from './DeckListScreen';
 import { ReviewScreen } from './ReviewScreen';
@@ -20,6 +22,7 @@ export function App() {
   const { settings, isLoading: settingsLoading } = useSettings();
   const { isSignedIn, loading: authLoading } = useAuth();
   const [screen, setScreen] = useState<Screen>({ name: 'auth' });
+  const replicationRef = useRef<ReturnType<typeof startReplication> | null>(null);
 
   // Set initial screen once auth state is known
   useEffect(() => {
@@ -32,25 +35,30 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading]);
 
-  // Initial sync — once after sign-in
+  // Start/stop replication based on auth state
   useEffect(() => {
-    if (!isSignedIn) return;
-    runSync().catch(() => {});
-  }, [isSignedIn]);
-
-  // Tab hide — flush pending debounced pushes immediately
-  useEffect(() => {
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        flushSync();
+    if (!isSignedIn) {
+      if (replicationRef.current) {
+        cancelReplication(replicationRef.current);
+        replicationRef.current = null;
       }
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
+      return;
+    }
+
+    // Get user ID and start replication
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      const db = getDatabaseSync();
+      replicationRef.current = startReplication(db, supabase, user.id);
+    });
 
     return () => {
-      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (replicationRef.current) {
+        cancelReplication(replicationRef.current);
+        replicationRef.current = null;
+      }
     };
-  }, []);
+  }, [isSignedIn]);
 
   // Apply theme
   useEffect(() => {
@@ -72,7 +80,6 @@ export function App() {
 
   function handleAuthComplete() {
     navigate({ name: 'deck-list' });
-    runSync().catch(() => {});
   }
 
   switch (screen.name) {
