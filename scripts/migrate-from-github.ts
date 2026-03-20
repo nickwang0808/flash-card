@@ -73,7 +73,7 @@ async function migrate() {
     const cardRows = terms.map((term, index) => {
       const card = cardsJson[term];
       return {
-        id: `${deckName}|${term}`,
+        id: `${deckName}::${term}`,
         userId,
         deckName,
         term,
@@ -92,7 +92,7 @@ async function migrate() {
     const srsRows: Array<Record<string, unknown>> = [];
     for (const term of terms) {
       const card = cardsJson[term];
-      const cardId = `${deckName}|${term}`;
+      const cardId = `${deckName}::${term}`;
 
       if (card.state) {
         srsRows.push({

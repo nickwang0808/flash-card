@@ -26,7 +26,7 @@ function createFlashCard(
 ): FlashCard {
   const deckName = opts.deckName ?? 'test-deck';
   return {
-    id: `${deckName}|${term}`,
+    id: `${deckName}::${term}`,
     deckName,
     term,
     front: opts.front,

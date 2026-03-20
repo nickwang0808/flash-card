@@ -3,6 +3,7 @@ import { combineLatest } from 'rxjs';
 import { fsrs, createEmptyCard, Rating, State, type Grade, type Card, type ReviewLog } from 'ts-fsrs';
 import { useRxQuery } from './useRxQuery';
 import { getDatabaseSync, type CardDoc, type SrsStateDoc } from '../services/rxdb';
+import { supabase } from '../services/supabase';
 
 // --- FlashCard: UI contract with deserialized FSRS dates ---
 
@@ -98,12 +99,11 @@ async function updateSrsState(
     const doc = await db.srsState.findOne(srsId).exec();
     if (doc) await doc.remove();
   } else {
-    const card = await db.cards.findOne(cardId).exec();
-    if (!card) return;
+    const userId = await getAuthUserId();
 
     await db.srsState.upsert({
       id: srsId,
-      userId: card.userId,
+      userId,
       cardId,
       direction,
       due: value.due as string,
@@ -242,6 +242,14 @@ export function computeNewState(
   return { card: result.card, log: result.log };
 }
 
+// --- Auth helper ---
+
+async function getAuthUserId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  return user.id;
+}
+
 // --- Rate / Undo / Suspend ---
 
 export async function rateCard(card: StudyItem, rating: Grade): Promise<void> {
@@ -249,8 +257,7 @@ export async function rateCard(card: StudyItem, rating: Grade): Promise<void> {
   const { card: newState, log } = computeNewState(existingState, rating);
 
   const db = getDatabaseSync();
-  const cardDoc = await db.cards.findOne(card.id).exec();
-  const userId = cardDoc?.userId ?? '';
+  const userId = await getAuthUserId();
 
   await db.reviewLogs.insert({
     id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
@@ -279,8 +286,7 @@ export async function rateCardSuperEasy(card: StudyItem, days = 60, now = new Da
   };
 
   const db = getDatabaseSync();
-  const cardDoc = await db.cards.findOne(card.id).exec();
-  const userId = cardDoc?.userId ?? '';
+  const userId = await getAuthUserId();
 
   await db.reviewLogs.insert({
     id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
@@ -370,7 +376,7 @@ export function useDeck(deckName: string) {
     logsList
       .filter((l) => l.state === 0)
       .map((l) => {
-        const term = l.cardId.split('|')[1] ?? l.cardId;
+        const term = l.cardId.split('::')[1] ?? l.cardId;
         return l.isReverse ? `${term}:reverse` : term;
       })
   );

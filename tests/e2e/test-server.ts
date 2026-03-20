@@ -121,7 +121,7 @@ async function seedTestCards(userId: string, accessToken: string): Promise<void>
 
   const deckName = 'spanish-vocab';
   const rows = Object.entries(TEST_CARDS).map(([term, card], index) => ({
-    id: `${deckName}|${term}`,
+    id: `${deckName}::${term}`,
     userId: userId,
     deckName: deckName,
     term,
