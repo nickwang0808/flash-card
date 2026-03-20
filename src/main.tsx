@@ -1,7 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { getDatabase, type AppDatabase } from './services/rxdb';
-import { RxDbCardRepository, setCardRepository } from './services/card-repository';
 import { supabase } from './services/supabase';
 import { App } from './components/App';
 import './styles/main.css';
@@ -25,8 +24,6 @@ root.render(
 
 async function bootstrap() {
   const db = await getDatabase();
-
-  setCardRepository(new RxDbCardRepository(db));
 
   if (import.meta.env.DEV) {
     window.__RXDB__ = db;

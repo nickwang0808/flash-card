@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useDeck } from '../hooks/useDeck';
-import { useDeckNames } from '../services/card-repository';
+import { useDeck, useDeckNames } from '../hooks/useDeck';
 
 interface Props {
   onSelectDeck: (deck: string) => void;
