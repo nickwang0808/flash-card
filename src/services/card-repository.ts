@@ -21,26 +21,11 @@ export interface FlashCard {
 
 export interface CardRepository {
   getById(id: string): Promise<FlashCard | null>;
-  getAll(): Promise<FlashCard[]>;
-  getDeckNames(): Promise<string[]>;
   updateState(id: string, field: 'state' | 'reverseState', value: Record<string, unknown> | null): Promise<void>;
   suspend(id: string): Promise<void>;
 }
 
 // --- FSRS date serialization ---
-
-interface CardStateJSON extends Omit<Card, 'due' | 'last_review'> {
-  due: string;
-  last_review?: string;
-}
-
-function parseCardState(json: CardStateJSON): Card {
-  return {
-    ...json,
-    due: new Date(json.due),
-    last_review: json.last_review ? new Date(json.last_review) : undefined,
-  } as Card;
-}
 
 export function serializeFsrsCard(card: Card): Record<string, unknown> {
   return {
@@ -60,8 +45,8 @@ export function serializeFsrsCard(card: Card): Record<string, unknown> {
 
 function srsDocToCard(doc: SrsStateDoc): Card | null {
   if (!doc.due) return null;
-  return parseCardState({
-    due: doc.due,
+  return {
+    due: new Date(doc.due),
     stability: doc.stability ?? 0,
     difficulty: doc.difficulty ?? 0,
     elapsed_days: doc.elapsed_days ?? 0,
@@ -69,8 +54,8 @@ function srsDocToCard(doc: SrsStateDoc): Card | null {
     reps: doc.reps ?? 0,
     lapses: doc.lapses ?? 0,
     state: doc.state ?? 0,
-    last_review: doc.last_review,
-  } as CardStateJSON);
+    last_review: doc.last_review ? new Date(doc.last_review) : undefined,
+  } as Card;
 }
 
 function joinToFlashCard(
@@ -110,25 +95,6 @@ export class RxDbCardRepository implements CardRepository {
       fwd?.toJSON() as SrsStateDoc | undefined,
       rev?.toJSON() as SrsStateDoc | undefined,
     );
-  }
-
-  async getAll(): Promise<FlashCard[]> {
-    const [cardDocs, srsDocs] = await Promise.all([
-      this.db.cards.find().exec(),
-      this.db.srs_state.find().exec(),
-    ]);
-    const srsMap = new Map<string, SrsStateDoc>();
-    for (const d of srsDocs) srsMap.set(d.id, d.toJSON() as SrsStateDoc);
-
-    return cardDocs.map((d) => {
-      const card = d.toJSON() as CardDoc;
-      return joinToFlashCard(card, srsMap.get(`${card.id}:forward`), srsMap.get(`${card.id}:reverse`));
-    });
-  }
-
-  async getDeckNames(): Promise<string[]> {
-    const docs = await this.db.cards.find().exec();
-    return [...new Set(docs.map((d) => d.deck_name))];
   }
 
   async updateState(id: string, field: 'state' | 'reverseState', value: Record<string, unknown> | null): Promise<void> {

@@ -1,8 +1,8 @@
 import { fsrs, createEmptyCard, Rating, State, type Grade, type Card, type ReviewLog } from 'ts-fsrs';
 import { type FlashCard, useCards, getCardRepository, serializeFsrsCard } from '../services/card-repository';
-import { type StoredReviewLog, useReviewLogs, getReviewLogRepository } from '../services/review-log-repository';
 import { useSettings } from './useSettings';
-import { getDatabaseSync } from '../services/rxdb';
+import { useRxQuery } from './useRxQuery';
+import { getDatabaseSync, type ReviewLogDoc } from '../services/rxdb';
 
 export type StudyItem = FlashCard & { isReverse: boolean };
 
@@ -140,7 +140,7 @@ export async function rateCard(
   const cardDoc = await db.cards.findOne(card.id).exec();
   const userId = cardDoc?.user_id ?? '';
 
-  const storedLog: StoredReviewLog = {
+  const storedLog: ReviewLogDoc = {
     id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
     user_id: userId,
     card_id: card.id,
@@ -155,8 +155,7 @@ export async function rateCard(
     scheduled_days: log.scheduled_days,
     review: log.review.toISOString(),
   };
-  const logRepo = getReviewLogRepository();
-  await logRepo.insert(storedLog);
+  await db.review_logs.insert(storedLog);
 
   const serializedState = serializeFsrsCard(newState);
   const cardRepo = getCardRepository();
@@ -186,7 +185,7 @@ export async function rateCardSuperEasy(
   const cardDoc = await db.cards.findOne(card.id).exec();
   const userId = cardDoc?.user_id ?? '';
 
-  const storedLog: StoredReviewLog = {
+  const storedLog: ReviewLogDoc = {
     id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
     user_id: userId,
     card_id: card.id,
@@ -202,8 +201,7 @@ export async function rateCardSuperEasy(
     review: now.toISOString(),
   };
 
-  const logRepo = getReviewLogRepository();
-  await logRepo.insert(storedLog);
+  await db.review_logs.insert(storedLog);
 
   const serializedState = serializeFsrsCard(newState);
   const cardRepo = getCardRepository();
@@ -215,8 +213,9 @@ export function useDeck(deckName: string) {
   const { settings, isLoading: settingsLoading } = useSettings();
   const newCardsLimit = settings.newCardsPerDay;
 
+  const db = getDatabaseSync();
   const { data: cardsList, isLoading: cardsLoading } = useCards(deckName);
-  const { data: logsList, isLoading: logsLoading } = useReviewLogs();
+  const { data: logsList, isLoading: logsLoading } = useRxQuery(db.review_logs);
 
   const isLoading = cardsLoading || logsLoading || settingsLoading;
 
@@ -283,8 +282,7 @@ export function useDeck(deckName: string) {
 
   async function undo() {
     const sorted = [...logsList].sort(
-      (a: StoredReviewLog, b: StoredReviewLog) =>
-        parseInt(b.id.split(':')[2]) - parseInt(a.id.split(':')[2])
+      (a, b) => parseInt(b.id.split(':')[2]) - parseInt(a.id.split(':')[2])
     );
     const lastLog = sorted[0];
     if (!lastLog) return;
@@ -317,8 +315,8 @@ export function useDeck(deckName: string) {
       await cardRepo.updateState(lastLog.card_id, field, serializeFsrsCard(previousState));
     }
 
-    const logRepo = getReviewLogRepository();
-    await logRepo.remove(lastLog.id);
+    const logDoc = await getDatabaseSync().review_logs.findOne(lastLog.id).exec();
+    if (logDoc) await logDoc.remove();
   }
 
   const canUndo = logsList.length > 0;

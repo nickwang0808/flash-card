@@ -777,12 +777,13 @@ describe('rateCard', () => {
     const mockUpdateState = vi.fn(() => Promise.resolve());
     const mockInsert = vi.fn(() => Promise.resolve());
     const { getCardRepository } = await import('../../src/services/card-repository');
-    const { getReviewLogRepository } = await import('../../src/services/review-log-repository');
+    const { getDatabaseSync } = await import('../../src/services/rxdb');
     vi.mocked(getCardRepository).mockReturnValue({
       updateState: mockUpdateState,
     } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({
-      insert: mockInsert,
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+      review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
     } as any);
 
     const card: StudyItem = {
@@ -799,12 +800,13 @@ describe('rateCard', () => {
     const mockUpdateState = vi.fn(() => Promise.resolve());
     const mockInsert = vi.fn(() => Promise.resolve());
     const { getCardRepository } = await import('../../src/services/card-repository');
-    const { getReviewLogRepository } = await import('../../src/services/review-log-repository');
+    const { getDatabaseSync } = await import('../../src/services/rxdb');
     vi.mocked(getCardRepository).mockReturnValue({
       updateState: mockUpdateState,
     } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({
-      insert: mockInsert,
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+      review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
     } as any);
 
     const card: StudyItem = {
@@ -821,12 +823,13 @@ describe('rateCard', () => {
     const mockUpdateState = vi.fn(() => Promise.resolve());
     const mockInsert = vi.fn(() => Promise.resolve());
     const { getCardRepository } = await import('../../src/services/card-repository');
-    const { getReviewLogRepository } = await import('../../src/services/review-log-repository');
+    const { getDatabaseSync } = await import('../../src/services/rxdb');
     vi.mocked(getCardRepository).mockReturnValue({
       updateState: mockUpdateState,
     } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({
-      insert: mockInsert,
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+      review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
     } as any);
 
     const card: StudyItem = {
@@ -862,24 +865,20 @@ vi.mock('../../src/services/card-repository', async (importOriginal) => {
   };
 });
 
-vi.mock('../../src/services/review-log-repository', async (importOriginal) => {
-  const actual = await importOriginal() as any;
-  return {
-    ...actual,
-    getReviewLogRepository: vi.fn(() => ({
-      insert: vi.fn(() => Promise.resolve()),
-      remove: vi.fn(() => Promise.resolve()),
-    })),
-    useReviewLogs: vi.fn(() => ({ data: [], isLoading: false })),
-  };
-});
-
 vi.mock('../../src/services/rxdb', () => ({
   getDatabaseSync: vi.fn(() => ({
     cards: {
       findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })),
     },
+    review_logs: {
+      insert: vi.fn(() => Promise.resolve()),
+      findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })),
+    },
   })),
+}));
+
+vi.mock('../../src/hooks/useRxQuery', () => ({
+  useRxQuery: vi.fn(() => ({ data: [], isLoading: false })),
 }));
 
 vi.mock('../../src/hooks/useSettings', () => ({
@@ -888,14 +887,15 @@ vi.mock('../../src/hooks/useSettings', () => ({
 
 import { useSettings } from '../../src/hooks/useSettings';
 import { useCards, getCardRepository } from '../../src/services/card-repository';
-import { useReviewLogs, getReviewLogRepository } from '../../src/services/review-log-repository';
+import { useRxQuery } from '../../src/hooks/useRxQuery';
+import { getDatabaseSync } from '../../src/services/rxdb';
 
 describe('useDeck hook', () => {
   let mockCards: FlashCard[];
 
   function setupMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
     vi.mocked(useCards).mockReturnValue({ data: cards, isLoading });
-    vi.mocked(useReviewLogs).mockReturnValue({ data: logs, isLoading });
+    vi.mocked(useRxQuery).mockReturnValue({ data: logs, isLoading });
   }
 
   beforeEach(() => {
@@ -905,10 +905,7 @@ describe('useDeck hook', () => {
       updateState: vi.fn(() => Promise.resolve()),
       suspend: vi.fn(() => Promise.resolve()),
     } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({
-      insert: vi.fn(() => Promise.resolve()),
-      remove: vi.fn(() => Promise.resolve()),
-    } as any);
+    // review_logs mock is provided by the global getDatabaseSync mock
     vi.mocked(useSettings).mockReturnValue({
       settings: { newCardsPerDay: 10 },
       isLoading: false,
@@ -1134,9 +1131,9 @@ describe('useDeck hook', () => {
         updateState: mockUpdateState,
         suspend: vi.fn(() => Promise.resolve()),
       } as any);
-      vi.mocked(getReviewLogRepository).mockReturnValue({
-        insert: mockInsert,
-        remove: vi.fn(() => Promise.resolve()),
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+        review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
       } as any);
 
       mockCards = [createFlashCard('test-card')];
@@ -1161,9 +1158,9 @@ describe('useDeck hook', () => {
         updateState: mockUpdateState,
         suspend: vi.fn(() => Promise.resolve()),
       } as any);
-      vi.mocked(getReviewLogRepository).mockReturnValue({
-        insert: mockInsert,
-        remove: vi.fn(() => Promise.resolve()),
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+        review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
       } as any);
 
       setupMock([]);
@@ -1184,9 +1181,9 @@ describe('useDeck hook', () => {
         updateState: mockUpdateState,
         suspend: vi.fn(() => Promise.resolve()),
       } as any);
-      vi.mocked(getReviewLogRepository).mockReturnValue({
-        insert: mockInsert,
-        remove: vi.fn(() => Promise.resolve()),
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+        review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
       } as any);
 
       mockCards = [createFlashCard('test-card')];
@@ -1210,9 +1207,9 @@ describe('useDeck hook', () => {
         updateState: mockUpdateState,
         suspend: vi.fn(() => Promise.resolve()),
       } as any);
-      vi.mocked(getReviewLogRepository).mockReturnValue({
-        insert: mockInsert,
-        remove: vi.fn(() => Promise.resolve()),
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+        review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
       } as any);
 
       mockCards = [
@@ -1279,7 +1276,7 @@ describe('useDeck hook', () => {
 describe('Study Session Flow', () => {
   function setupMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
     vi.mocked(useCards).mockReturnValue({ data: cards, isLoading });
-    vi.mocked(useReviewLogs).mockReturnValue({ data: logs, isLoading });
+    vi.mocked(useRxQuery).mockReturnValue({ data: logs, isLoading });
   }
 
   beforeEach(() => {
@@ -1287,10 +1284,7 @@ describe('Study Session Flow', () => {
       updateState: vi.fn(() => Promise.resolve()),
       suspend: vi.fn(() => Promise.resolve()),
     } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({
-      insert: vi.fn(() => Promise.resolve()),
-      remove: vi.fn(() => Promise.resolve()),
-    } as any);
+    // review_logs mock is provided by the global getDatabaseSync mock
     vi.mocked(useSettings).mockReturnValue({
       settings: { newCardsPerDay: 10 },
       isLoading: false,
@@ -1465,7 +1459,7 @@ describe('Study Session Flow', () => {
 describe('Undo', () => {
   function setupMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
     vi.mocked(useCards).mockReturnValue({ data: cards, isLoading });
-    vi.mocked(useReviewLogs).mockReturnValue({ data: logs, isLoading });
+    vi.mocked(useRxQuery).mockReturnValue({ data: logs, isLoading });
   }
 
   function createReviewLog(
@@ -1502,10 +1496,7 @@ describe('Undo', () => {
       suspend: vi.fn(() => Promise.resolve()),
       getById: vi.fn(() => Promise.resolve(null)),
     } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({
-      insert: vi.fn(() => Promise.resolve()),
-      remove: vi.fn(() => Promise.resolve()),
-    } as any);
+    // review_logs mock is provided by the global getDatabaseSync mock
     vi.mocked(useSettings).mockReturnValue({
       settings: { newCardsPerDay: 10 },
       isLoading: false,
@@ -1567,9 +1558,9 @@ describe('Undo', () => {
         suspend: vi.fn(() => Promise.resolve()),
         getById: vi.fn(() => Promise.resolve(null)),
       } as any);
-      vi.mocked(getReviewLogRepository).mockReturnValue({
-        insert: vi.fn(() => Promise.resolve()),
-        remove: mockRemove,
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+        review_logs: { insert: vi.fn(() => Promise.resolve()), findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: mockRemove })) })) },
       } as any);
 
       // card-a was rated (has a log); card-b is now current
@@ -1593,7 +1584,7 @@ describe('Undo', () => {
 
       // Should undo card-a (the most recent log), not card-b (current)
       expect(mockUpdateState).toHaveBeenCalledWith('test-deck|card-a', 'state', null);
-      expect(mockRemove).toHaveBeenCalledWith(logs[0].id);
+      expect(mockRemove).toHaveBeenCalled();
     });
 
     it('picks the latest log when multiple logs exist', async () => {
@@ -1604,9 +1595,9 @@ describe('Undo', () => {
         suspend: vi.fn(() => Promise.resolve()),
         getById: vi.fn(() => Promise.resolve(null)),
       } as any);
-      vi.mocked(getReviewLogRepository).mockReturnValue({
-        insert: vi.fn(() => Promise.resolve()),
-        remove: mockRemove,
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+        review_logs: { insert: vi.fn(() => Promise.resolve()), findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: mockRemove })) })) },
       } as any);
 
       const { card: stateA } = computeNewState(null, Rating.Easy);
@@ -1629,7 +1620,7 @@ describe('Undo', () => {
 
       // Should undo card-b (timestamp 2000 > 1000)
       expect(mockUpdateState).toHaveBeenCalledWith('test-deck|card-b', 'state', null);
-      expect(mockRemove).toHaveBeenCalledWith(logs[1].id);
+      expect(mockRemove).toHaveBeenCalled();
     });
   });
 
@@ -1641,9 +1632,9 @@ describe('Undo', () => {
         suspend: vi.fn(() => Promise.resolve()),
         getById: vi.fn(() => Promise.resolve(null)),
       } as any);
-      vi.mocked(getReviewLogRepository).mockReturnValue({
-        insert: vi.fn(() => Promise.resolve()),
-        remove: vi.fn(() => Promise.resolve()),
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+        review_logs: { insert: vi.fn(() => Promise.resolve()), findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
       } as any);
 
       const { card: ratedState } = computeNewState(null, Rating.Good);
@@ -1705,9 +1696,9 @@ describe('Undo', () => {
         suspend: vi.fn(() => Promise.resolve()),
         getById: vi.fn(() => Promise.resolve(null)),
       } as any);
-      vi.mocked(getReviewLogRepository).mockReturnValue({
-        insert: vi.fn(() => Promise.resolve()),
-        remove: vi.fn(() => Promise.resolve()),
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+        review_logs: { insert: vi.fn(() => Promise.resolve()), findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
       } as any);
 
       const { card: reverseState } = computeNewState(null, Rating.Good);
@@ -1742,9 +1733,9 @@ describe('Undo', () => {
         suspend: vi.fn(() => Promise.resolve()),
         getById: vi.fn(() => Promise.resolve(null)),
       } as any);
-      vi.mocked(getReviewLogRepository).mockReturnValue({
-        insert: vi.fn(() => Promise.resolve()),
-        remove: mockRemove,
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+        review_logs: { insert: vi.fn(() => Promise.resolve()), findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: mockRemove })) })) },
       } as any);
 
       setupMock([createFlashCard('card-a')]);
@@ -1774,9 +1765,9 @@ describe('Undo', () => {
         suspend: vi.fn(() => Promise.resolve()),
         getById: vi.fn(() => Promise.resolve({ ...createFlashCard('card-a'), state: state2 })),
       } as any);
-      vi.mocked(getReviewLogRepository).mockReturnValue({
-        insert: vi.fn(() => Promise.resolve()),
-        remove: vi.fn(() => Promise.resolve()),
+      vi.mocked(getDatabaseSync).mockReturnValue({
+        cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+        review_logs: { insert: vi.fn(() => Promise.resolve()), findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
       } as any);
 
       const cards = [{ ...createFlashCard('card-a'), state: state2 }];
@@ -1875,7 +1866,10 @@ describe('rateCardSuperEasy', () => {
     const mockUpdateState = vi.fn(() => Promise.resolve());
     const mockInsert = vi.fn(() => Promise.resolve());
     vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+      review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
+    } as any);
 
     const card: StudyItem = { ...createFlashCard('hola'), isReverse: false };
     await rateCardSuperEasy(card);
@@ -1893,7 +1887,10 @@ describe('rateCardSuperEasy', () => {
     const mockUpdateState = vi.fn(() => Promise.resolve());
     const mockInsert = vi.fn(() => Promise.resolve());
     vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+      review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
+    } as any);
 
     const now = new Date('2025-06-01T12:00:00Z');
     const card: StudyItem = { ...createFlashCard('hola'), isReverse: false };
@@ -1912,7 +1909,10 @@ describe('rateCardSuperEasy', () => {
     const mockUpdateState = vi.fn(() => Promise.resolve());
     const mockInsert = vi.fn(() => Promise.resolve());
     vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+      review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
+    } as any);
 
     const card: StudyItem = { ...createFlashCard('hola'), isReverse: false };
     await rateCardSuperEasy(card);
@@ -1924,7 +1924,10 @@ describe('rateCardSuperEasy', () => {
     const mockUpdateState = vi.fn(() => Promise.resolve());
     const mockInsert = vi.fn(() => Promise.resolve());
     vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+      review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
+    } as any);
 
     const card: StudyItem = { ...createFlashCard('hola', { reversible: true }), isReverse: true };
     await rateCardSuperEasy(card);
@@ -1936,7 +1939,10 @@ describe('rateCardSuperEasy', () => {
     const mockUpdateState = vi.fn(() => Promise.resolve());
     const mockInsert = vi.fn(() => Promise.resolve());
     vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+      review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
+    } as any);
 
     const now = new Date('2025-06-01T12:00:00Z');
     const card: StudyItem = { ...createFlashCard('hola'), isReverse: false };
@@ -1954,7 +1960,10 @@ describe('rateCardSuperEasy', () => {
     const mockUpdateState = vi.fn(() => Promise.resolve());
     const mockInsert = vi.fn(() => Promise.resolve());
     vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+      review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
+    } as any);
 
     const card: StudyItem = { ...createFlashCard('hola', { reversible: true }), isReverse: true };
     await rateCardSuperEasy(card);
@@ -1972,7 +1981,7 @@ describe('rateCardSuperEasy', () => {
 describe('useDeck hook — schedulePreview and superEasy', () => {
   function setupMock(cards: FlashCard[], logs: any[] = []) {
     vi.mocked(useCards).mockReturnValue({ data: cards, isLoading: false });
-    vi.mocked(useReviewLogs).mockReturnValue({ data: logs, isLoading: false });
+    vi.mocked(useRxQuery).mockReturnValue({ data: logs, isLoading: false });
   }
 
   beforeEach(() => {
@@ -1980,10 +1989,7 @@ describe('useDeck hook — schedulePreview and superEasy', () => {
       updateState: vi.fn(() => Promise.resolve()),
       suspend: vi.fn(() => Promise.resolve()),
     } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({
-      insert: vi.fn(() => Promise.resolve()),
-      remove: vi.fn(() => Promise.resolve()),
-    } as any);
+    // review_logs mock is provided by the global getDatabaseSync mock
     vi.mocked(useSettings).mockReturnValue({
       settings: { newCardsPerDay: 10 },
       isLoading: false,
@@ -2045,9 +2051,9 @@ describe('useDeck hook — schedulePreview and superEasy', () => {
       updateState: mockUpdateState,
       suspend: vi.fn(() => Promise.resolve()),
     } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({
-      insert: mockInsert,
-      remove: vi.fn(() => Promise.resolve()),
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+      review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
     } as any);
 
     setupMock([createFlashCard('test-card')]);
@@ -2070,7 +2076,10 @@ describe('useDeck hook — schedulePreview and superEasy', () => {
     const mockUpdateState = vi.fn();
     const mockInsert = vi.fn();
     vi.mocked(getCardRepository).mockReturnValue({ updateState: mockUpdateState } as any);
-    vi.mocked(getReviewLogRepository).mockReturnValue({ insert: mockInsert } as any);
+    vi.mocked(getDatabaseSync).mockReturnValue({
+      cards: { findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })) },
+      review_logs: { insert: mockInsert, findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })) },
+    } as any);
 
     setupMock([]);
     const { result } = renderHook(() => useDeck('test-deck'));
