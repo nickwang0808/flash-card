@@ -1,33 +1,131 @@
-import { replicateSupabase, type RxSupabaseReplicationState } from 'rxdb/plugins/replication-supabase';
+import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/replication';
+import { Subject } from 'rxjs';
+import type { RxCollection, RxReplicationWriteToMasterRow, WithDeleted, RxReplicationPullStreamItem } from 'rxdb/plugins/core';
 import type { AppDatabase } from './rxdb';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-type ReplicationStates = RxSupabaseReplicationState<any>[];
+type Checkpoint = { id: string; modified: string };
+type ReplicationStates = RxReplicationState<any, Checkpoint>[];
+
+function replicate<T>(
+  collection: RxCollection<T>,
+  client: SupabaseClient,
+  tableName: string,
+  userId: string,
+): RxReplicationState<T, Checkpoint> {
+  const primaryPath = collection.schema.primaryPath;
+  const pullStream$ = new Subject<RxReplicationPullStreamItem<T, Checkpoint>>();
+
+  const replicationState = replicateRxCollection<T, Checkpoint>({
+    replicationIdentifier: `${tableName}-supabase`,
+    collection,
+    deletedField: '_deleted',
+    pull: {
+      async handler(lastCheckpoint: Checkpoint | undefined, batchSize: number) {
+        let query = client.from(tableName).select('*').eq('userId', userId);
+
+        if (lastCheckpoint) {
+          // Avoid .or() — PostgREST can't parse special chars (parens, commas) in values.
+          // Instead, just filter by _modified >= checkpoint. This may re-fetch a few docs
+          // from the same timestamp, but RxDB deduplicates by primary key.
+          query = query.gte('_modified', lastCheckpoint.modified);
+        }
+
+        query = query
+          .order('_modified', { ascending: true })
+          .order(primaryPath as string, { ascending: true })
+          .limit(batchSize);
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        const docs = (data ?? []).map((row: any) => {
+          const doc = { ...row, _deleted: !!row._deleted };
+          delete doc._modified;
+          return doc as WithDeleted<T>;
+        });
+
+        const last = data?.[data.length - 1];
+        return {
+          documents: docs,
+          checkpoint: last
+            ? { id: last[primaryPath as string], modified: last._modified }
+            : lastCheckpoint,
+        };
+      },
+      stream$: pullStream$.asObservable(),
+    },
+    push: {
+      async handler(rows: RxReplicationWriteToMasterRow<T>[]) {
+        // Simple upsert — last-write-wins, no conflict detection.
+        // Avoids replicateSupabase's addDocEqualityToQuery which breaks on
+        // special characters (parentheses, pipes) in field values.
+        for (const row of rows) {
+          const doc: any = { ...row.newDocumentState };
+          if (doc._deleted) {
+            doc._deleted = true;
+          }
+          // Let server set _modified
+          delete doc._modified;
+
+          const { error } = await client.from(tableName).upsert(doc, { onConflict: 'id' });
+          if (error) throw error;
+        }
+        return []; // no conflicts — last-write-wins
+      },
+    },
+    live: true,
+    autoStart: true,
+  });
+
+  // Subscribe to Realtime for live pull
+  const startBefore = replicationState.start.bind(replicationState);
+  const cancelBefore = replicationState.cancel.bind(replicationState);
+
+  replicationState.start = () => {
+    const channel = client
+      .channel(`realtime:${tableName}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: tableName, filter: `userId=eq.${userId}` },
+        (payload) => {
+          if (payload.eventType === 'DELETE') return;
+          const row = payload.new as any;
+          const doc = { ...row, _deleted: !!row._deleted };
+          delete doc._modified;
+          pullStream$.next({
+            checkpoint: { id: doc[primaryPath as string], modified: row._modified },
+            documents: [doc as WithDeleted<T>],
+          });
+        },
+      )
+      .subscribe((status: string) => {
+        if (status === 'SUBSCRIBED') {
+          pullStream$.next('RESYNC');
+        }
+      });
+
+    replicationState.cancel = () => {
+      channel.unsubscribe();
+      return cancelBefore();
+    };
+
+    return startBefore();
+  };
+
+  return replicationState;
+}
 
 export function startReplication(
   db: AppDatabase,
   client: SupabaseClient,
   userId: string,
 ): ReplicationStates {
-  const replicate = (tableName: string, collection: any) =>
-    replicateSupabase({
-      replicationIdentifier: `${tableName}-supabase`,
-      collection,
-      client,
-      tableName,
-      pull: {
-        queryBuilder: ({ query }) => query.eq('userId', userId),
-      },
-      push: {},
-      live: true,
-      autoStart: true,
-    });
-
   return [
-    replicate('cards', db.cards),
-    replicate('srs_state', db.srsState),
-    replicate('review_logs', db.reviewLogs),
-    replicate('settings', db.settings),
+    replicate(db.cards, client, 'cards', userId),
+    replicate(db.srsState, client, 'srs_state', userId),
+    replicate(db.reviewLogs, client, 'review_logs', userId),
+    replicate(db.settings, client, 'settings', userId),
   ];
 }
 
