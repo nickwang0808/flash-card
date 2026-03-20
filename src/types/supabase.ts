@@ -36,33 +36,33 @@ export type Database = {
     Tables: {
       card_snapshots: {
         Row: {
-          card_id: string
-          created_at: string
-          event_type: string
+          cardId: string
+          createdAt: string
+          eventType: string
           id: string
           snapshot: Json
-          user_id: string
+          userId: string
         }
         Insert: {
-          card_id: string
-          created_at?: string
-          event_type: string
+          cardId: string
+          createdAt?: string
+          eventType: string
           id?: string
           snapshot: Json
-          user_id: string
+          userId: string
         }
         Update: {
-          card_id?: string
-          created_at?: string
-          event_type?: string
+          cardId?: string
+          createdAt?: string
+          eventType?: string
           id?: string
           snapshot?: Json
-          user_id?: string
+          userId?: string
         }
         Relationships: [
           {
-            foreignKeyName: "card_snapshots_card_id_fkey"
-            columns: ["card_id"]
+            foreignKeyName: "card_snapshots_cardId_fkey"
+            columns: ["cardId"]
             isOneToOne: false
             referencedRelation: "cards"
             referencedColumns: ["id"]
@@ -76,15 +76,15 @@ export type Database = {
           approved: boolean
           back: string
           created: string
-          deck_name: string
+          deckName: string
           front: string | null
           id: string
           order: number
           reversible: boolean
           suspended: boolean
-          tags: string[] | null
+          tags: string | null
           term: string
-          user_id: string
+          userId: string
         }
         Insert: {
           _deleted?: boolean
@@ -92,15 +92,15 @@ export type Database = {
           approved?: boolean
           back: string
           created: string
-          deck_name: string
+          deckName: string
           front?: string | null
           id: string
           order?: number
           reversible?: boolean
           suspended?: boolean
-          tags?: string[] | null
+          tags?: string | null
           term: string
-          user_id: string
+          userId: string
         }
         Update: {
           _deleted?: boolean
@@ -108,15 +108,15 @@ export type Database = {
           approved?: boolean
           back?: string
           created?: string
-          deck_name?: string
+          deckName?: string
           front?: string | null
           id?: string
           order?: number
           reversible?: boolean
           suspended?: boolean
-          tags?: string[] | null
+          tags?: string | null
           term?: string
-          user_id?: string
+          userId?: string
         }
         Relationships: []
       }
@@ -124,58 +124,58 @@ export type Database = {
         Row: {
           _deleted: boolean
           _modified: string
-          card_id: string
+          cardId: string
           difficulty: number
           due: string
-          elapsed_days: number
+          elapsedDays: number
           id: string
-          is_reverse: boolean
-          last_elapsed_days: number
+          isReverse: boolean
+          lastElapsedDays: number
           rating: number
           review: string
-          scheduled_days: number
+          scheduledDays: number
           stability: number
           state: number
-          user_id: string
+          userId: string
         }
         Insert: {
           _deleted?: boolean
           _modified?: string
-          card_id: string
+          cardId: string
           difficulty: number
           due: string
-          elapsed_days: number
+          elapsedDays: number
           id: string
-          is_reverse?: boolean
-          last_elapsed_days: number
+          isReverse?: boolean
+          lastElapsedDays: number
           rating: number
           review: string
-          scheduled_days: number
+          scheduledDays: number
           stability: number
           state: number
-          user_id: string
+          userId: string
         }
         Update: {
           _deleted?: boolean
           _modified?: string
-          card_id?: string
+          cardId?: string
           difficulty?: number
           due?: string
-          elapsed_days?: number
+          elapsedDays?: number
           id?: string
-          is_reverse?: boolean
-          last_elapsed_days?: number
+          isReverse?: boolean
+          lastElapsedDays?: number
           rating?: number
           review?: string
-          scheduled_days?: number
+          scheduledDays?: number
           stability?: number
           state?: number
-          user_id?: string
+          userId?: string
         }
         Relationships: [
           {
-            foreignKeyName: "review_logs_card_id_fkey"
-            columns: ["card_id"]
+            foreignKeyName: "review_logs_cardId_fkey"
+            columns: ["cardId"]
             isOneToOne: false
             referencedRelation: "cards"
             referencedColumns: ["id"]
@@ -184,84 +184,90 @@ export type Database = {
       }
       settings: {
         Row: {
+          _deleted: boolean
           _modified: string
           id: string
-          new_cards_per_day: number
-          review_order: string
+          newCardsPerDay: number
+          reviewOrder: string
           theme: string
-          user_id: string
+          userId: string
         }
         Insert: {
+          _deleted?: boolean
           _modified?: string
           id: string
-          new_cards_per_day?: number
-          review_order?: string
+          newCardsPerDay?: number
+          reviewOrder?: string
           theme?: string
-          user_id: string
+          userId: string
         }
         Update: {
+          _deleted?: boolean
           _modified?: string
           id?: string
-          new_cards_per_day?: number
-          review_order?: string
+          newCardsPerDay?: number
+          reviewOrder?: string
           theme?: string
-          user_id?: string
+          userId?: string
         }
         Relationships: []
       }
       srs_state: {
         Row: {
+          _deleted: boolean
           _modified: string
-          card_id: string
+          cardId: string
           difficulty: number | null
           direction: string
           due: string | null
-          elapsed_days: number | null
+          elapsedDays: number | null
           id: string
           lapses: number | null
-          last_review: string | null
+          lastReview: string | null
           reps: number | null
-          scheduled_days: number | null
+          scheduledDays: number | null
           stability: number | null
           state: number | null
-          user_id: string
+          userId: string
         }
         Insert: {
+          _deleted?: boolean
           _modified?: string
-          card_id: string
+          cardId: string
           difficulty?: number | null
           direction: string
           due?: string | null
-          elapsed_days?: number | null
+          elapsedDays?: number | null
           id: string
           lapses?: number | null
-          last_review?: string | null
+          lastReview?: string | null
           reps?: number | null
-          scheduled_days?: number | null
+          scheduledDays?: number | null
           stability?: number | null
           state?: number | null
-          user_id: string
+          userId: string
         }
         Update: {
+          _deleted?: boolean
           _modified?: string
-          card_id?: string
+          cardId?: string
           difficulty?: number | null
           direction?: string
           due?: string | null
-          elapsed_days?: number | null
+          elapsedDays?: number | null
           id?: string
           lapses?: number | null
-          last_review?: string | null
+          lastReview?: string | null
           reps?: number | null
-          scheduled_days?: number | null
+          scheduledDays?: number | null
           stability?: number | null
           state?: number | null
-          user_id?: string
+          userId?: string
         }
         Relationships: [
           {
-            foreignKeyName: "srs_state_card_id_fkey"
-            columns: ["card_id"]
+            foreignKeyName: "srs_state_cardId_fkey"
+            columns: ["cardId"]
             isOneToOne: false
             referencedRelation: "cards"
             referencedColumns: ["id"]

@@ -1,151 +1,21 @@
 import { createRxDatabase, type RxDatabase, type RxCollection } from 'rxdb/plugins/core';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
+import {
+  cardsSchema, srsStateSchema, settingsSchema, reviewLogsSchema,
+  type CardsDoc, type SrsStateDoc, type SettingsDoc, type ReviewLogsDoc,
+} from './rxdb-schemas.generated';
 
-// All schemas mirror Postgres columns 1:1 (camelCase) for replicateSupabase.
-// _deleted is handled by RxDB replication protocol (not in schema).
-// _modified is server-managed (not in schema).
-
-const cardsSchema = {
-  version: 0,
-  primaryKey: 'id',
-  type: 'object',
-  properties: {
-    id: { type: 'string', maxLength: 300 },
-    userId: { type: 'string', maxLength: 100 },
-    deckName: { type: 'string', maxLength: 100 },
-    term: { type: 'string', maxLength: 200 },
-    front: { type: 'string' },
-    back: { type: 'string' },
-    tags: { type: 'string' },                        // JSON string
-    created: { type: 'string' },
-    reversible: { type: 'boolean' },
-    order: { type: 'number' },
-    suspended: { type: 'boolean' },
-    approved: { type: 'boolean' },
-  },
-  required: ['id', 'userId', 'deckName', 'term', 'back', 'created'],
-  indexes: ['deckName'],
-} as const;
-
-const srsStateSchema = {
-  version: 0,
-  primaryKey: 'id',
-  type: 'object',
-  properties: {
-    id: { type: 'string', maxLength: 300 },
-    userId: { type: 'string', maxLength: 100 },
-    cardId: { type: 'string', maxLength: 300 },
-    direction: { type: 'string', maxLength: 10 },
-    due: { type: 'string' },
-    stability: { type: 'number' },
-    difficulty: { type: 'number' },
-    elapsedDays: { type: 'number' },
-    scheduledDays: { type: 'number' },
-    reps: { type: 'number' },
-    lapses: { type: 'number' },
-    state: { type: 'number' },
-    lastReview: { type: 'string' },
-  },
-  required: ['id', 'userId', 'cardId', 'direction'],
-  indexes: ['cardId'],
-} as const;
-
-const settingsSchema = {
-  version: 0,
-  primaryKey: 'id',
-  type: 'object',
-  properties: {
-    id: { type: 'string', maxLength: 100 },
-    userId: { type: 'string', maxLength: 100 },
-    newCardsPerDay: { type: 'number' },
-    reviewOrder: { type: 'string', maxLength: 50 },
-    theme: { type: 'string', maxLength: 20 },
-  },
-  required: ['id', 'userId'],
-} as const;
-
-const reviewLogsSchema = {
-  version: 0,
-  primaryKey: 'id',
-  type: 'object',
-  properties: {
-    id: { type: 'string', maxLength: 300 },
-    userId: { type: 'string', maxLength: 100 },
-    cardId: { type: 'string', maxLength: 300 },
-    isReverse: { type: 'boolean' },
-    rating: { type: 'number' },
-    state: { type: 'number' },
-    due: { type: 'string' },
-    stability: { type: 'number' },
-    difficulty: { type: 'number' },
-    elapsedDays: { type: 'number' },
-    lastElapsedDays: { type: 'number' },
-    scheduledDays: { type: 'number' },
-    review: { type: 'string' },
-  },
-  required: ['id', 'userId', 'cardId'],
-} as const;
-
-export type CardDoc = {
-  id: string;
-  userId: string;
-  deckName: string;
-  term: string;
-  front?: string;
-  back: string;
-  tags?: string;
-  created: string;
-  reversible: boolean;
-  order: number;
-  suspended?: boolean;
-  approved?: boolean;
-};
-
-export type SrsStateDoc = {
-  id: string;
-  userId: string;
-  cardId: string;
-  direction: string;
-  due?: string;
-  stability?: number;
-  difficulty?: number;
-  elapsedDays?: number;
-  scheduledDays?: number;
-  reps?: number;
-  lapses?: number;
-  state?: number;
-  lastReview?: string;
-};
-
-export type SettingsDoc = {
-  id: string;
-  userId: string;
-  newCardsPerDay: number;
-  reviewOrder: string;
-  theme: string;
-};
-
-export type ReviewLogDoc = {
-  id: string;
-  userId: string;
-  cardId: string;
-  isReverse: boolean;
-  rating: number;
-  state: number;
-  due: string;
-  stability: number;
-  difficulty: number;
-  elapsedDays: number;
-  lastElapsedDays: number;
-  scheduledDays: number;
-  review: string;
-};
+// Re-export doc types for consumers
+export type { CardsDoc, SrsStateDoc, SettingsDoc, ReviewLogsDoc };
+// Keep legacy aliases for existing code
+export type CardDoc = CardsDoc;
+export type ReviewLogDoc = ReviewLogsDoc;
 
 export type AppDatabase = RxDatabase<{
-  cards: RxCollection<CardDoc>;
+  cards: RxCollection<CardsDoc>;
   srsState: RxCollection<SrsStateDoc>;
   settings: RxCollection<SettingsDoc>;
-  reviewLogs: RxCollection<ReviewLogDoc>;
+  reviewLogs: RxCollection<ReviewLogsDoc>;
 }>;
 
 let dbPromise: Promise<AppDatabase> | null = null;
@@ -153,10 +23,10 @@ let dbInstance: AppDatabase | null = null;
 
 async function createAndSetup(): Promise<AppDatabase> {
   const db = await createRxDatabase<{
-    cards: RxCollection<CardDoc>;
+    cards: RxCollection<CardsDoc>;
     srsState: RxCollection<SrsStateDoc>;
     settings: RxCollection<SettingsDoc>;
-    reviewLogs: RxCollection<ReviewLogDoc>;
+    reviewLogs: RxCollection<ReviewLogsDoc>;
   }>({
     name: 'flashcarddb',
     storage: getRxStorageDexie(),
