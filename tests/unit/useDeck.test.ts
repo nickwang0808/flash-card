@@ -868,55 +868,69 @@ vi.mock('../../src/services/card-repository', async (importOriginal) => {
 vi.mock('../../src/services/rxdb', () => ({
   getDatabaseSync: vi.fn(() => ({
     cards: {
+      name: 'cards',
       findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ user_id: 'test-user' })) })),
     },
+    srs_state: { name: 'srs_state' },
     review_logs: {
+      name: 'review_logs',
       insert: vi.fn(() => Promise.resolve()),
       findOne: vi.fn(() => ({ exec: vi.fn(() => Promise.resolve({ remove: vi.fn() })) })),
     },
+    settings: { name: 'settings' },
   })),
 }));
 
+// useRxQuery is called for both settings and review_logs.
+const rxQueryDataRef: { current: Record<string, { data: any[]; isLoading: boolean }> } = {
+  current: {
+    settings: { data: [{ new_cards_per_day: 10, review_order: 'random', theme: 'system' }], isLoading: false },
+    review_logs: { data: [], isLoading: false },
+  },
+};
 vi.mock('../../src/hooks/useRxQuery', () => ({
-  useRxQuery: vi.fn(() => ({ data: [], isLoading: false })),
+  useRxQuery: vi.fn((collection: any) => {
+    const name = collection?.name ?? '';
+    return rxQueryDataRef.current[name] ?? { data: [], isLoading: false };
+  }),
 }));
 
-vi.mock('../../src/hooks/useSettings', () => ({
-  useSettings: vi.fn(),
-}));
-
-import { useSettings } from '../../src/hooks/useSettings';
 import { useCards, getCardRepository } from '../../src/services/card-repository';
 import { useRxQuery } from '../../src/hooks/useRxQuery';
 import { getDatabaseSync } from '../../src/services/rxdb';
+
+// Global beforeEach: reset rxQueryData and re-apply useRxQuery mock for every test
+beforeEach(() => {
+  rxQueryDataRef.current.settings = { data: [{ new_cards_per_day: 10, review_order: 'random', theme: 'system' }], isLoading: false };
+  rxQueryDataRef.current.review_logs = { data: [], isLoading: false };
+  vi.mocked(useRxQuery).mockImplementation((collection: any) => {
+    const name = collection?.name ?? '';
+    return rxQueryDataRef.current[name] ?? { data: [], isLoading: false };
+  });
+});
 
 describe('useDeck hook', () => {
   let mockCards: FlashCard[];
 
   function setupMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
     vi.mocked(useCards).mockReturnValue({ data: cards, isLoading });
-    vi.mocked(useRxQuery).mockReturnValue({ data: logs, isLoading });
+    rxQueryDataRef.current.review_logs = { data: logs, isLoading };
   }
 
   beforeEach(() => {
     mockCards = [];
+    rxQueryDataRef.current.settings = { data: [{ new_cards_per_day: 10, review_order: 'random', theme: 'system' }], isLoading: false };
+    rxQueryDataRef.current.review_logs = { data: [], isLoading: false };
 
     vi.mocked(getCardRepository).mockReturnValue({
       updateState: vi.fn(() => Promise.resolve()),
       suspend: vi.fn(() => Promise.resolve()),
     } as any);
-    // review_logs mock is provided by the global getDatabaseSync mock
-    vi.mocked(useSettings).mockReturnValue({
-      settings: { newCardsPerDay: 10 },
-      isLoading: false,
-      update: vi.fn(),
-      clear: vi.fn(),
-    } as any);
     setupMock(mockCards);
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
+    // Don't use clearAllMocks — it wipes the useRxQuery implementation
   });
 
   describe('loading state', () => {
@@ -1102,12 +1116,7 @@ describe('useDeck hook', () => {
     });
 
     it('respects newCardsLimit in count', () => {
-      vi.mocked(useSettings).mockReturnValue({
-        settings: { newCardsPerDay: 2 },
-        isLoading: false,
-        update: vi.fn(),
-        clear: vi.fn(),
-      } as any);
+      rxQueryDataRef.current.settings = { data: [{ new_cards_per_day: 2, review_order: 'random', theme: 'system' }], isLoading: false };
 
       mockCards = [
         createFlashCard('one'),
@@ -1236,13 +1245,8 @@ describe('useDeck hook', () => {
   });
 
   describe('newCardsPerDay setting', () => {
-    it('uses setting from useSettings', () => {
-      vi.mocked(useSettings).mockReturnValue({
-        settings: { newCardsPerDay: 3 },
-        isLoading: false,
-        update: vi.fn(),
-        clear: vi.fn(),
-      } as any);
+    it('uses new_cards_per_day setting', () => {
+      rxQueryDataRef.current.settings = { data: [{ new_cards_per_day: 3, review_order: 'random', theme: 'system' }], isLoading: false };
 
       mockCards = [
         createFlashCard('one'),
@@ -1276,25 +1280,24 @@ describe('useDeck hook', () => {
 describe('Study Session Flow', () => {
   function setupMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
     vi.mocked(useCards).mockReturnValue({ data: cards, isLoading });
-    vi.mocked(useRxQuery).mockReturnValue({ data: logs, isLoading });
+    rxQueryDataRef.current.review_logs = { data: logs, isLoading };
   }
 
   beforeEach(() => {
+    rxQueryDataRef.current.settings = { data: [{ new_cards_per_day: 10, review_order: 'random', theme: 'system' }], isLoading: false };
+    rxQueryDataRef.current.review_logs = { data: [], isLoading: false };
+    vi.mocked(useRxQuery).mockImplementation((collection: any) => {
+      const name = collection?.name ?? '';
+      return rxQueryDataRef.current[name] ?? { data: [], isLoading: false };
+    });
     vi.mocked(getCardRepository).mockReturnValue({
       updateState: vi.fn(() => Promise.resolve()),
       suspend: vi.fn(() => Promise.resolve()),
     } as any);
-    // review_logs mock is provided by the global getDatabaseSync mock
-    vi.mocked(useSettings).mockReturnValue({
-      settings: { newCardsPerDay: 10 },
-      isLoading: false,
-      update: vi.fn(),
-      clear: vi.fn(),
-    } as any);
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
+    // Don't use clearAllMocks — it wipes the useRxQuery implementation
   });
 
   it('simulates complete session: new cards → rating → completion', () => {
@@ -1459,7 +1462,7 @@ describe('Study Session Flow', () => {
 describe('Undo', () => {
   function setupMock(cards: FlashCard[], logs: any[] = [], isLoading = false) {
     vi.mocked(useCards).mockReturnValue({ data: cards, isLoading });
-    vi.mocked(useRxQuery).mockReturnValue({ data: logs, isLoading });
+    rxQueryDataRef.current.review_logs = { data: logs, isLoading };
   }
 
   function createReviewLog(
@@ -1491,22 +1494,17 @@ describe('Undo', () => {
   }
 
   beforeEach(() => {
+    rxQueryDataRef.current.settings = { data: [{ new_cards_per_day: 10, review_order: 'random', theme: 'system' }], isLoading: false };
+    rxQueryDataRef.current.review_logs = { data: [], isLoading: false };
+    vi.mocked(useRxQuery).mockImplementation((collection: any) => {
+      const name = collection?.name ?? '';
+      return rxQueryDataRef.current[name] ?? { data: [], isLoading: false };
+    });
     vi.mocked(getCardRepository).mockReturnValue({
       updateState: vi.fn(() => Promise.resolve()),
       suspend: vi.fn(() => Promise.resolve()),
       getById: vi.fn(() => Promise.resolve(null)),
     } as any);
-    // review_logs mock is provided by the global getDatabaseSync mock
-    vi.mocked(useSettings).mockReturnValue({
-      settings: { newCardsPerDay: 10 },
-      isLoading: false,
-      update: vi.fn(),
-      clear: vi.fn(),
-    } as any);
-  });
-
-  afterEach(() => {
-    vi.clearAllMocks();
   });
 
   describe('canUndo', () => {
@@ -1981,25 +1979,24 @@ describe('rateCardSuperEasy', () => {
 describe('useDeck hook — schedulePreview and superEasy', () => {
   function setupMock(cards: FlashCard[], logs: any[] = []) {
     vi.mocked(useCards).mockReturnValue({ data: cards, isLoading: false });
-    vi.mocked(useRxQuery).mockReturnValue({ data: logs, isLoading: false });
+    rxQueryDataRef.current.review_logs = { data: logs, isLoading: false };
   }
 
   beforeEach(() => {
+    rxQueryDataRef.current.settings = { data: [{ new_cards_per_day: 10, review_order: 'random', theme: 'system' }], isLoading: false };
+    rxQueryDataRef.current.review_logs = { data: [], isLoading: false };
+    vi.mocked(useRxQuery).mockImplementation((collection: any) => {
+      const name = collection?.name ?? '';
+      return rxQueryDataRef.current[name] ?? { data: [], isLoading: false };
+    });
     vi.mocked(getCardRepository).mockReturnValue({
       updateState: vi.fn(() => Promise.resolve()),
       suspend: vi.fn(() => Promise.resolve()),
     } as any);
-    // review_logs mock is provided by the global getDatabaseSync mock
-    vi.mocked(useSettings).mockReturnValue({
-      settings: { newCardsPerDay: 10 },
-      isLoading: false,
-      update: vi.fn(),
-      clear: vi.fn(),
-    } as any);
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
+    // Don't use clearAllMocks — it wipes the useRxQuery implementation
   });
 
   it('schedulePreview is non-null when a card is available', () => {

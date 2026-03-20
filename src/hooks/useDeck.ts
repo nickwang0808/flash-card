@@ -1,6 +1,5 @@
 import { fsrs, createEmptyCard, Rating, State, type Grade, type Card, type ReviewLog } from 'ts-fsrs';
 import { type FlashCard, useCards, getCardRepository, serializeFsrsCard } from '../services/card-repository';
-import { useSettings } from './useSettings';
 import { useRxQuery } from './useRxQuery';
 import { getDatabaseSync, type ReviewLogDoc } from '../services/rxdb';
 
@@ -210,13 +209,12 @@ export async function rateCardSuperEasy(
 }
 
 export function useDeck(deckName: string) {
-  const { settings, isLoading: settingsLoading } = useSettings();
-  const newCardsLimit = settings.newCardsPerDay;
-
   const db = getDatabaseSync();
+  const { data: settingsList, isLoading: settingsLoading } = useRxQuery(db.settings);
   const { data: cardsList, isLoading: cardsLoading } = useCards(deckName);
   const { data: logsList, isLoading: logsLoading } = useRxQuery(db.review_logs);
 
+  const newCardsLimit = settingsList[0]?.new_cards_per_day ?? 10;
   const isLoading = cardsLoading || logsLoading || settingsLoading;
 
   const todayLocal = new Date().toLocaleDateString('en-CA');

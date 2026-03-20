@@ -1,6 +1,6 @@
-import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../hooks/useAuth';
-import { destroyDatabase } from '../services/rxdb';
+import { useRxQuery } from '../hooks/useRxQuery';
+import { getDatabaseSync, destroyDatabase, type SettingsDoc } from '../services/rxdb';
 
 interface Props {
   onBack: () => void;
@@ -8,8 +8,22 @@ interface Props {
 }
 
 export function SettingsScreen({ onBack }: Props) {
-  const { settings, update } = useSettings();
+  const db = getDatabaseSync();
+  const { data: settingsList } = useRxQuery(db.settings);
+  const s = settingsList[0];
   const { signOut } = useAuth();
+
+  async function update(partial: Partial<SettingsDoc>) {
+    const existing = await db.settings.findOne('settings').exec();
+    const userId = existing?.user_id ?? '';
+    await db.settings.upsert({
+      id: 'settings',
+      user_id: userId,
+      new_cards_per_day: partial.new_cards_per_day ?? s?.new_cards_per_day ?? 10,
+      review_order: partial.review_order ?? s?.review_order ?? 'random',
+      theme: partial.theme ?? s?.theme ?? 'system',
+    });
+  }
 
   async function handleLogout() {
     if (!confirm('Clear all local data and log out?')) return;
@@ -47,10 +61,10 @@ export function SettingsScreen({ onBack }: Props) {
           <input
             type="number"
             min={0}
-            value={settings.newCardsPerDay}
+            value={s?.new_cards_per_day ?? 10}
             onChange={(e) => {
               const val = Math.floor(Number(e.target.value));
-              if (val >= 0) update({ newCardsPerDay: val });
+              if (val >= 0) update({ new_cards_per_day: val });
             }}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
@@ -60,8 +74,8 @@ export function SettingsScreen({ onBack }: Props) {
         <div>
           <label className="block text-sm font-medium mb-1">Review order</label>
           <select
-            value={settings.reviewOrder}
-            onChange={(e) => update({ reviewOrder: e.target.value as typeof settings.reviewOrder })}
+            value={s?.review_order ?? 'random'}
+            onChange={(e) => update({ review_order: e.target.value })}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="random">Random</option>
@@ -79,7 +93,7 @@ export function SettingsScreen({ onBack }: Props) {
                 key={t}
                 onClick={() => update({ theme: t })}
                 className={`flex-1 rounded-md border px-3 py-2 text-sm capitalize ${
-                  settings.theme === t
+                  (s?.theme ?? 'system') === t
                     ? 'border-primary bg-primary/10'
                     : 'border-input hover:bg-accent'
                 }`}

@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../hooks/useAuth';
-import { supabase } from '../services/supabase';
+import { useRxQuery } from '../hooks/useRxQuery';
 import { getDatabaseSync } from '../services/rxdb';
+import { supabase } from '../services/supabase';
 import { startReplication, cancelReplication } from '../services/supabase-replication';
 import { AuthScreen } from './AuthScreen';
 import { DeckListScreen } from './DeckListScreen';
@@ -19,7 +19,9 @@ type Screen =
   | { name: 'settings' };
 
 export function App() {
-  const { settings, isLoading: settingsLoading } = useSettings();
+  const db = getDatabaseSync();
+  const { data: settingsList, isLoading: settingsLoading } = useRxQuery(db.settings);
+  const theme = settingsList[0]?.theme ?? 'system';
   const { isSignedIn, loading: authLoading } = useAuth();
   const [screen, setScreen] = useState<Screen>({ name: 'auth' });
   const replicationRef = useRef<ReturnType<typeof startReplication> | null>(null);
@@ -63,14 +65,14 @@ export function App() {
   // Apply theme
   useEffect(() => {
     document.documentElement.classList.remove('dark');
-    if (settings.theme === 'dark') {
+    if (theme === 'dark') {
       document.documentElement.classList.add('dark');
-    } else if (settings.theme === 'system') {
+    } else if (theme === 'system') {
       if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
         document.documentElement.classList.add('dark');
       }
     }
-  }, [settings.theme]);
+  }, [theme]);
 
   const navigate = (s: Screen) => setScreen(s);
 
