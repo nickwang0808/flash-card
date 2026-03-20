@@ -1,18 +1,139 @@
+import { useState, useEffect } from 'react';
+import { combineLatest } from 'rxjs';
 import { fsrs, createEmptyCard, Rating, State, type Grade, type Card, type ReviewLog } from 'ts-fsrs';
-import { type FlashCard, useCards, getCardRepository, serializeFsrsCard } from '../services/card-repository';
-import { type StoredReviewLog, useReviewLogs, getReviewLogRepository } from '../services/review-log-repository';
-import { useSettings } from './useSettings';
-import { notifyChange } from '../services/replication';
+import { useRxQuery } from './useRxQuery';
+import { getDatabaseSync, type CardDoc, type SrsStateDoc } from '../services/rxdb';
+
+// --- FlashCard: UI contract with deserialized FSRS dates ---
+
+export interface FlashCard {
+  id: string;
+  deckName: string;
+  term: string;
+  front?: string;
+  back: string;
+  tags?: string[];
+  created: string;
+  reversible: boolean;
+  order: number;
+  state: Card | null;
+  reverseState: Card | null;
+  suspended?: boolean;
+}
 
 export type StudyItem = FlashCard & { isReverse: boolean };
 
 interface CurrentCard {
-  term: string;              // raw key (TTS-readable)
-  front: string;             // resolved display front (markdown)
-  back: string;              // resolved display back (markdown)
+  term: string;
+  front: string;
+  back: string;
   isReverse: boolean;
   isNew: boolean;
 }
+
+// --- FSRS serialization (camelCase RxDB ↔ ts-fsrs snake_case) ---
+
+function srsDocToCard(doc: SrsStateDoc): Card | null {
+  if (!doc.due) return null;
+  return {
+    due: new Date(doc.due),
+    stability: doc.stability ?? 0,
+    difficulty: doc.difficulty ?? 0,
+    elapsed_days: doc.elapsedDays ?? 0,
+    scheduled_days: doc.scheduledDays ?? 0,
+    reps: doc.reps ?? 0,
+    lapses: doc.lapses ?? 0,
+    state: doc.state ?? 0,
+    last_review: doc.lastReview ? new Date(doc.lastReview) : undefined,
+  } as Card;
+}
+
+function serializeFsrsCard(card: Card): Record<string, unknown> {
+  return {
+    due: card.due.toISOString(),
+    stability: card.stability,
+    difficulty: card.difficulty,
+    elapsedDays: card.elapsed_days,
+    scheduledDays: card.scheduled_days,
+    reps: card.reps,
+    lapses: card.lapses,
+    state: card.state,
+    lastReview: card.last_review?.toISOString(),
+  };
+}
+
+function joinToFlashCard(
+  card: CardDoc,
+  forwardSrs?: SrsStateDoc,
+  reverseSrs?: SrsStateDoc,
+): FlashCard {
+  return {
+    id: card.id,
+    deckName: card.deckName,
+    term: card.term,
+    front: card.front || undefined,
+    back: card.back,
+    tags: card.tags ? JSON.parse(card.tags) : undefined,
+    created: card.created,
+    reversible: card.reversible ?? false,
+    order: card.order ?? 0,
+    state: forwardSrs ? srsDocToCard(forwardSrs) : null,
+    reverseState: reverseSrs ? srsDocToCard(reverseSrs) : null,
+    suspended: card.suspended,
+  };
+}
+
+// --- DB write helpers ---
+
+async function updateSrsState(
+  cardId: string,
+  field: 'state' | 'reverseState',
+  value: Record<string, unknown> | null,
+): Promise<void> {
+  const db = getDatabaseSync();
+  const direction = field === 'state' ? 'forward' : 'reverse';
+  const srsId = `${cardId}:${direction}`;
+
+  if (value === null) {
+    const doc = await db.srsState.findOne(srsId).exec();
+    if (doc) await doc.remove();
+  } else {
+    const card = await db.cards.findOne(cardId).exec();
+    if (!card) return;
+
+    await db.srsState.upsert({
+      id: srsId,
+      userId: card.userId,
+      cardId,
+      direction,
+      due: value.due as string,
+      stability: value.stability as number,
+      difficulty: value.difficulty as number,
+      elapsedDays: value.elapsedDays as number,
+      scheduledDays: value.scheduledDays as number,
+      reps: value.reps as number,
+      lapses: value.lapses as number,
+      state: value.state as number,
+      lastReview: value.lastReview as string | undefined,
+    });
+  }
+}
+
+async function getFlashCardById(cardId: string): Promise<FlashCard | null> {
+  const db = getDatabaseSync();
+  const doc = await db.cards.findOne(cardId).exec();
+  if (!doc) return null;
+  const card = doc.toJSON() as CardDoc;
+  const fwd = await db.srsState.findOne(`${cardId}:forward`).exec();
+  const rev = await db.srsState.findOne(`${cardId}:reverse`).exec();
+  return joinToFlashCard(
+    card,
+    fwd?.toJSON() as SrsStateDoc | undefined,
+    rev?.toJSON() as SrsStateDoc | undefined,
+  );
+}
+
+// --- Pure computation ---
 
 export function formatInterval(due: Date, now: Date = new Date()): string {
   const diffMs = due.getTime() - now.getTime();
@@ -27,12 +148,7 @@ export function formatInterval(due: Date, now: Date = new Date()): string {
   return `${Math.round(diffMonths)}mo`;
 }
 
-// Pure function to compute study items from cards
-// Forward and reverse directions are kept separate to avoid showing them back-to-back
 function isDue(card: Card, now: Date, endOfDay: Date): boolean {
-  // Learning/Relearning cards have short intervals and should stay in-session
-  // even if their next due time is a few minutes in the future.
-  // Review cards should only appear once their scheduled time has passed.
   if (card.state === State.Learning || card.state === State.Relearning) {
     return card.due <= endOfDay;
   }
@@ -53,48 +169,33 @@ export function computeStudyItems(
   const dueForward: StudyItem[] = [];
   const dueReverse: StudyItem[] = [];
 
-  // Filter out suspended cards
   const activeCards = cards.filter(card => !card.suspended);
-
-  // Count already-introduced cards toward limit
   const introducedCount = introducedToday.size;
   const remainingNewSlots = Math.max(0, newCardsLimit - introducedCount);
   let newSlotsUsed = 0;
 
-  // Single pass: process forward and reverse directions together
-  // Reversible cards where both directions are new reserve slots atomically
   for (const card of activeCards) {
-    // === Forward direction ===
     if (!card.state) {
       const forwardIntroduced = introducedToday.has(card.term);
 
       if (card.reversible && !card.reverseState) {
-        // Both directions are new — reserve slots atomically
         const reverseKey = `${card.term}:reverse`;
         const reverseIntroduced = introducedToday.has(reverseKey);
         const slotsNeeded = (forwardIntroduced ? 0 : 1) + (reverseIntroduced ? 0 : 1);
 
         if (slotsNeeded <= remainingNewSlots - newSlotsUsed) {
-          // Enough slots for both directions
           newForward.push({ ...card, isReverse: false });
           newReverse.push({ ...card, isReverse: true });
           newSlotsUsed += slotsNeeded;
         } else {
-          // Not enough slots for both — add introduced directions (free)
-          if (forwardIntroduced) {
-            newForward.push({ ...card, isReverse: false });
-          }
-          if (reverseIntroduced) {
-            newReverse.push({ ...card, isReverse: true });
-          }
-          // Try to fit forward with a remaining slot
+          if (forwardIntroduced) newForward.push({ ...card, isReverse: false });
+          if (reverseIntroduced) newReverse.push({ ...card, isReverse: true });
           if (!forwardIntroduced && newSlotsUsed < remainingNewSlots) {
             newForward.push({ ...card, isReverse: false });
             newSlotsUsed++;
           }
         }
       } else {
-        // Not both-new-reversible — standard forward handling
         if (forwardIntroduced || newSlotsUsed < remainingNewSlots) {
           newForward.push({ ...card, isReverse: false });
           if (!forwardIntroduced) newSlotsUsed++;
@@ -104,12 +205,10 @@ export function computeStudyItems(
       dueForward.push({ ...card, isReverse: false });
     }
 
-    // === Reverse direction (independent — not both-new case) ===
     if (card.reversible) {
       const handledAtomically = !card.state && !card.reverseState;
       if (!handledAtomically) {
         if (!card.reverseState) {
-          // Reverse is new, forward is not new
           const reverseKey = `${card.term}:reverse`;
           const isIntroduced = introducedToday.has(reverseKey);
           if (isIntroduced || newSlotsUsed < remainingNewSlots) {
@@ -123,8 +222,6 @@ export function computeStudyItems(
     }
   }
 
-  // Combine: all forwards first, then all reverses
-  // Sort due items by due time so recently-rated learning cards fall to the end
   return {
     newItems: [...newForward, ...newReverse],
     dueItems: [...dueForward, ...dueReverse].sort((a, b) => {
@@ -135,7 +232,6 @@ export function computeStudyItems(
   };
 }
 
-// Pure function to compute new FSRS state after rating
 export function computeNewState(
   existingState: Card | null,
   rating: Grade,
@@ -146,17 +242,19 @@ export function computeNewState(
   return { card: result.card, log: result.log };
 }
 
-// Rate a card and update via repositories
-export async function rateCard(
-  card: StudyItem,
-  rating: Grade
-): Promise<void> {
+// --- Rate / Undo / Suspend ---
+
+export async function rateCard(card: StudyItem, rating: Grade): Promise<void> {
   const existingState = card.isReverse ? card.reverseState : card.state;
   const { card: newState, log } = computeNewState(existingState, rating);
 
-  // Store ReviewLog via repository
-  const storedLog: StoredReviewLog = {
+  const db = getDatabaseSync();
+  const cardDoc = await db.cards.findOne(card.id).exec();
+  const userId = cardDoc?.userId ?? '';
+
+  await db.reviewLogs.insert({
     id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
+    userId,
     cardId: card.id,
     isReverse: card.isReverse,
     rating: log.rating,
@@ -164,46 +262,29 @@ export async function rateCard(
     due: log.due.toISOString(),
     stability: log.stability,
     difficulty: log.difficulty,
-    elapsed_days: log.elapsed_days,
-    last_elapsed_days: log.last_elapsed_days,
-    scheduled_days: log.scheduled_days,
+    elapsedDays: log.elapsed_days,
+    lastElapsedDays: log.last_elapsed_days,
+    scheduledDays: log.scheduled_days,
     review: log.review.toISOString(),
-  };
-  const logRepo = getReviewLogRepository();
-  await logRepo.insert(storedLog);
+  });
 
-  // Update card state via repository
-  const serializedState = serializeFsrsCard(newState);
-  const cardRepo = getCardRepository();
-  const field = card.isReverse ? 'reverseState' : 'state';
-  await cardRepo.updateState(card.id, field, serializedState);
-
-  notifyChange(card.id);
+  await updateSrsState(card.id, card.isReverse ? 'reverseState' : 'state', serializeFsrsCard(newState));
 }
 
-// Rate a card as "Super Easy" — bypasses FSRS, schedules N days out
-// Only for new cards the user already knows well (e.g. from Anki)
-export async function rateCardSuperEasy(
-  card: StudyItem,
-  days = 60,
-  now = new Date()
-): Promise<void> {
+export async function rateCardSuperEasy(card: StudyItem, days = 60, now = new Date()): Promise<void> {
   const due = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
   const newState: Card = {
-    due,
-    stability: days,
-    difficulty: 4,
-    elapsed_days: 0,
-    scheduled_days: days,
-    reps: 1,
-    lapses: 0,
-    state: State.Review,
-    last_review: now,
+    due, stability: days, difficulty: 4, elapsed_days: 0,
+    scheduled_days: days, reps: 1, lapses: 0, state: State.Review, last_review: now,
   };
 
-  // state: State.New (0) in the log is critical — undo checks state===0 to restore to null
-  const storedLog: StoredReviewLog = {
+  const db = getDatabaseSync();
+  const cardDoc = await db.cards.findOne(card.id).exec();
+  const userId = cardDoc?.userId ?? '';
+
+  await db.reviewLogs.insert({
     id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
+    userId,
     cardId: card.id,
     isReverse: card.isReverse,
     rating: Rating.Easy,
@@ -211,73 +292,103 @@ export async function rateCardSuperEasy(
     due: due.toISOString(),
     stability: days,
     difficulty: 4,
-    elapsed_days: 0,
-    last_elapsed_days: 0,
-    scheduled_days: days,
+    elapsedDays: 0,
+    lastElapsedDays: 0,
+    scheduledDays: days,
     review: now.toISOString(),
-  };
+  });
 
-  const logRepo = getReviewLogRepository();
-  await logRepo.insert(storedLog);
+  await updateSrsState(card.id, card.isReverse ? 'reverseState' : 'state', serializeFsrsCard(newState));
+}
 
-  const serializedState = serializeFsrsCard(newState);
-  const cardRepo = getCardRepository();
-  const field = card.isReverse ? 'reverseState' : 'state';
-  await cardRepo.updateState(card.id, field, serializedState);
+// --- React hooks ---
 
-  notifyChange(card.id);
+function useCards(deckName: string): { data: FlashCard[]; isLoading: boolean } {
+  const [data, setData] = useState<FlashCard[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const db = getDatabaseSync();
+    const cards$ = db.cards.find({ selector: { deckName }, sort: [{ order: 'asc' }] }).$;
+    const srs$ = db.srsState.find().$;
+
+    const sub = combineLatest([cards$, srs$]).subscribe(([cardDocs, srsDocs]) => {
+      const srsMap = new Map<string, SrsStateDoc>();
+      for (const d of srsDocs) srsMap.set(d.id, d.toJSON() as SrsStateDoc);
+
+      setData(cardDocs.map((d) => {
+        const card = d.toJSON() as CardDoc;
+        return joinToFlashCard(card, srsMap.get(`${card.id}:forward`), srsMap.get(`${card.id}:reverse`));
+      }));
+      setIsLoading(false);
+    });
+    return () => sub.unsubscribe();
+  }, [deckName]);
+
+  return { data, isLoading };
+}
+
+export function useDeckNames(): { data: string[]; isLoading: boolean } {
+  const [data, setData] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const db = getDatabaseSync();
+    let first = true;
+    let prev: string[] = [];
+    const sub = db.cards.find().$.subscribe((docs) => {
+      const names = [...new Set(docs.map((d) => d.deckName))].sort();
+      if (first || names.length !== prev.length || names.some((n, i) => n !== prev[i])) {
+        first = false;
+        prev = names;
+        setData(names);
+        setIsLoading(false);
+      }
+    });
+    return () => sub.unsubscribe();
+  }, []);
+
+  return { data, isLoading };
 }
 
 export function useDeck(deckName: string) {
-  const { settings, isLoading: settingsLoading } = useSettings();
-  const newCardsLimit = settings.newCardsPerDay;
-
-  // Query via repository hooks
+  const db = getDatabaseSync();
+  const { data: settingsList, isLoading: settingsLoading } = useRxQuery(db.settings);
   const { data: cardsList, isLoading: cardsLoading } = useCards(deckName);
-  const { data: logsList, isLoading: logsLoading } = useReviewLogs();
 
+  // Only load today's review logs (for introduced-today tracking + undo)
+  const todayLocal = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+  const todayStart = `${todayLocal}T00:00:00`;
+  const { data: logsList, isLoading: logsLoading } = useRxQuery(db.reviewLogs, {
+    selector: { review: { $gte: todayStart } },
+  });
+
+  const newCardsLimit = settingsList[0]?.newCardsPerDay ?? 10;
   const isLoading = cardsLoading || logsLoading || settingsLoading;
 
-  // Derive introduced-today from review logs (state=0 means "was New when reviewed")
-  const todayLocal = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
   const introducedToday = new Set(
     logsList
-      .filter((l) => l.state === 0 && new Date(l.review).toLocaleDateString('en-CA') === todayLocal)
+      .filter((l) => l.state === 0)
       .map((l) => {
-        // Extract term from cardId (format: "deckName|term")
         const term = l.cardId.split('|')[1] ?? l.cardId;
         return l.isReverse ? `${term}:reverse` : term;
       })
   );
 
-  const { newItems, dueItems } = computeStudyItems(
-    cardsList,
-    newCardsLimit,
-    new Date(),
-    introducedToday
-  );
-
-  // New cards first, then due cards
+  const { newItems, dueItems } = computeStudyItems(cardsList, newCardsLimit, new Date(), introducedToday);
   const allItems = [...newItems, ...dueItems];
   const studyItem = allItems[0] ?? null;
 
-  // Compute current card display info
-  // front defaults to term if not set; reverse swaps front↔back
   const currentCard: CurrentCard | null = studyItem
     ? {
         term: studyItem.term,
-        front: studyItem.isReverse
-          ? studyItem.back
-          : (studyItem.front || studyItem.term),
-        back: studyItem.isReverse
-          ? (studyItem.front || studyItem.term)
-          : studyItem.back,
+        front: studyItem.isReverse ? studyItem.back : (studyItem.front || studyItem.term),
+        back: studyItem.isReverse ? (studyItem.front || studyItem.term) : studyItem.back,
         isReverse: studyItem.isReverse,
         isNew: studyItem.isReverse ? !studyItem.reverseState : !studyItem.state,
       }
     : null;
 
-  // Compute schedule preview for each rating (shown on UI buttons)
   const previewNow = new Date();
   const existingFsrsState = studyItem
     ? (studyItem.isReverse ? studyItem.reverseState : studyItem.state)
@@ -301,29 +412,23 @@ export function useDeck(deckName: string) {
 
   async function suspend() {
     if (!studyItem) return;
-    const cardRepo = getCardRepository();
-    await cardRepo.suspend(studyItem.id);
-    notifyChange(studyItem.id);
+    const doc = await db.cards.findOne(studyItem.id).exec();
+    if (doc) await doc.incrementalPatch({ suspended: true });
   }
 
   async function undo() {
-    // Find the most recent review log overall
     const sorted = [...logsList].sort(
-      (a: StoredReviewLog, b: StoredReviewLog) =>
-        parseInt(b.id.split(':')[2]) - parseInt(a.id.split(':')[2])
+      (a, b) => parseInt(b.id.split(':')[2]) - parseInt(a.id.split(':')[2])
     );
     const lastLog = sorted[0];
     if (!lastLog) return;
 
-    const cardRepo = getCardRepository();
     const field = lastLog.isReverse ? 'reverseState' : 'state';
 
     if (lastLog.state === 0) {
-      // Card was New when reviewed — restore to null
-      await cardRepo.updateState(lastLog.cardId, field, null);
+      await updateSrsState(lastLog.cardId, field, null);
     } else {
-      // Look up the card to get its current FSRS state for rollback
-      const card = await cardRepo.getById(lastLog.cardId);
+      const card = await getFlashCardById(lastLog.cardId);
       if (!card) return;
 
       const currentState = lastLog.isReverse ? card.reverseState : card.state;
@@ -335,25 +440,19 @@ export function useDeck(deckName: string) {
         due: new Date(lastLog.due),
         stability: lastLog.stability,
         difficulty: lastLog.difficulty,
-        elapsed_days: lastLog.elapsed_days,
-        last_elapsed_days: lastLog.last_elapsed_days,
-        scheduled_days: lastLog.scheduled_days,
+        elapsed_days: lastLog.elapsedDays,
+        last_elapsed_days: lastLog.lastElapsedDays,
+        scheduled_days: lastLog.scheduledDays,
         review: new Date(lastLog.review),
       };
 
       const previousState = fsrs().rollback(currentState, reviewLog);
-      await cardRepo.updateState(lastLog.cardId, field, serializeFsrsCard(previousState));
+      await updateSrsState(lastLog.cardId, field, serializeFsrsCard(previousState));
     }
 
-    // Remove the log entry
-    const logRepo = getReviewLogRepository();
-    await logRepo.remove(lastLog.id);
-
-    notifyChange(lastLog.cardId);
+    const logDoc = await db.reviewLogs.findOne(lastLog.id).exec();
+    if (logDoc) await logDoc.remove();
   }
-
-  // Check if undo is available (any review log exists)
-  const canUndo = logsList.length > 0;
 
   return {
     isLoading,
@@ -364,8 +463,7 @@ export function useDeck(deckName: string) {
     schedulePreview,
     suspend,
     undo,
-    canUndo,
-    // Expose for testing/advanced use
+    canUndo: logsList.length > 0,
     newItems,
     dueItems,
   };

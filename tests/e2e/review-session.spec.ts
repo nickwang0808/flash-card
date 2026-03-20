@@ -1,17 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { cloneTestRepo, createTestBranch, deleteTestBranch } from './helpers';
+import { cloneTestRepo, resetTestDB } from './helpers';
 
 test.describe('Review session', () => {
-  let testBranch: string;
-
-  test.beforeEach(async ({ page }, testInfo) => {
-    const safeName = testInfo.title.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 30);
-    testBranch = await createTestBranch(`review-${safeName}`);
-    await cloneTestRepo(page, testBranch);
-  });
-
-  test.afterEach(async () => {
-    await deleteTestBranch(testBranch);
+  test.beforeEach(async ({ page }) => {
+    await resetTestDB();
+    await cloneTestRepo(page);
   });
 
   test('shows correct count of new cards (30 reversible cards, limit 10 = 5 fwd + 5 rev)', async ({ page }) => {
