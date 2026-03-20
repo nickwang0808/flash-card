@@ -9,8 +9,8 @@ const cardsSchema = {
   type: 'object',
   properties: {
     id: { type: 'string', maxLength: 300 },
-    user_id: { type: 'string', maxLength: 100 },
-    deck_name: { type: 'string', maxLength: 100 },
+    userId: { type: 'string', maxLength: 100 },
+    deckName: { type: 'string', maxLength: 100 },
     term: { type: 'string', maxLength: 200 },
     front: { type: 'string' },
     back: { type: 'string' },
@@ -21,8 +21,8 @@ const cardsSchema = {
     suspended: { type: 'boolean' },
     approved: { type: 'boolean' },
   },
-  required: ['id', 'user_id', 'deck_name', 'term', 'back', 'created'],
-  indexes: ['deck_name'],
+  required: ['id', 'userId', 'deckName', 'term', 'back', 'created'],
+  indexes: ['deckName'],
 } as const;
 
 const srsStateSchema = {
@@ -31,28 +31,28 @@ const srsStateSchema = {
   type: 'object',
   properties: {
     id: { type: 'string', maxLength: 300 },
-    user_id: { type: 'string', maxLength: 100 },
-    card_id: { type: 'string', maxLength: 300 },
+    userId: { type: 'string', maxLength: 100 },
+    cardId: { type: 'string', maxLength: 300 },
     direction: { type: 'string', maxLength: 10 },
     due: { type: 'string' },
     stability: { type: 'number' },
     difficulty: { type: 'number' },
-    elapsed_days: { type: 'number' },
-    scheduled_days: { type: 'number' },
+    elapsedDays: { type: 'number' },
+    scheduledDays: { type: 'number' },
     reps: { type: 'number' },
     lapses: { type: 'number' },
     state: { type: 'number' },
-    last_review: { type: 'string' },
+    lastReview: { type: 'string' },
   },
-  required: ['id', 'user_id', 'card_id', 'direction'],
-  indexes: ['card_id'],
+  required: ['id', 'userId', 'cardId', 'direction'],
+  indexes: ['cardId'],
 } as const;
 
 async function insertCard(db: RxDatabase, term: string, order: number) {
   await (db as any).cards.insert({
     id: `test-deck|${term}`,
-    user_id: 'test-user',
-    deck_name: 'test-deck',
+    userId: 'test-user',
+    deckName: 'test-deck',
     term,
     back: `${term}-back`,
     tags: '[]',
@@ -76,7 +76,7 @@ describe('RxDbCardRepository integration', () => {
     });
     await db.addCollections({
       cards: { schema: cardsSchema },
-      srs_state: { schema: srsStateSchema },
+      srsState: { schema: srsStateSchema },
     });
     repo = new RxDbCardRepository(db as any);
   });
@@ -120,16 +120,16 @@ describe('RxDbCardRepository integration', () => {
 
     it('joins srs_state into FlashCard state/reverseState', async () => {
       await insertCard(db, 'hello', 0);
-      await (db as any).srs_state.insert({
+      await (db as any).srsState.insert({
         id: 'test-deck|hello:forward',
-        user_id: 'test-user',
-        card_id: 'test-deck|hello',
+        userId: 'test-user',
+        cardId: 'test-deck|hello',
         direction: 'forward',
         due: '2025-02-01T00:00:00Z',
         stability: 1.5,
         difficulty: 5,
-        elapsed_days: 0,
-        scheduled_days: 1,
+        elapsedDays: 0,
+        scheduledDays: 1,
         reps: 1,
         lapses: 0,
         state: 2,

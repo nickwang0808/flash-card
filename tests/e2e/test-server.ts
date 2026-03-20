@@ -102,7 +102,7 @@ async function clearTestUserData(userId: string, accessToken: string): Promise<v
 
   // Delete in FK-safe order
   for (const table of ['card_snapshots', 'review_logs', 'srs_state', 'cards', 'settings']) {
-    await fetch(`${SUPABASE_URL}/rest/v1/${table}?user_id=eq.${userId}`, {
+    await fetch(`${SUPABASE_URL}/rest/v1/${table}?userId=eq.${userId}`, {
       method: 'DELETE',
       headers,
     });
@@ -122,8 +122,8 @@ async function seedTestCards(userId: string, accessToken: string): Promise<void>
   const deckName = 'spanish-vocab';
   const rows = Object.entries(TEST_CARDS).map(([term, card], index) => ({
     id: `${deckName}|${term}`,
-    user_id: userId,
-    deck_name: deckName,
+    userId: userId,
+    deckName: deckName,
     term,
     front: card.front ?? null,
     back: card.back,

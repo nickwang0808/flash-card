@@ -15,12 +15,12 @@ export function SettingsScreen({ onBack }: Props) {
 
   async function update(partial: Partial<SettingsDoc>) {
     const existing = await db.settings.findOne('settings').exec();
-    const userId = existing?.user_id ?? '';
+    const userId = existing?.userId ?? '';
     await db.settings.upsert({
       id: 'settings',
-      user_id: userId,
-      new_cards_per_day: partial.new_cards_per_day ?? s?.new_cards_per_day ?? 10,
-      review_order: partial.review_order ?? s?.review_order ?? 'random',
+      userId: userId,
+      newCardsPerDay: partial.newCardsPerDay ?? s?.newCardsPerDay ?? 10,
+      reviewOrder: partial.reviewOrder ?? s?.reviewOrder ?? 'random',
       theme: partial.theme ?? s?.theme ?? 'system',
     });
   }
@@ -61,10 +61,10 @@ export function SettingsScreen({ onBack }: Props) {
           <input
             type="number"
             min={0}
-            value={s?.new_cards_per_day ?? 10}
+            value={s?.newCardsPerDay ?? 10}
             onChange={(e) => {
               const val = Math.floor(Number(e.target.value));
-              if (val >= 0) update({ new_cards_per_day: val });
+              if (val >= 0) update({ newCardsPerDay: val });
             }}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
@@ -74,8 +74,8 @@ export function SettingsScreen({ onBack }: Props) {
         <div>
           <label className="block text-sm font-medium mb-1">Review order</label>
           <select
-            value={s?.review_order ?? 'random'}
-            onChange={(e) => update({ review_order: e.target.value })}
+            value={s?.reviewOrder ?? 'random'}
+            onChange={(e) => update({ reviewOrder: e.target.value })}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="random">Random</option>

@@ -63,7 +63,7 @@ test.describe('Settings screen', () => {
     const stored = await page.evaluate(async () => {
       const db = (window as any).__RXDB__;
       const doc = await db.settings.findOne('settings').exec();
-      return doc ? doc.toJSON().new_cards_per_day : null;
+      return doc ? doc.toJSON().newCardsPerDay : null;
     });
     expect(stored).toBe(25);
   });
@@ -97,7 +97,7 @@ test.describe('Settings screen', () => {
     await page.waitForFunction(async () => {
       const db = (window as any).__RXDB__;
       const doc = await db.settings.findOne('settings').exec();
-      return doc?.toJSON()?.review_order === 'oldest-first';
+      return doc?.toJSON()?.reviewOrder === 'oldest-first';
     }, { timeout: 5000 });
 
     // Navigate away and back — should still show oldest-first
@@ -170,7 +170,7 @@ test.describe('New card daily limit', () => {
     await page.waitForFunction(async () => {
       const db = (window as any).__RXDB__;
       const doc = await db.settings.findOne('settings').exec();
-      return doc?.toJSON()?.new_cards_per_day === 0;
+      return doc?.toJSON()?.newCardsPerDay === 0;
     }, { timeout: 5000 });
 
     await page.getByRole('button', { name: 'Back' }).click();

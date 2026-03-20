@@ -3,7 +3,6 @@ import { combineLatest } from 'rxjs';
 import { type Card } from 'ts-fsrs';
 import type { AppDatabase, CardDoc, SrsStateDoc } from './rxdb';
 
-// FlashCard: UI contract with camelCase and deserialized FSRS dates
 export interface FlashCard {
   id: string;
   deckName: string;
@@ -25,19 +24,17 @@ export interface CardRepository {
   suspend(id: string): Promise<void>;
 }
 
-// --- FSRS date serialization ---
-
 export function serializeFsrsCard(card: Card): Record<string, unknown> {
   return {
     due: card.due.toISOString(),
     stability: card.stability,
     difficulty: card.difficulty,
-    elapsed_days: card.elapsed_days,
-    scheduled_days: card.scheduled_days,
+    elapsedDays: card.elapsed_days,
+    scheduledDays: card.scheduled_days,
     reps: card.reps,
     lapses: card.lapses,
     state: card.state,
-    last_review: card.last_review?.toISOString(),
+    lastReview: card.last_review?.toISOString(),
   };
 }
 
@@ -49,12 +46,12 @@ function srsDocToCard(doc: SrsStateDoc): Card | null {
     due: new Date(doc.due),
     stability: doc.stability ?? 0,
     difficulty: doc.difficulty ?? 0,
-    elapsed_days: doc.elapsed_days ?? 0,
-    scheduled_days: doc.scheduled_days ?? 0,
+    elapsed_days: doc.elapsedDays ?? 0,
+    scheduled_days: doc.scheduledDays ?? 0,
     reps: doc.reps ?? 0,
     lapses: doc.lapses ?? 0,
     state: doc.state ?? 0,
-    last_review: doc.last_review ? new Date(doc.last_review) : undefined,
+    last_review: doc.lastReview ? new Date(doc.lastReview) : undefined,
   } as Card;
 }
 
@@ -65,7 +62,7 @@ function joinToFlashCard(
 ): FlashCard {
   return {
     id: card.id,
-    deckName: card.deck_name,
+    deckName: card.deckName,
     term: card.term,
     front: card.front || undefined,
     back: card.back,
@@ -88,8 +85,8 @@ export class RxDbCardRepository implements CardRepository {
     const doc = await this.db.cards.findOne(id).exec();
     if (!doc) return null;
     const card = doc.toJSON() as CardDoc;
-    const fwd = await this.db.srs_state.findOne(`${id}:forward`).exec();
-    const rev = await this.db.srs_state.findOne(`${id}:reverse`).exec();
+    const fwd = await this.db.srsState.findOne(`${id}:forward`).exec();
+    const rev = await this.db.srsState.findOne(`${id}:reverse`).exec();
     return joinToFlashCard(
       card,
       fwd?.toJSON() as SrsStateDoc | undefined,
@@ -102,28 +99,26 @@ export class RxDbCardRepository implements CardRepository {
     const srsId = `${id}:${direction}`;
 
     if (value === null) {
-      // Remove the SRS state (card becomes "new" again)
-      const doc = await this.db.srs_state.findOne(srsId).exec();
+      const doc = await this.db.srsState.findOne(srsId).exec();
       if (doc) await doc.remove();
     } else {
-      // Get card to find user_id
       const card = await this.db.cards.findOne(id).exec();
       if (!card) return;
 
-      await this.db.srs_state.upsert({
+      await this.db.srsState.upsert({
         id: srsId,
-        user_id: card.user_id,
-        card_id: id,
+        userId: card.userId,
+        cardId: id,
         direction,
         due: value.due as string,
         stability: value.stability as number,
         difficulty: value.difficulty as number,
-        elapsed_days: value.elapsed_days as number,
-        scheduled_days: value.scheduled_days as number,
+        elapsedDays: value.elapsedDays as number,
+        scheduledDays: value.scheduledDays as number,
         reps: value.reps as number,
         lapses: value.lapses as number,
         state: value.state as number,
-        last_review: value.last_review as string | undefined,
+        lastReview: value.lastReview as string | undefined,
       });
     }
   }
@@ -135,11 +130,10 @@ export class RxDbCardRepository implements CardRepository {
     }
   }
 
-  // Reactive subscription: joins cards + srs_state via combineLatest
   subscribeCards(deckName: string, cb: (cards: FlashCard[]) => void): () => void {
     const cards$ = this.db.cards
-      .find({ selector: { deck_name: deckName }, sort: [{ order: 'asc' }] }).$;
-    const srs$ = this.db.srs_state.find().$;
+      .find({ selector: { deckName }, sort: [{ order: 'asc' }] }).$;
+    const srs$ = this.db.srsState.find().$;
 
     const sub = combineLatest([cards$, srs$]).subscribe(([cardDocs, srsDocs]) => {
       const srsMap = new Map<string, SrsStateDoc>();
@@ -157,7 +151,7 @@ export class RxDbCardRepository implements CardRepository {
     let first = true;
     let prev: string[] = [];
     const sub = this.db.cards.find().$.subscribe((docs) => {
-      const names = [...new Set(docs.map((d) => d.deck_name))].sort();
+      const names = [...new Set(docs.map((d) => d.deckName))].sort();
       if (first || names.length !== prev.length || names.some((n, i) => n !== prev[i])) {
         first = false;
         prev = names;

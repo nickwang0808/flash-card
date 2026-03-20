@@ -137,24 +137,24 @@ export async function rateCard(
   // Get user_id from the card (set by replication)
   const db = getDatabaseSync();
   const cardDoc = await db.cards.findOne(card.id).exec();
-  const userId = cardDoc?.user_id ?? '';
+  const userId = cardDoc?.userId ?? '';
 
   const storedLog: ReviewLogDoc = {
     id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
-    user_id: userId,
-    card_id: card.id,
-    is_reverse: card.isReverse,
+    userId,
+    cardId: card.id,
+    isReverse: card.isReverse,
     rating: log.rating,
     state: log.state,
     due: log.due.toISOString(),
     stability: log.stability,
     difficulty: log.difficulty,
-    elapsed_days: log.elapsed_days,
-    last_elapsed_days: log.last_elapsed_days,
-    scheduled_days: log.scheduled_days,
+    elapsedDays: log.elapsed_days,
+    lastElapsedDays: log.last_elapsed_days,
+    scheduledDays: log.scheduled_days,
     review: log.review.toISOString(),
   };
-  await db.review_logs.insert(storedLog);
+  await db.reviewLogs.insert(storedLog);
 
   const serializedState = serializeFsrsCard(newState);
   const cardRepo = getCardRepository();
@@ -182,25 +182,25 @@ export async function rateCardSuperEasy(
 
   const db = getDatabaseSync();
   const cardDoc = await db.cards.findOne(card.id).exec();
-  const userId = cardDoc?.user_id ?? '';
+  const userId = cardDoc?.userId ?? '';
 
   const storedLog: ReviewLogDoc = {
     id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
-    user_id: userId,
-    card_id: card.id,
-    is_reverse: card.isReverse,
+    userId,
+    cardId: card.id,
+    isReverse: card.isReverse,
     rating: Rating.Easy,
     state: State.New,
     due: due.toISOString(),
     stability: days,
     difficulty: 4,
-    elapsed_days: 0,
-    last_elapsed_days: 0,
-    scheduled_days: days,
+    elapsedDays: 0,
+    lastElapsedDays: 0,
+    scheduledDays: days,
     review: now.toISOString(),
   };
 
-  await db.review_logs.insert(storedLog);
+  await db.reviewLogs.insert(storedLog);
 
   const serializedState = serializeFsrsCard(newState);
   const cardRepo = getCardRepository();
@@ -212,9 +212,9 @@ export function useDeck(deckName: string) {
   const db = getDatabaseSync();
   const { data: settingsList, isLoading: settingsLoading } = useRxQuery(db.settings);
   const { data: cardsList, isLoading: cardsLoading } = useCards(deckName);
-  const { data: logsList, isLoading: logsLoading } = useRxQuery(db.review_logs);
+  const { data: logsList, isLoading: logsLoading } = useRxQuery(db.reviewLogs);
 
-  const newCardsLimit = settingsList[0]?.new_cards_per_day ?? 10;
+  const newCardsLimit = settingsList[0]?.newCardsPerDay ?? 10;
   const isLoading = cardsLoading || logsLoading || settingsLoading;
 
   const todayLocal = new Date().toLocaleDateString('en-CA');
@@ -222,8 +222,8 @@ export function useDeck(deckName: string) {
     logsList
       .filter((l) => l.state === 0 && new Date(l.review).toLocaleDateString('en-CA') === todayLocal)
       .map((l) => {
-        const term = l.card_id.split('|')[1] ?? l.card_id;
-        return l.is_reverse ? `${term}:reverse` : term;
+        const term = l.cardId.split('|')[1] ?? l.cardId;
+        return l.isReverse ? `${term}:reverse` : term;
       })
   );
 
@@ -286,34 +286,35 @@ export function useDeck(deckName: string) {
     if (!lastLog) return;
 
     const cardRepo = getCardRepository();
-    const field = lastLog.is_reverse ? 'reverseState' : 'state';
+    const field = lastLog.isReverse ? 'reverseState' : 'state';
 
     if (lastLog.state === 0) {
-      await cardRepo.updateState(lastLog.card_id, field, null);
+      await cardRepo.updateState(lastLog.cardId, field, null);
     } else {
-      const card = await cardRepo.getById(lastLog.card_id);
+      const card = await cardRepo.getById(lastLog.cardId);
       if (!card) return;
 
-      const currentState = lastLog.is_reverse ? card.reverseState : card.state;
+      const currentState = lastLog.isReverse ? card.reverseState : card.state;
       if (!currentState) return;
 
+      // Map camelCase ReviewLogDoc → ts-fsrs snake_case ReviewLog
       const reviewLog: ReviewLog = {
         rating: lastLog.rating as Rating,
         state: lastLog.state as State,
         due: new Date(lastLog.due),
         stability: lastLog.stability,
         difficulty: lastLog.difficulty,
-        elapsed_days: lastLog.elapsed_days,
-        last_elapsed_days: lastLog.last_elapsed_days,
-        scheduled_days: lastLog.scheduled_days,
+        elapsed_days: lastLog.elapsedDays,
+        last_elapsed_days: lastLog.lastElapsedDays,
+        scheduled_days: lastLog.scheduledDays,
         review: new Date(lastLog.review),
       };
 
       const previousState = fsrs().rollback(currentState, reviewLog);
-      await cardRepo.updateState(lastLog.card_id, field, serializeFsrsCard(previousState));
+      await cardRepo.updateState(lastLog.cardId, field, serializeFsrsCard(previousState));
     }
 
-    const logDoc = await getDatabaseSync().review_logs.findOne(lastLog.id).exec();
+    const logDoc = await getDatabaseSync().reviewLogs.findOne(lastLog.id).exec();
     if (logDoc) await logDoc.remove();
   }
 

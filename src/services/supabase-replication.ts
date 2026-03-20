@@ -9,14 +9,14 @@ export function startReplication(
   client: SupabaseClient,
   userId: string,
 ): ReplicationStates {
-  const opts = (tableName: string, collection: any) =>
+  const replicate = (tableName: string, collection: any) =>
     replicateSupabase({
       replicationIdentifier: `${tableName}-supabase`,
       collection,
       client,
       tableName,
       pull: {
-        queryBuilder: ({ query }) => query.eq('user_id', userId),
+        queryBuilder: ({ query }) => query.eq('userId', userId),
       },
       push: {},
       live: true,
@@ -24,17 +24,13 @@ export function startReplication(
     });
 
   return [
-    opts('cards', db.cards),
-    opts('srs_state', db.srs_state),
-    opts('review_logs', db.review_logs),
-    opts('settings', db.settings),
+    replicate('cards', db.cards),
+    replicate('srs_state', db.srsState),
+    replicate('review_logs', db.reviewLogs),
+    replicate('settings', db.settings),
   ];
 }
 
 export async function cancelReplication(states: ReplicationStates): Promise<void> {
   await Promise.all(states.map((s) => s.cancel()));
-}
-
-export async function resyncAll(states: ReplicationStates): Promise<void> {
-  await Promise.all(states.map((s) => s.reSync()));
 }
