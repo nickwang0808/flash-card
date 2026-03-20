@@ -1,88 +1,17 @@
 import { test, expect } from '@playwright/test';
-import { cloneTestRepo, createTestBranch, deleteTestBranch } from './helpers';
-
-test.describe('Sync screen', () => {
-  let testBranch: string;
-
-  test.beforeEach(async ({ page }, testInfo) => {
-    const safeName = testInfo.title.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 30);
-    testBranch = await createTestBranch(`sync-${safeName}`);
-    await cloneTestRepo(page, testBranch);
-  });
-
-  test.afterEach(async () => {
-    await deleteTestBranch(testBranch);
-  });
-
-  test('navigates to sync screen and shows status', async ({ page }) => {
-    await page.getByRole('button', { name: 'Sync', exact: true }).click();
-
-    await expect(page.getByRole('heading', { name: 'Sync' })).toBeVisible();
-    await expect(page.getByText('Online', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Sync' })).toBeVisible();
-  });
-
-  test('shows recent commits from GitHub', async ({ page }) => {
-    await page.getByRole('button', { name: 'Sync', exact: true }).click();
-
-    await expect(page.getByText('Recent Commits')).toBeVisible();
-    await expect(page.getByText('seed test data')).toBeVisible();
-  });
-
-  // Skip: pending count is hard to test reliably due to async write queue timing
-  test.skip('shows pending reviews after a session', async ({ page, context }) => {
-    // Start review session while online
-    await page.getByText('spanish-vocab').click();
-    await page.getByRole('button', { name: 'Show Answer' }).waitFor();
-
-    // Go offline before rating so writes queue instead of completing
-    await context.setOffline(true);
-
-    // Do a review
-    await page.getByRole('button', { name: 'Show Answer' }).click();
-    await page.getByRole('button', { name: 'Good' }).click();
-
-    // Wait a moment for the queue to update
-    await page.waitForTimeout(200);
-
-    await page.getByRole('button', { name: 'End Session' }).click();
-
-    // Go to sync
-    await page.getByRole('button', { name: 'Sync', exact: true }).click();
-
-    // Should see pending reviews count (offline so writes are queued)
-    await expect(page.getByText(/\d+ reviews? pending sync/)).toBeVisible();
-
-    // Restore online
-    await context.setOffline(false);
-  });
-
-  test('back button returns to deck list', async ({ page }) => {
-    await page.getByRole('button', { name: 'Sync', exact: true }).click();
-    await page.getByRole('button', { name: 'Back' }).click();
-
-    await expect(page.getByRole('heading', { name: 'Decks' })).toBeVisible();
-  });
-});
+import { cloneTestRepo, resetTestDB } from './helpers';
 
 test.describe('Settings screen', () => {
-  let testBranch: string;
-
-  test.beforeEach(async ({ page }, testInfo) => {
-    const safeName = testInfo.title.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 30);
-    testBranch = await createTestBranch(`settings-${safeName}`);
-    await cloneTestRepo(page, testBranch);
-  });
-
-  test.afterEach(async () => {
-    await deleteTestBranch(testBranch);
+  test.beforeEach(async ({ page }) => {
+    await resetTestDB();
+    await cloneTestRepo(page);
   });
 
   test('navigates to settings and shows current config', async ({ page }) => {
     await page.getByRole('button', { name: 'Settings' }).click();
 
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
-    await expect(page.getByText('https://github.com/test/flash-card-test')).toBeVisible();
+    await expect(page.getByText('Signed in via GitHub')).toBeVisible();
     await expect(page.getByRole('spinbutton')).toHaveValue('10');
   });
 
@@ -144,41 +73,6 @@ test.describe('Settings screen', () => {
     await page.getByRole('button', { name: 'Back' }).click();
 
     await expect(page.getByRole('heading', { name: 'Decks' })).toBeVisible();
-  });
-
-  test('repo URL edit and save persists new value', async ({ page }) => {
-    await page.getByRole('button', { name: 'Settings' }).click();
-
-    // Click Edit to enter edit mode
-    await page.getByRole('button', { name: 'Edit' }).click();
-
-    // Input should be visible with current repo URL
-    const input = page.getByPlaceholder('owner/repo');
-    await expect(input).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
-
-    // Change the URL
-    await input.fill('https://github.com/test/new-repo');
-    await page.getByRole('button', { name: 'Save' }).click();
-
-    // Edit mode should close, new URL should be displayed
-    await expect(page.getByText('https://github.com/test/new-repo')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible();
-  });
-
-  test('repo URL edit cancel reverts to original value', async ({ page }) => {
-    await page.getByRole('button', { name: 'Settings' }).click();
-
-    await page.getByRole('button', { name: 'Edit' }).click();
-
-    const input = page.getByPlaceholder('owner/repo');
-    await input.fill('https://github.com/test/should-revert');
-    await page.getByRole('button', { name: 'Cancel' }).click();
-
-    // Should show original URL, not the edited one
-    await expect(page.getByText('https://github.com/test/flash-card-test')).toBeVisible();
-    await expect(page.getByText('https://github.com/test/should-revert')).not.toBeVisible();
   });
 
   test('logout cancel stays on settings screen', async ({ page }) => {
@@ -244,33 +138,33 @@ test.describe('Settings screen', () => {
 });
 
 test.describe('New card daily limit', () => {
-  let testBranch: string;
-
-  test.beforeEach(async ({ page }, testInfo) => {
-    const safeName = testInfo.title.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 30);
-    testBranch = await createTestBranch(`limit-${safeName}`);
-    await cloneTestRepo(page, testBranch);
-  });
-
-  test.afterEach(async () => {
-    await deleteTestBranch(testBranch);
+  test.beforeEach(async ({ page }) => {
+    await resetTestDB();
+    await cloneTestRepo(page);
   });
 
   test('respects new cards per day setting', async ({ page }) => {
     await page.getByRole('button', { name: 'Settings' }).click();
-    await page.getByRole('slider').fill('2');
+
+    const input = page.getByRole('spinbutton');
+    await input.fill('2');
+    await input.blur();
+
     await page.getByRole('button', { name: 'Back' }).click();
 
     await page.getByText('spanish-vocab').click();
 
     // With limit of 2, should show "2 remaining" (only 2 new cards allowed)
+    // 2 new cards × 1 direction = 2 (both new reversible, slots reserved atomically)
     await expect(page.getByText('2 remaining')).toBeVisible();
   });
 
   test('new cards per day = 0 shows session complete immediately', async ({ page }) => {
     await page.getByRole('button', { name: 'Settings' }).click();
-    await page.getByRole('slider').fill('0');
-    await expect(page.getByText(/New cards per day: 0/)).toBeVisible();
+
+    const input = page.getByRole('spinbutton');
+    await input.fill('0');
+    await input.blur();
 
     // Wait for RxDB to persist the value
     await page.waitForFunction(async () => {
@@ -289,26 +183,3 @@ test.describe('New card daily limit', () => {
   });
 });
 
-test.describe('Manual sync', () => {
-  let testBranch: string;
-
-  test.beforeEach(async ({ page }, testInfo) => {
-    const safeName = testInfo.title.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 30);
-    testBranch = await createTestBranch(`msync-${safeName}`);
-    await cloneTestRepo(page, testBranch);
-  });
-
-  test.afterEach(async () => {
-    await deleteTestBranch(testBranch);
-  });
-
-  test('sync button shows success message', async ({ page }) => {
-    await page.getByRole('button', { name: 'Sync', exact: true }).click();
-
-    // Click the Sync button on the sync screen
-    await page.getByRole('button', { name: 'Sync' }).click();
-
-    // Should show syncing state, then success
-    await expect(page.getByText('Synced successfully')).toBeVisible({ timeout: 15000 });
-  });
-});

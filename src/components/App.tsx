@@ -1,6 +1,9 @@
-import { useEffect } from 'react';
-import { useSettings } from '../hooks/useSettings';
-import { runSync, flushSync } from '../services/replication';
+import { useEffect, useRef } from 'react';
+import { useAuth } from '../hooks/useAuth';
+import { useRxQuery } from '../hooks/useRxQuery';
+import { getDatabaseSync } from '../services/rxdb';
+import { supabase } from '../services/supabase';
+import { startReplication, cancelReplication } from '../services/supabase-replication';
 import { AuthScreen } from './AuthScreen';
 import { DeckListScreen } from './DeckListScreen';
 import { ReviewScreen } from './ReviewScreen';
@@ -16,64 +19,69 @@ type Screen =
   | { name: 'settings' };
 
 export function App() {
-  const { settings, isConfigured, isLoading } = useSettings();
-  const [screen, setScreen] = useState<Screen>(() =>
-    // Can't check isConfigured here (initial render), will fix in effect below
-    ({ name: 'auth' })
-  );
+  const db = getDatabaseSync();
+  const { data: settingsList, isLoading: settingsLoading } = useRxQuery(db.settings);
+  const theme = settingsList[0]?.theme ?? 'system';
+  const { isSignedIn, loading: authLoading } = useAuth();
+  const [screen, setScreen] = useState<Screen>({ name: 'auth' });
+  const replicationRef = useRef<ReturnType<typeof startReplication> | null>(null);
 
-  // Set initial screen once settings load
+  // Set initial screen once auth state is known
   useEffect(() => {
-    if (isLoading) return;
-    if (isConfigured) {
+    if (authLoading) return;
+    if (isSignedIn) {
       setScreen({ name: 'deck-list' });
     } else {
       setScreen({ name: 'auth' });
     }
-  // Only run when loading completes, not on every isConfigured change
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading]);
+  }, [authLoading]);
 
-  // Initial sync — once after bootstrap
+  // Start/stop replication based on auth state
   useEffect(() => {
-    runSync().catch(() => {});
-  }, []);
-
-  // Tab hide — flush pending debounced pushes immediately
-  useEffect(() => {
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        flushSync();
+    if (!isSignedIn) {
+      if (replicationRef.current) {
+        cancelReplication(replicationRef.current);
+        replicationRef.current = null;
       }
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
+      return;
+    }
+
+    // Get user ID and start replication
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      const db = getDatabaseSync();
+      replicationRef.current = startReplication(db, supabase, user.id);
+    });
 
     return () => {
-      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (replicationRef.current) {
+        cancelReplication(replicationRef.current);
+        replicationRef.current = null;
+      }
     };
-  }, []);
+  }, [isSignedIn]);
 
   // Apply theme
   useEffect(() => {
     document.documentElement.classList.remove('dark');
-    if (settings.theme === 'dark') {
+    if (theme === 'dark') {
       document.documentElement.classList.add('dark');
-    } else if (settings.theme === 'system') {
+    } else if (theme === 'system') {
       if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
         document.documentElement.classList.add('dark');
       }
     }
-  }, [settings.theme]);
+  }, [theme]);
 
   const navigate = (s: Screen) => setScreen(s);
 
-  if (isLoading) {
+  if (authLoading || settingsLoading) {
     return <div className="h-dvh flex items-center justify-center">Loading...</div>;
   }
 
   function handleAuthComplete() {
     navigate({ name: 'deck-list' });
-    runSync().catch(() => {});
   }
 
   switch (screen.name) {

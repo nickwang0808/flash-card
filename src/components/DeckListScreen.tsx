@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useDeck } from '../hooks/useDeck';
-import { useDeckNames } from '../services/card-repository';
+import { useDeck, useDeckNames } from '../hooks/useDeck';
 
 interface Props {
   onSelectDeck: (deck: string) => void;
@@ -94,7 +93,7 @@ export function DeckListScreen({ onSelectDeck, onSync, onSettings }: Props) {
 
         {deckNames.length === 0 && (
           <p className="text-center text-muted-foreground py-8">
-            No decks found. Add directories with cards.json to your repo.
+            No decks found. Sync to pull your cards.
           </p>
         )}
       </div>

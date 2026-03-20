@@ -1,40 +1,12 @@
 import { type Page } from '@playwright/test';
-import { execSync } from 'child_process';
-import { readTestConfig } from './test-server';
-
-function getConfig() {
-  return readTestConfig();
-}
+import { resetTestData, TEST_USER_EMAIL, TEST_USER_PASSWORD } from './test-server';
 
 /**
- * Creates a local git branch for test isolation.
- * Uses the local test repo instead of GitHub API.
+ * Resets Supabase test data (clears + re-seeds cards).
+ * Replaces the old createTestBranch/deleteTestBranch git approach.
  */
-export async function createTestBranch(suiteName: string): Promise<string> {
-  const { repoDir } = getConfig();
-  const branchName = `test-${suiteName}-${Date.now()}`;
-  execSync(`git branch "${branchName}" main`, { cwd: repoDir, stdio: 'pipe' });
-  return branchName;
-}
-
-/**
- * Deletes a local test branch.
- */
-export async function deleteTestBranch(branchName: string): Promise<void> {
-  const { repoDir } = getConfig();
-  try {
-    // Make sure we're not on the branch we're deleting
-    const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
-      cwd: repoDir,
-      encoding: 'utf-8',
-    }).trim();
-    if (currentBranch === branchName) {
-      execSync('git checkout main --quiet', { cwd: repoDir, stdio: 'pipe' });
-    }
-    execSync(`git branch -D "${branchName}"`, { cwd: repoDir, stdio: 'pipe' });
-  } catch {
-    // Ignore errors (branch might not exist)
-  }
+export async function resetTestDB(): Promise<void> {
+  await resetTestData();
 }
 
 /**
@@ -44,6 +16,10 @@ export async function wipeAppData(page: Page) {
   await page.goto('http://localhost:5173');
   await page.waitForLoadState('networkidle');
   await page.evaluate(async () => {
+    // Sign out if there's a Supabase session
+    if ((window as any).__SUPABASE__) {
+      await (window as any).__SUPABASE__.auth.signOut();
+    }
     localStorage.clear();
     const dbs = await indexedDB.databases();
     await Promise.all(
@@ -65,64 +41,35 @@ export async function wipeAppData(page: Page) {
 }
 
 /**
- * Connects to the local test git server by injecting settings directly
- * into RxDB (via window.__RXDB__), ending up on the deck list with seeded data.
- * Optionally uses a specific branch for test isolation.
+ * Signs in with the dev test user, syncs cards from Supabase,
+ * and lands on the deck list with seeded data.
+ * Replaces the old cloneTestRepo helper.
  */
-export async function cloneTestRepo(page: Page, branch?: string) {
-  const { serverUrl } = getConfig();
-
+export async function cloneTestRepo(page: Page) {
   // Start fresh
-  await page.goto('http://localhost:5173');
-  await page.waitForLoadState('networkidle');
+  await wipeAppData(page);
 
-  // Clear any previous state
-  await page.evaluate(async () => {
-    localStorage.clear();
-    const dbs = await indexedDB.databases();
-    await Promise.all(
-      dbs
-        .filter((db) => db.name)
-        .map(
-          (db) =>
-            new Promise<void>((resolve) => {
-              const req = indexedDB.deleteDatabase(db.name!);
-              req.onsuccess = () => resolve();
-              req.onerror = () => resolve();
-              req.onblocked = () => resolve();
-            }),
-        ),
-    );
-  });
-
-  // Reload so the app bootstraps fresh (creates RxDB and exposes window.__RXDB__)
-  await page.reload();
-  await page.waitForLoadState('networkidle');
-
-  // Wait for RxDB to be available
-  await page.waitForFunction(() => !!(window as any).__RXDB__, { timeout: 10000 });
-
-  // Inject settings directly into RxDB
-  // Uses a fake github.com URL (parsed by parseRepoUrl) + apiBaseUrl pointing at local server
-  await page.evaluate(
-    async ({ apiBaseUrl, branchName }) => {
-      const db = (window as any).__RXDB__;
-      await db.settings.upsert({
-        id: 'settings',
-        repoUrl: 'https://github.com/test/flash-card-test',
-        token: 'fake-token',
-        newCardsPerDay: 10,
-        reviewOrder: 'random',
-        theme: 'system',
-        apiBaseUrl,
-        ...(branchName ? { branch: branchName } : {}),
-      });
-    },
-    { apiBaseUrl: serverUrl, branchName: branch },
+  // Wait for RxDB and Supabase client to be available
+  await page.waitForFunction(
+    () => !!(window as any).__RXDB__ && !!(window as any).__SUPABASE__,
+    { timeout: 10000 },
   );
 
-  // Reload to trigger initial sync with the injected settings
+  // Sign in with the test user via the app's Supabase client
+  await page.evaluate(
+    async ({ email, password }) => {
+      const supabase = (window as any).__SUPABASE__;
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        // User might not exist yet — sign up
+        const { error: signUpError } = await supabase.auth.signUp({ email, password });
+        if (signUpError) throw signUpError;
+      }
+    },
+    { email: TEST_USER_EMAIL, password: TEST_USER_PASSWORD },
+  );
+
+  // Reload to trigger auth detection + initial sync
   await page.reload();
   await page.waitForSelector('text=spanish-vocab', { timeout: 30000 });
 }
-

@@ -1,9 +1,8 @@
-import { setupTestRepo, startServer } from './test-server';
+import { setupTestData } from './test-server';
 import type { FullConfig } from '@playwright/test';
 
 async function globalSetup(_config: FullConfig) {
-  setupTestRepo();
-  await startServer();
+  await setupTestData();
 }
 
 export default globalSetup;
