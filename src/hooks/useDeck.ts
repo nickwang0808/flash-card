@@ -355,15 +355,20 @@ export function useDeck(deckName: string) {
   const db = getDatabaseSync();
   const { data: settingsList, isLoading: settingsLoading } = useRxQuery(db.settings);
   const { data: cardsList, isLoading: cardsLoading } = useCards(deckName);
-  const { data: logsList, isLoading: logsLoading } = useRxQuery(db.reviewLogs);
+
+  // Only load today's review logs (for introduced-today tracking + undo)
+  const todayLocal = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+  const todayStart = `${todayLocal}T00:00:00`;
+  const { data: logsList, isLoading: logsLoading } = useRxQuery(db.reviewLogs, {
+    selector: { review: { $gte: todayStart } },
+  });
 
   const newCardsLimit = settingsList[0]?.newCardsPerDay ?? 10;
   const isLoading = cardsLoading || logsLoading || settingsLoading;
 
-  const todayLocal = new Date().toLocaleDateString('en-CA');
   const introducedToday = new Set(
     logsList
-      .filter((l) => l.state === 0 && new Date(l.review).toLocaleDateString('en-CA') === todayLocal)
+      .filter((l) => l.state === 0)
       .map((l) => {
         const term = l.cardId.split('|')[1] ?? l.cardId;
         return l.isReverse ? `${term}:reverse` : term;
