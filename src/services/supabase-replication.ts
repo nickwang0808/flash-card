@@ -25,10 +25,11 @@ function replicate<T>(
         let query = client.from(tableName).select('*').eq('userId', userId);
 
         if (lastCheckpoint) {
-          // Avoid .or() — PostgREST can't parse special chars (parens, commas) in values.
-          // Instead, just filter by _modified >= checkpoint. This may re-fetch a few docs
-          // from the same timestamp, but RxDB deduplicates by primary key.
-          query = query.gte('_modified', lastCheckpoint.modified);
+          // Use strictly greater-than to avoid infinite loop on same-timestamp docs.
+          // This may skip docs that share the exact checkpoint timestamp but have a
+          // higher ID — acceptable tradeoff since all docs from a batch share the
+          // same _modified (set by trigger) and are fetched together.
+          query = query.gt('_modified', lastCheckpoint.modified);
         }
 
         query = query
