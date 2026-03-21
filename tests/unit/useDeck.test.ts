@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createEmptyCard, Rating, type Card, type Grade } from 'ts-fsrs';
+
+vi.mock('../../src/services/supabase', () => ({
+  supabase: {},
+}));
+
 import {
   computeStudyItems,
   computeNewState,
