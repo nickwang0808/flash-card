@@ -99,7 +99,7 @@ async function updateSrsState(
     const doc = await db.srsState.findOne(srsId).exec();
     if (doc) await doc.remove();
   } else {
-    const userId = await getAuthUserId();
+    const userId = await getAuthUserId(cardId);
 
     await db.srsState.upsert({
       id: srsId,
@@ -244,7 +244,13 @@ export function computeNewState(
 
 // --- Auth helper ---
 
-async function getAuthUserId(): Promise<string> {
+async function getAuthUserId(cardId?: string): Promise<string> {
+  // Try to get userId from an existing card doc (avoids network call)
+  if (cardId) {
+    const doc = await getDatabaseSync().cards.findOne(cardId).exec();
+    if (doc?.userId) return doc.userId;
+  }
+  // Fall back to auth API
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
   return user.id;
@@ -257,7 +263,7 @@ export async function rateCard(card: StudyItem, rating: Grade): Promise<void> {
   const { card: newState, log } = computeNewState(existingState, rating);
 
   const db = getDatabaseSync();
-  const userId = await getAuthUserId();
+  const userId = await getAuthUserId(card.id);
 
   await db.reviewLogs.insert({
     id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
@@ -286,7 +292,7 @@ export async function rateCardSuperEasy(card: StudyItem, days = 60, now = new Da
   };
 
   const db = getDatabaseSync();
-  const userId = await getAuthUserId();
+  const userId = await getAuthUserId(card.id);
 
   await db.reviewLogs.insert({
     id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,

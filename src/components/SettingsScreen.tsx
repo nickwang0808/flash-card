@@ -15,11 +15,16 @@ export function SettingsScreen({ onBack }: Props) {
   const { signOut } = useAuth();
 
   async function update(partial: Partial<SettingsDoc>) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    // Get userId from existing doc first, fall back to auth
+    let userId = s?.userId;
+    if (!userId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      userId = user.id;
+    }
     await db.settings.upsert({
       id: 'settings',
-      userId: user.id,
+      userId,
       newCardsPerDay: partial.newCardsPerDay ?? s?.newCardsPerDay ?? 10,
       reviewOrder: partial.reviewOrder ?? s?.reviewOrder ?? 'random',
       theme: partial.theme ?? s?.theme ?? 'system',
