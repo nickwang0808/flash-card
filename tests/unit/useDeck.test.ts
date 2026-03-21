@@ -31,7 +31,7 @@ function createFlashCard(
 ): FlashCard {
   const deckName = opts.deckName ?? 'test-deck';
   return {
-    id: `${deckName}::${term}`,
+    id: crypto.randomUUID(),
     deckName,
     term,
     front: opts.front,

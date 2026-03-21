@@ -94,7 +94,7 @@ export type Database = {
           created: string
           deckName: string
           front?: string | null
-          id: string
+          id?: string
           order?: number
           reversible?: boolean
           suspended?: boolean
@@ -145,7 +145,7 @@ export type Database = {
           difficulty: number
           due: string
           elapsedDays: number
-          id: string
+          id?: string
           isReverse?: boolean
           lastElapsedDays: number
           rating: number
@@ -195,7 +195,7 @@ export type Database = {
         Insert: {
           _deleted?: boolean
           _modified?: string
-          id: string
+          id?: string
           newCardsPerDay?: number
           reviewOrder?: string
           theme?: string
@@ -238,7 +238,7 @@ export type Database = {
           direction: string
           due?: string | null
           elapsedDays?: number | null
-          id: string
+          id?: string
           lapses?: number | null
           lastReview?: string | null
           reps?: number | null

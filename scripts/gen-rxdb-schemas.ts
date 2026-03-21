@@ -18,22 +18,22 @@ const SYNCED_TABLES = {
   cards: {
     table: 'cards',
     indexes: ['deckName'],
-    maxLengths: { id: 300, userId: 100, deckName: 100, term: 200 },
+    maxLengths: { id: 36, userId: 36, deckName: 100, term: 200 },
   },
   srsState: {
     table: 'srs_state',
     indexes: ['cardId'],
-    maxLengths: { id: 300, userId: 100, cardId: 300, direction: 10 },
+    maxLengths: { id: 36, userId: 36, cardId: 36, direction: 10 },
   },
   settings: {
     table: 'settings',
     indexes: [],
-    maxLengths: { id: 100, userId: 100, reviewOrder: 50, theme: 20 },
+    maxLengths: { id: 36, userId: 36, reviewOrder: 50, theme: 20 },
   },
   reviewLogs: {
     table: 'review_logs',
     indexes: [],
-    maxLengths: { id: 300, userId: 100, cardId: 300 },
+    maxLengths: { id: 36, userId: 36, cardId: 36 },
   },
 } as const;
 

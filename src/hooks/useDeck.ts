@@ -84,7 +84,27 @@ function joinToFlashCard(
   };
 }
 
-// --- DB write helpers ---
+// --- Auth helper ---
+
+async function getAuthUserId(cardId?: string): Promise<string> {
+  if (cardId) {
+    const doc = await getDatabaseSync().cards.findOne(cardId).exec();
+    if (doc?.userId) return doc.userId;
+  }
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  return user.id;
+}
+
+// --- SRS state helpers (query by cardId + direction, not by ID) ---
+
+async function findSrsState(cardId: string, direction: string): Promise<any | null> {
+  const db = getDatabaseSync();
+  const docs = await db.srsState.find({
+    selector: { cardId, direction },
+  }).exec();
+  return docs[0] ?? null;
+}
 
 async function updateSrsState(
   cardId: string,
@@ -93,29 +113,43 @@ async function updateSrsState(
 ): Promise<void> {
   const db = getDatabaseSync();
   const direction = field === 'state' ? 'forward' : 'reverse';
-  const srsId = `${cardId}:${direction}`;
 
   if (value === null) {
-    const doc = await db.srsState.findOne(srsId).exec();
+    const doc = await findSrsState(cardId, direction);
     if (doc) await doc.remove();
   } else {
     const userId = await getAuthUserId(cardId);
+    const existing = await findSrsState(cardId, direction);
 
-    await db.srsState.upsert({
-      id: srsId,
-      userId,
-      cardId,
-      direction,
-      due: value.due as string,
-      stability: value.stability as number,
-      difficulty: value.difficulty as number,
-      elapsedDays: value.elapsedDays as number,
-      scheduledDays: value.scheduledDays as number,
-      reps: value.reps as number,
-      lapses: value.lapses as number,
-      state: value.state as number,
-      lastReview: value.lastReview as string | undefined,
-    });
+    if (existing) {
+      await existing.incrementalPatch({
+        due: value.due as string,
+        stability: value.stability as number,
+        difficulty: value.difficulty as number,
+        elapsedDays: value.elapsedDays as number,
+        scheduledDays: value.scheduledDays as number,
+        reps: value.reps as number,
+        lapses: value.lapses as number,
+        state: value.state as number,
+        lastReview: value.lastReview as string | undefined,
+      });
+    } else {
+      await db.srsState.insert({
+        id: crypto.randomUUID(),
+        userId,
+        cardId,
+        direction,
+        due: value.due as string,
+        stability: value.stability as number,
+        difficulty: value.difficulty as number,
+        elapsedDays: value.elapsedDays as number,
+        scheduledDays: value.scheduledDays as number,
+        reps: value.reps as number,
+        lapses: value.lapses as number,
+        state: value.state as number,
+        lastReview: value.lastReview as string | undefined,
+      });
+    }
   }
 }
 
@@ -124,8 +158,8 @@ async function getFlashCardById(cardId: string): Promise<FlashCard | null> {
   const doc = await db.cards.findOne(cardId).exec();
   if (!doc) return null;
   const card = doc.toJSON() as CardDoc;
-  const fwd = await db.srsState.findOne(`${cardId}:forward`).exec();
-  const rev = await db.srsState.findOne(`${cardId}:reverse`).exec();
+  const fwd = await findSrsState(cardId, 'forward');
+  const rev = await findSrsState(cardId, 'reverse');
   return joinToFlashCard(
     card,
     fwd?.toJSON() as SrsStateDoc | undefined,
@@ -242,20 +276,6 @@ export function computeNewState(
   return { card: result.card, log: result.log };
 }
 
-// --- Auth helper ---
-
-async function getAuthUserId(cardId?: string): Promise<string> {
-  // Try to get userId from an existing card doc (avoids network call)
-  if (cardId) {
-    const doc = await getDatabaseSync().cards.findOne(cardId).exec();
-    if (doc?.userId) return doc.userId;
-  }
-  // Fall back to auth API
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
-  return user.id;
-}
-
 // --- Rate / Undo / Suspend ---
 
 export async function rateCard(card: StudyItem, rating: Grade): Promise<void> {
@@ -266,7 +286,7 @@ export async function rateCard(card: StudyItem, rating: Grade): Promise<void> {
   const userId = await getAuthUserId(card.id);
 
   await db.reviewLogs.insert({
-    id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
+    id: crypto.randomUUID(),
     userId,
     cardId: card.id,
     isReverse: card.isReverse,
@@ -295,7 +315,7 @@ export async function rateCardSuperEasy(card: StudyItem, days = 60, now = new Da
   const userId = await getAuthUserId(card.id);
 
   await db.reviewLogs.insert({
-    id: `${card.id}:${card.isReverse ? 'reverse' : 'forward'}:${Date.now()}`,
+    id: crypto.randomUUID(),
     userId,
     cardId: card.id,
     isReverse: card.isReverse,
@@ -325,8 +345,12 @@ function useCards(deckName: string): { data: FlashCard[]; isLoading: boolean } {
     const srs$ = db.srsState.find().$;
 
     const sub = combineLatest([cards$, srs$]).subscribe(([cardDocs, srsDocs]) => {
+      // Index srsState by cardId+direction
       const srsMap = new Map<string, SrsStateDoc>();
-      for (const d of srsDocs) srsMap.set(d.id, d.toJSON() as SrsStateDoc);
+      for (const d of srsDocs) {
+        const s = d.toJSON() as SrsStateDoc;
+        srsMap.set(`${s.cardId}:${s.direction}`, s);
+      }
 
       setData(cardDocs.map((d) => {
         const card = d.toJSON() as CardDoc;
@@ -369,7 +393,7 @@ export function useDeck(deckName: string) {
   const { data: cardsList, isLoading: cardsLoading } = useCards(deckName);
 
   // Only load today's review logs (for introduced-today tracking + undo)
-  const todayLocal = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+  const todayLocal = new Date().toLocaleDateString('en-CA');
   const todayStart = `${todayLocal}T00:00:00`;
   const { data: logsList, isLoading: logsLoading } = useRxQuery(db.reviewLogs, {
     selector: { review: { $gte: todayStart } },
@@ -378,11 +402,14 @@ export function useDeck(deckName: string) {
   const newCardsLimit = settingsList[0]?.newCardsPerDay ?? 10;
   const isLoading = cardsLoading || logsLoading || settingsLoading;
 
+  // Build a map of cardId → term for the introduced-today check
+  const cardTermMap = new Map(cardsList.map(c => [c.id, c.term]));
+
   const introducedToday = new Set(
     logsList
       .filter((l) => l.state === 0)
       .map((l) => {
-        const term = l.cardId.split('::')[1] ?? l.cardId;
+        const term = cardTermMap.get(l.cardId) ?? l.cardId;
         return l.isReverse ? `${term}:reverse` : term;
       })
   );
@@ -429,8 +456,9 @@ export function useDeck(deckName: string) {
   }
 
   async function undo() {
+    // Find the most recent review log by review timestamp
     const sorted = [...logsList].sort(
-      (a, b) => parseInt(b.id.split(':')[2]) - parseInt(a.id.split(':')[2])
+      (a, b) => new Date(b.review).getTime() - new Date(a.review).getTime()
     );
     const lastLog = sorted[0];
     if (!lastLog) return;

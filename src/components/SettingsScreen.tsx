@@ -22,8 +22,9 @@ export function SettingsScreen({ onBack }: Props) {
       if (!user) return;
       userId = user.id;
     }
+    const existingId = s?.id ?? crypto.randomUUID();
     await db.settings.upsert({
-      id: 'settings',
+      id: existingId,
       userId,
       newCardsPerDay: partial.newCardsPerDay ?? s?.newCardsPerDay ?? 10,
       reviewOrder: partial.reviewOrder ?? s?.reviewOrder ?? 'random',

@@ -25,11 +25,10 @@ function replicate<T>(
         let query = client.from(tableName).select('*').eq('userId', userId);
 
         if (lastCheckpoint) {
-          // Use strictly greater-than to avoid infinite loop on same-timestamp docs.
-          // This may skip docs that share the exact checkpoint timestamp but have a
-          // higher ID — acceptable tradeoff since all docs from a batch share the
-          // same _modified (set by trigger) and are fetched together.
-          query = query.gt('_modified', lastCheckpoint.modified);
+          // UUID primary keys — no special characters, .or() is safe
+          query = query.or(
+            `"_modified".gt.${lastCheckpoint.modified},and("_modified".eq.${lastCheckpoint.modified},"${primaryPath}".gt.${lastCheckpoint.id})`,
+          );
         }
 
         query = query
@@ -58,21 +57,17 @@ function replicate<T>(
     },
     push: {
       async handler(rows: RxReplicationWriteToMasterRow<T>[]) {
-        // Simple upsert — last-write-wins, no conflict detection.
-        // Avoids replicateSupabase's addDocEqualityToQuery which breaks on
-        // special characters (parentheses, pipes) in field values.
         for (const row of rows) {
           const doc: any = { ...row.newDocumentState };
           if (doc._deleted) {
             doc._deleted = true;
           }
-          // Let server set _modified
           delete doc._modified;
 
           const { error } = await client.from(tableName).upsert(doc, { onConflict: 'id' });
           if (error) throw error;
         }
-        return []; // no conflicts — last-write-wins
+        return [];
       },
     },
     live: true,

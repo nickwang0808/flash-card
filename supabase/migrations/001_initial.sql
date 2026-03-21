@@ -1,6 +1,6 @@
 -- Cards: content only (SRS state lives in srs_state table)
 create table cards (
-  id text primary key,
+  id uuid primary key default gen_random_uuid(),
   "userId" uuid not null references auth.users on delete cascade,
   "deckName" text not null,
   term text not null,
@@ -13,7 +13,8 @@ create table cards (
   suspended boolean not null default false,
   approved boolean not null default true,
   _modified timestamptz not null default now(),
-  _deleted boolean not null default false
+  _deleted boolean not null default false,
+  unique("userId", "deckName", term)
 );
 
 create index cards_user_id_idx on cards ("userId");
@@ -21,9 +22,9 @@ create index cards_deck_name_idx on cards ("userId", "deckName");
 
 -- SRS state: one row per card direction (forward/reverse)
 create table srs_state (
-  id text primary key,
+  id uuid primary key default gen_random_uuid(),
   "userId" uuid not null references auth.users on delete cascade,
-  "cardId" text not null references cards on delete cascade,
+  "cardId" uuid not null references cards on delete cascade,
   direction text not null check (direction in ('forward', 'reverse')),
   due timestamptz,
   stability double precision,
@@ -35,7 +36,8 @@ create table srs_state (
   state integer,
   "lastReview" timestamptz,
   _modified timestamptz not null default now(),
-  _deleted boolean not null default false
+  _deleted boolean not null default false,
+  unique("cardId", direction)
 );
 
 create index srs_state_user_id_idx on srs_state ("userId");
@@ -43,9 +45,9 @@ create index srs_state_card_id_idx on srs_state ("cardId");
 
 -- Review logs: append-only audit trail
 create table review_logs (
-  id text primary key,
+  id uuid primary key default gen_random_uuid(),
   "userId" uuid not null references auth.users on delete cascade,
-  "cardId" text not null references cards on delete cascade,
+  "cardId" uuid not null references cards on delete cascade,
   "isReverse" boolean not null default false,
   rating integer not null,
   state integer not null,
@@ -65,13 +67,14 @@ create index review_logs_card_id_idx on review_logs ("cardId");
 
 -- Settings: per-user preferences
 create table settings (
-  id text primary key,
+  id uuid primary key default gen_random_uuid(),
   "userId" uuid not null references auth.users on delete cascade,
   "newCardsPerDay" integer not null default 10,
   "reviewOrder" text not null default 'random',
   theme text not null default 'system',
   _modified timestamptz not null default now(),
-  _deleted boolean not null default false
+  _deleted boolean not null default false,
+  unique("userId")
 );
 
 create index settings_user_id_idx on settings ("userId");
@@ -79,7 +82,7 @@ create index settings_user_id_idx on settings ("userId");
 -- Card snapshots: event history for AI rollback (Postgres-only)
 create table card_snapshots (
   id uuid primary key default gen_random_uuid(),
-  "cardId" text not null references cards on delete cascade,
+  "cardId" uuid not null references cards on delete cascade,
   "userId" uuid not null references auth.users on delete cascade,
   "eventType" text not null check ("eventType" in ('created', 'ai_generated', 'approved', 'edited', 'rolled_back')),
   snapshot jsonb not null,
