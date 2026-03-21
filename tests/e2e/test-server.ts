@@ -57,8 +57,8 @@ let testUserId: string | null = null;
 /** Get the anon key from `supabase status` output */
 function getAnonKey(): string {
   if (SUPABASE_ANON_KEY) return SUPABASE_ANON_KEY;
-  const output = execSync('npx supabase status', { encoding: 'utf-8' });
-  const match = output.match(/Publishable\s*│\s*(\S+)/);
+  const output = execSync('npx supabase status -o env', { encoding: 'utf-8' });
+  const match = output.match(/ANON_KEY="([^"]+)"/);
   if (!match) throw new Error('Could not find anon key from supabase status');
   return match[1];
 }

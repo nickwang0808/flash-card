@@ -1,7 +1,6 @@
 import { useAuth } from '../hooks/useAuth';
 import { useRxQuery } from '../hooks/useRxQuery';
 import { getDatabaseSync, destroyDatabase, type SettingsDoc } from '../services/rxdb';
-import { supabase } from '../services/supabase';
 
 interface Props {
   onBack: () => void;
@@ -15,21 +14,16 @@ export function SettingsScreen({ onBack }: Props) {
   const { signOut } = useAuth();
 
   async function update(partial: Partial<SettingsDoc>) {
-    // Get userId from existing doc first, fall back to auth
-    let userId = s?.userId;
-    if (!userId) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      userId = user.id;
-    }
-    const existingId = s?.id ?? crypto.randomUUID();
-    await db.settings.upsert({
-      id: existingId,
-      userId,
-      newCardsPerDay: partial.newCardsPerDay ?? s?.newCardsPerDay ?? 10,
-      reviewOrder: partial.reviewOrder ?? s?.reviewOrder ?? 'random',
-      theme: partial.theme ?? s?.theme ?? 'system',
-    });
+    if (!s) return;
+    await db.settings.upsert({ ...s, ...partial });
+  }
+
+  if (!s) {
+    return (
+      <div className="h-dvh flex items-center justify-center p-4">
+        <p className="text-sm text-muted-foreground">Loading settings...</p>
+      </div>
+    );
   }
 
   async function handleLogout() {

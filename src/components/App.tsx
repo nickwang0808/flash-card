@@ -20,7 +20,7 @@ type Screen =
 
 export function App() {
   const db = getDatabaseSync();
-  const { data: settingsList, isLoading: settingsLoading } = useRxQuery(db.settings);
+  const { data: settingsList } = useRxQuery(db.settings);
   const theme = settingsList[0]?.theme ?? 'system';
   const { isSignedIn, loading: authLoading } = useAuth();
   const [screen, setScreen] = useState<Screen>({ name: 'auth' });
@@ -76,7 +76,7 @@ export function App() {
 
   const navigate = (s: Screen) => setScreen(s);
 
-  if (authLoading || settingsLoading) {
+  if (authLoading) {
     return <div className="h-dvh flex items-center justify-center">Loading...</div>;
   }
 

@@ -79,6 +79,20 @@ create table settings (
 
 create index settings_user_id_idx on settings ("userId");
 
+-- Auto-create default settings when a new user signs up
+create or replace function create_default_settings()
+returns trigger as $$
+begin
+  insert into public.settings ("userId", "newCardsPerDay", "reviewOrder", theme)
+  values (NEW.id, 10, 'random', 'system');
+  return NEW;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+create trigger on_user_created
+  after insert on auth.users
+  for each row execute function create_default_settings();
+
 -- Card snapshots: event history for AI rollback (Postgres-only)
 create table card_snapshots (
   id uuid primary key default gen_random_uuid(),

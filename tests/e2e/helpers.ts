@@ -69,7 +69,7 @@ export async function cloneTestRepo(page: Page) {
     { email: TEST_USER_EMAIL, password: TEST_USER_PASSWORD },
   );
 
-  // Reload to trigger auth detection + initial sync
+  // Reload to trigger auth detection + initial sync (app waits for awaitInitialReplication)
   await page.reload();
   await page.waitForSelector('text=spanish-vocab', { timeout: 30000 });
 }
