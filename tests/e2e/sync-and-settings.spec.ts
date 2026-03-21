@@ -62,8 +62,8 @@ test.describe('Settings screen', () => {
     // Settings are stored in RxDB
     const stored = await page.evaluate(async () => {
       const db = (window as any).__RXDB__;
-      const doc = await db.settings.findOne('settings').exec();
-      return doc ? doc.toJSON().newCardsPerDay : null;
+      const docs = await db.settings.find().exec();
+      return docs.length > 0 ? docs[0].toJSON().newCardsPerDay : null;
     });
     expect(stored).toBe(25);
   });

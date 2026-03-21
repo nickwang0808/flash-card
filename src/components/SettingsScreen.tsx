@@ -68,10 +68,11 @@ export function SettingsScreen({ onBack }: Props) {
           <input
             type="number"
             min={0}
-            value={s?.newCardsPerDay ?? 10}
-            onChange={(e) => {
+            defaultValue={s?.newCardsPerDay ?? 10}
+            key={s?.newCardsPerDay}
+            onBlur={(e) => {
               const val = Math.floor(Number(e.target.value));
-              if (val >= 0) update({ newCardsPerDay: val });
+              if (val >= 0 && !isNaN(val)) update({ newCardsPerDay: val });
             }}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
