@@ -65,7 +65,10 @@ function replicate<T>(
           delete doc._modified;
 
           const { error } = await client.from(tableName).upsert(doc, { onConflict: 'id' });
-          if (error) throw error;
+          if (error) {
+            console.error(`[replication] push failed for ${tableName}:`, error.message, { id: doc.id });
+            throw error;
+          }
         }
         return [];
       },
@@ -117,12 +120,20 @@ export function startReplication(
   client: SupabaseClient,
   userId: string,
 ): ReplicationStates {
-  return [
+  const states = [
     replicate(db.cards, client, 'cards', userId),
     replicate(db.srsState, client, 'srs_state', userId),
     replicate(db.reviewLogs, client, 'review_logs', userId),
     replicate(db.settings, client, 'settings', userId),
   ];
+
+  for (const state of states) {
+    state.error$.subscribe((err) => {
+      console.error(`[replication] ${state.replicationIdentifierHash} error:`, err.message ?? err);
+    });
+  }
+
+  return states;
 }
 
 export async function cancelReplication(states: ReplicationStates): Promise<void> {

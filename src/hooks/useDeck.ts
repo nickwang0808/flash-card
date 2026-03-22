@@ -410,6 +410,7 @@ export function useDeck(deckName: string) {
   const db = getDatabaseSync();
   const { data: settingsList, isLoading: settingsLoading } = useRxQuery(db.settings);
   const { data: cardsList, isLoading: cardsLoading } = useCards(deckName);
+  const [error, setError] = useState<string | null>(null);
 
   // Only load today's review logs (for introduced-today tracking + undo)
   const todayLocal = new Date().toLocaleDateString('en-CA');
@@ -420,6 +421,12 @@ export function useDeck(deckName: string) {
 
   const newCardsLimit = settingsList[0]?.newCardsPerDay ?? 10;
   const isLoading = cardsLoading || logsLoading || settingsLoading;
+
+  function handleError(err: unknown) {
+    const msg = err instanceof Error ? err.message : 'An unexpected error occurred';
+    console.error('useDeck error:', err);
+    setError(msg);
+  }
 
   // Build a map of cardId → term for the introduced-today check
   const cardTermMap = new Map(cardsList.map(c => [c.id, c.term]));
@@ -458,59 +465,75 @@ export function useDeck(deckName: string) {
     [Rating.Easy]:  formatInterval(computeNewState(existingFsrsState, Rating.Easy,  previewNow).card.due, previewNow),
   } : null;
 
-  function rate(rating: Grade) {
+  async function rate(rating: Grade) {
     if (!studyItem) return;
-    rateCard(studyItem, rating);
+    try {
+      await rateCard(studyItem, rating);
+    } catch (err) {
+      handleError(err);
+    }
   }
 
-  function superEasy() {
+  async function superEasy() {
     if (!studyItem) return;
-    rateCardSuperEasy(studyItem);
+    try {
+      await rateCardSuperEasy(studyItem);
+    } catch (err) {
+      handleError(err);
+    }
   }
 
   async function suspend() {
     if (!studyItem) return;
-    const doc = await db.cards.findOne(studyItem.id).exec();
-    if (doc) await doc.incrementalPatch({ suspended: true });
+    try {
+      const doc = await db.cards.findOne(studyItem.id).exec();
+      if (doc) await doc.incrementalPatch({ suspended: true });
+    } catch (err) {
+      handleError(err);
+    }
   }
 
   async function undo() {
-    // Find the most recent review log by review timestamp
-    const sorted = [...logsList].sort(
-      (a, b) => new Date(b.review).getTime() - new Date(a.review).getTime()
-    );
-    const lastLog = sorted[0];
-    if (!lastLog) return;
+    try {
+      // Find the most recent review log by review timestamp
+      const sorted = [...logsList].sort(
+        (a, b) => new Date(b.review).getTime() - new Date(a.review).getTime()
+      );
+      const lastLog = sorted[0];
+      if (!lastLog) return;
 
-    const field = lastLog.isReverse ? 'reverseState' : 'state';
+      const field = lastLog.isReverse ? 'reverseState' : 'state';
 
-    if (lastLog.state === 0) {
-      await updateSrsState(lastLog.cardId, field, null);
-    } else {
-      const card = await getFlashCardById(lastLog.cardId);
-      if (!card) return;
+      if (lastLog.state === 0) {
+        await updateSrsState(lastLog.cardId, field, null);
+      } else {
+        const card = await getFlashCardById(lastLog.cardId);
+        if (!card) return;
 
-      const currentState = lastLog.isReverse ? card.reverseState : card.state;
-      if (!currentState) return;
+        const currentState = lastLog.isReverse ? card.reverseState : card.state;
+        if (!currentState) return;
 
-      const reviewLog: ReviewLog = {
-        rating: lastLog.rating as Rating,
-        state: lastLog.state as State,
-        due: new Date(lastLog.due),
-        stability: lastLog.stability,
-        difficulty: lastLog.difficulty,
-        elapsed_days: lastLog.elapsedDays,
-        last_elapsed_days: lastLog.lastElapsedDays,
-        scheduled_days: lastLog.scheduledDays,
-        review: new Date(lastLog.review),
-      };
+        const reviewLog: ReviewLog = {
+          rating: lastLog.rating as Rating,
+          state: lastLog.state as State,
+          due: new Date(lastLog.due),
+          stability: lastLog.stability,
+          difficulty: lastLog.difficulty,
+          elapsed_days: lastLog.elapsedDays,
+          last_elapsed_days: lastLog.lastElapsedDays,
+          scheduled_days: lastLog.scheduledDays,
+          review: new Date(lastLog.review),
+        };
 
-      const previousState = fsrs().rollback(currentState, reviewLog);
-      await updateSrsState(lastLog.cardId, field, serializeFsrsCard(previousState));
+        const previousState = fsrs().rollback(currentState, reviewLog);
+        await updateSrsState(lastLog.cardId, field, serializeFsrsCard(previousState));
+      }
+
+      const logDoc = await db.reviewLogs.findOne(lastLog.id).exec();
+      if (logDoc) await logDoc.remove();
+    } catch (err) {
+      handleError(err);
     }
-
-    const logDoc = await db.reviewLogs.findOne(lastLog.id).exec();
-    if (logDoc) await logDoc.remove();
   }
 
   return {
@@ -525,5 +548,7 @@ export function useDeck(deckName: string) {
     canUndo: logsList.length > 0,
     newItems,
     dueItems,
+    error,
+    dismissError: () => setError(null),
   };
 }
