@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Platform, View, Text } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useRxQuery } from '@/hooks/useRxQuery';
@@ -120,9 +121,9 @@ function AuthGatedLayout() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <GestureHandlerRootView className="flex-1 bg-background">
       <Slot />
       <Snackbar message={error} onDismiss={dismissError} />
-    </View>
+    </GestureHandlerRootView>
   );
 }

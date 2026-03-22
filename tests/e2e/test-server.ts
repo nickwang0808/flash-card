@@ -19,6 +19,7 @@ export const TEST_CARDS: Record<string, {
   tags?: string[];
   created: string;
   reversible?: boolean;
+  approved?: boolean;
 }> = {
   hola: { back: 'hello\n\n*Hola, ¿cómo estás?*\n\n> Common greeting', tags: ['greeting'], created: '2025-01-01T00:00:00Z', reversible: true },
   gato: { back: '# cat\n\n*El gato está durmiendo.*', tags: ['animal'], created: '2025-01-01T00:00:00Z', reversible: true },
@@ -50,6 +51,10 @@ export const TEST_CARDS: Record<string, {
   dinero: { back: 'money', created: '2025-01-26T00:00:00Z', reversible: true },
   puerta: { back: 'door', created: '2025-01-27T00:00:00Z', reversible: true },
   ventana: { back: 'window', created: '2025-01-28T00:00:00Z', reversible: true },
+  // AI-generated cards (unapproved)
+  bailar: { back: 'to dance', created: '2025-01-29T00:00:00Z', reversible: true, approved: false },
+  cantar: { back: 'to sing', created: '2025-01-29T00:00:00Z', reversible: true, approved: false },
+  leer: { back: 'to read', created: '2025-01-29T00:00:00Z', reversible: true, approved: false },
 };
 
 export const CHINESE_TEST_CARDS: Record<string, {
@@ -140,7 +145,7 @@ async function seedTestCards(userId: string, accessToken: string): Promise<void>
     reversible: card.reversible ?? false,
     order: index,
     suspended: false,
-    approved: true,
+    approved: card.approved ?? true,
     _deleted: false,
   }));
 

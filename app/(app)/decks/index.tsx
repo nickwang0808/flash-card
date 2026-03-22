@@ -11,6 +11,7 @@ function DeckRow({ deckName }: { deckName: string }) {
     <Pressable
       role="button"
       onPress={() => router.push(`/review/${deckName}`)}
+      onLongPress={() => router.push(`/cards/${deckName}`)}
       className="w-full rounded-lg border border-border p-4"
     >
       <Text className="font-medium text-foreground">{deckName}</Text>
