@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useRxQuery } from '@/hooks/useRxQuery';
@@ -88,5 +88,9 @@ function AuthGatedLayout() {
 
   if (authLoading) return null;
 
-  return <Slot />;
+  return (
+    <View className="flex-1 bg-background">
+      <Slot />
+    </View>
+  );
 }

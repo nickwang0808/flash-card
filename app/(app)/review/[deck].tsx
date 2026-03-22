@@ -1,18 +1,28 @@
-import { useState } from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { useState, useMemo } from 'react';
+import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Markdown from 'react-native-markdown-display';
 import { Rating, type Grade } from 'ts-fsrs';
 import { useDeck } from '@/hooks/useDeck';
+import { useRxQuery } from '@/hooks/useRxQuery';
+import { getDatabaseSync } from '@/services/rxdb';
 import { useTts } from '@/hooks/useTts';
 import { TtsLocalePicker } from '@/components/TtsLocalePicker';
 
-const markdownStyles = {
-  body: { fontSize: 28, color: 'inherit' },
-  em: { fontStyle: 'italic' as const },
-  strong: { fontWeight: 'bold' as const },
-  blockquote: { borderLeftWidth: 3, borderLeftColor: '#888', paddingLeft: 12 },
-};
+function useForegroundColor(): string {
+  const db = getDatabaseSync();
+  const { data: settingsList } = useRxQuery(db.settings);
+  const theme = settingsList[0]?.theme ?? 'system';
+
+  return useMemo(() => {
+    if (Platform.OS !== 'web') return '#000';
+    const isDark =
+      theme === 'dark' ||
+      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    // Read from CSS variables (matches global.css)
+    return isDark ? 'hsl(210, 40%, 98%)' : 'hsl(222.2, 84%, 4.9%)';
+  }, [theme]);
+}
 
 const ratingConfig = [
   { rating: Rating.Again, label: 'Again', color: 'bg-red-500/10', textColor: 'text-red-500', borderColor: 'border-red-500/20' },
@@ -26,6 +36,13 @@ export default function ReviewScreen() {
   const router = useRouter();
   const { currentCard, remaining, rate, superEasy, schedulePreview, suspend, undo, canUndo, isLoading } = useDeck(deck!);
   const { speak, showPicker, selectLocale, dismissPicker, voices } = useTts(deck!);
+  const foregroundColor = useForegroundColor();
+  const markdownStyles = useMemo(() => ({
+    body: { fontSize: 28, color: foregroundColor },
+    em: { fontStyle: 'italic' as const },
+    strong: { fontWeight: 'bold' as const },
+    blockquote: { borderLeftWidth: 3, borderLeftColor: '#888', paddingLeft: 12 },
+  }), [foregroundColor]);
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [cardKey, setCardKey] = useState(0);
 
