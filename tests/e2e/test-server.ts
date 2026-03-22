@@ -52,6 +52,16 @@ export const TEST_CARDS: Record<string, {
   ventana: { back: 'window', created: '2025-01-28T00:00:00Z', reversible: true },
 };
 
+export const CHINESE_TEST_CARDS: Record<string, {
+  front: string;
+  back: string;
+  created: string;
+  reversible?: boolean;
+}> = {
+  '上午': { front: '<ruby>上<rt>shàng</rt></ruby><ruby>午<rt>wǔ</rt></ruby>', back: 'morning', created: '2025-02-01T00:00:00Z', reversible: false },
+  '你好': { front: '<ruby>你<rt>nǐ</rt></ruby><ruby>好<rt>hǎo</rt></ruby>', back: 'hello', created: '2025-02-01T00:00:00Z', reversible: false },
+};
+
 let testUserId: string | null = null;
 
 /** Get the anon key from `supabase status` output */
@@ -119,10 +129,9 @@ async function seedTestCards(userId: string, accessToken: string): Promise<void>
     Prefer: 'return=minimal',
   };
 
-  const deckName = 'spanish-vocab';
-  const rows = Object.entries(TEST_CARDS).map(([term, card], index) => ({
+  const spanishRows = Object.entries(TEST_CARDS).map(([term, card], index) => ({
     userId: userId,
-    deckName: deckName,
+    deckName: 'spanish-vocab',
     term,
     front: card.front ?? null,
     back: card.back,
@@ -135,10 +144,25 @@ async function seedTestCards(userId: string, accessToken: string): Promise<void>
     _deleted: false,
   }));
 
+  const chineseRows = Object.entries(CHINESE_TEST_CARDS).map(([term, card], index) => ({
+    userId: userId,
+    deckName: 'chinese-vocab',
+    term,
+    front: card.front,
+    back: card.back,
+    tags: JSON.stringify([]),
+    created: card.created,
+    reversible: card.reversible ?? false,
+    order: index,
+    suspended: false,
+    approved: true,
+    _deleted: false,
+  }));
+
   const res = await fetch(`${SUPABASE_URL}/rest/v1/cards`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(rows),
+    body: JSON.stringify([...spanishRows, ...chineseRows]),
   });
 
   if (!res.ok) {

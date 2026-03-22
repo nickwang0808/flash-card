@@ -283,6 +283,39 @@ test.describe('Review session', () => {
     }
   });
 
+  test('Chinese ruby card renders characters with pinyin above and correct text color in dark mode', async ({ page }) => {
+    // Enable dark mode via settings
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await page.getByRole('button', { name: 'dark' }).click();
+    await page.getByRole('button', { name: 'Back' }).click();
+
+    // Wait for deck list to reappear
+    await expect(page.getByText('chinese-vocab')).toBeVisible();
+    await page.getByText('chinese-vocab').click();
+    await expect(page.getByText('2 remaining')).toBeVisible();
+
+    // Verify ruby characters and pinyin are visible
+    const front = page.getByTestId('card-front');
+    await expect(front.getByText('上')).toBeVisible();
+    await expect(front.getByText('午')).toBeVisible();
+    await expect(front.getByText('shàng')).toBeVisible();
+    await expect(front.getByText('wǔ')).toBeVisible();
+
+    // Verify pinyin appears above the character (pinyin's y position < character's y position)
+    const pinyinBox = await front.getByText('shàng').boundingBox();
+    const charBox = await front.getByText('上').boundingBox();
+    expect(pinyinBox).toBeTruthy();
+    expect(charBox).toBeTruthy();
+    expect(pinyinBox!.y).toBeLessThan(charBox!.y);
+
+    // Verify text color matches dark mode foreground (not default black)
+    const charColor = await front.getByText('上').evaluate(
+      el => getComputedStyle(el).color,
+    );
+    // Dark mode foreground should NOT be black (rgb(0, 0, 0))
+    expect(charColor).not.toBe('rgb(0, 0, 0)');
+  });
+
   test('all four rating buttons are visible after revealing answer', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
