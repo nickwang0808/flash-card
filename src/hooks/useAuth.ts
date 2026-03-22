@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { Platform } from 'react-native';
 import { supabase } from '../services/supabase';
 
 export function useAuth() {
@@ -6,20 +7,18 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check existing session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsSignedIn(!!session);
       setLoading(false);
     });
 
-    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (event === 'SIGNED_IN' && session) {
           setIsSignedIn(true);
 
-          // Clean up OAuth URL params after redirect
-          if (window.location.hash || window.location.search) {
+          // Clean up OAuth URL params after redirect (web only)
+          if (Platform.OS === 'web' && (window.location.hash || window.location.search)) {
             window.history.replaceState({}, '', window.location.pathname);
           }
         } else if (event === 'SIGNED_OUT') {
@@ -37,7 +36,9 @@ export function useAuth() {
     await supabase.auth.signInWithOAuth({
       provider: 'github',
       options: {
-        redirectTo: window.location.origin + window.location.pathname,
+        redirectTo: Platform.OS === 'web'
+          ? window.location.origin + window.location.pathname
+          : undefined,
       },
     });
   }, []);
@@ -47,12 +48,10 @@ export function useAuth() {
     setIsSignedIn(false);
   }, []);
 
-  // Dev-only: sign in with email/password against local Supabase (no OAuth needed)
   const devSignIn = useCallback(async () => {
     const email = 'dev@localhost';
     const password = 'devdevdev';
 
-    // Try sign in first, fall back to sign up
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       const { error: signUpError } = await supabase.auth.signUp({ email, password });

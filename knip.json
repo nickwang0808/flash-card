@@ -1,10 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "entry": ["tests/integration/**/*.test.ts"],
-  "project": ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
+  "entry": ["app/**/*.{ts,tsx}", "tests/integration/**/*.test.ts"],
+  "project": ["src/**/*.{ts,tsx}", "app/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
   "vitest": {
     "config": ["vitest.config.ts", "tests/integration/vitest.config.ts"]
   },
-  "ignoreDependencies": ["tailwindcss"],
+  "ignoreDependencies": ["tailwindcss", "nativewind", "expo-router", "expo-constants", "expo-status-bar"],
   "ignoreBinaries": ["tsx"]
 }

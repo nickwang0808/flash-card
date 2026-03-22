@@ -10,6 +10,9 @@ playwright-report/
 .claude/settings.local.json
 .serena/
 .idea/
-nultsconfig.tsbuildinfo
-nul
 tsconfig.tsbuildinfo
+
+# Expo
+.expo/
+ios/
+android/

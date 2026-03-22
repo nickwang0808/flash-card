@@ -67,7 +67,7 @@ test.describe('Review session', () => {
 
     await page.getByRole('button', { name: 'Done' }).click();
 
-    await expect(page.getByRole('heading', { name: 'Decks' })).toBeVisible();
+    await expect(page.getByText('Decks')).toBeVisible();
   });
 
   test('Undo button is not visible before rating a card', async ({ page }) => {
@@ -189,7 +189,7 @@ test.describe('Review session', () => {
     await page.getByRole('button', { name: 'End Session' }).click();
 
     // Should return to deck list
-    await expect(page.getByRole('heading', { name: 'Decks' })).toBeVisible();
+    await expect(page.getByText('Decks')).toBeVisible();
   });
 
   test('Show Answer reveals back content with markdown', async ({ page }) => {
@@ -200,7 +200,7 @@ test.describe('Review session', () => {
     for (let remaining = 10; remaining > 0; remaining--) {
       await expect(page.getByText(`${remaining} remaining`)).toBeVisible();
       const front = (await page.locator('[data-testid="card-front"]').textContent())?.trim();
-      if (front === 'hola') {
+      if (front?.includes('hola')) {
         await page.getByRole('button', { name: 'Show Answer' }).click();
 
         // Translation text
