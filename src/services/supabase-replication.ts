@@ -7,6 +7,14 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 type Checkpoint = { id: string; modified: string };
 export type ReplicationStates = RxReplicationState<any, Checkpoint>[];
 
+// Map tables to their unique constraint columns for upsert conflict resolution.
+// Default is 'id' (primary key). Tables with composite unique constraints need
+// their natural key here so upserts resolve correctly even if the local RxDB
+// generates a different UUID for the same logical row.
+const UPSERT_CONFLICT_COLUMNS: Record<string, string> = {
+  srs_state: '"cardId",direction',
+};
+
 function replicate<T>(
   collection: RxCollection<T>,
   client: SupabaseClient,
@@ -64,7 +72,8 @@ function replicate<T>(
           }
           delete doc._modified;
 
-          const { error } = await client.from(tableName).upsert(doc, { onConflict: 'id' });
+          const onConflict = UPSERT_CONFLICT_COLUMNS[tableName] ?? 'id';
+          const { error } = await client.from(tableName).upsert(doc, { onConflict });
           if (error) {
             console.error(`[replication] push failed for ${tableName}:`, error.message, { id: doc.id });
             throw error;
