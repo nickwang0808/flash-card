@@ -247,6 +247,30 @@ test.describe('Review session', () => {
     expect(true, 'Could not find reverse "cat" card in session').toBe(false);
   });
 
+  test('Undo navigates back to the previously rated card', async ({ page }) => {
+    await page.getByText('spanish-vocab').click();
+    await expect(page.getByText('10 remaining')).toBeVisible();
+
+    // Remember the first card
+    const firstCard = (await page.locator('[data-testid="card-front"]').textContent())?.trim();
+
+    // Rate it Easy — moves to next card
+    await page.getByRole('button', { name: 'Show Answer' }).click();
+    await page.getByRole('button', { name: 'Easy' }).click();
+    await expect(page.getByText('9 remaining')).toBeVisible();
+
+    // Now showing a different card
+    const secondCard = (await page.locator('[data-testid="card-front"]').textContent())?.trim();
+    expect(secondCard).not.toBe(firstCard);
+
+    // Undo — should navigate back to the first card
+    await page.getByRole('button', { name: 'Undo' }).click();
+
+    // The first card should be shown again
+    await expect(page.locator('[data-testid="card-front"]')).toContainText(firstCard!);
+    await expect(page.getByText('10 remaining')).toBeVisible();
+  });
+
   test('Undo after rating Easy restores card as new', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 
@@ -350,9 +374,13 @@ test.describe('Review session', () => {
 
     // Undo the second rating — this is the critical path:
     // the review_log's _rev was updated by replication, so plain remove() would fail.
-    // Use force:true because replication events cause continuous React re-renders
-    // that keep detaching/reattaching the button.
-    await page.getByRole('button', { name: 'Undo' }).click({ force: true });
+    // Use evaluate() because replication events cause continuous React re-renders
+    // that keep detaching/reattaching the button, making even force:true unreliable.
+    await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll('[role="button"]'))
+        .find(el => el.textContent?.trim() === 'Undo') as HTMLElement | undefined;
+      btn?.click();
+    });
 
     // Card should still be shown (rolled back to state after first rating)
     await expect(page.locator('[data-testid="card-front"]')).toContainText(frontText!);

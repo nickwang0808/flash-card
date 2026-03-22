@@ -412,6 +412,7 @@ export function useDeck(deckName: string) {
   const { data: settingsList, isLoading: settingsLoading } = useRxQuery(db.settings);
   const { data: cardsList, isLoading: cardsLoading } = useCards(deckName);
   const { showError } = useErrorBanner();
+  const [undoTarget, setUndoTarget] = useState<{ cardId: string; isReverse: boolean } | null>(null);
 
   // Only load today's review logs (for introduced-today tracking + undo)
   const todayLocal = new Date().toLocaleDateString('en-CA');
@@ -442,7 +443,16 @@ export function useDeck(deckName: string) {
 
   const { newItems, dueItems } = computeStudyItems(cardsList, newCardsLimit, new Date(), introducedToday);
   const allItems = [...newItems, ...dueItems];
-  const studyItem = allItems[0] ?? null;
+
+  // After undo, jump to the undone card so the user sees it
+  let studyItem: StudyItem | null = null;
+  if (undoTarget) {
+    studyItem = allItems.find(
+      (item) => item.id === undoTarget.cardId && item.isReverse === undoTarget.isReverse,
+    ) ?? allItems[0] ?? null;
+  } else {
+    studyItem = allItems[0] ?? null;
+  }
 
   const currentCard: CurrentCard | null = studyItem
     ? {
@@ -467,6 +477,7 @@ export function useDeck(deckName: string) {
 
   async function rate(rating: Grade) {
     if (!studyItem) return;
+    setUndoTarget(null);
     try {
       await rateCard(studyItem, rating);
     } catch (err) {
@@ -476,6 +487,7 @@ export function useDeck(deckName: string) {
 
   async function superEasy() {
     if (!studyItem) return;
+    setUndoTarget(null);
     try {
       await rateCardSuperEasy(studyItem);
     } catch (err) {
@@ -531,6 +543,9 @@ export function useDeck(deckName: string) {
 
       const logDoc = await db.reviewLogs.findOne(lastLog.id).exec();
       if (logDoc) await logDoc.incrementalRemove();
+
+      // Navigate back to the undone card
+      setUndoTarget({ cardId: lastLog.cardId, isReverse: lastLog.isReverse });
     } catch (err) {
       handleError(err);
     }
