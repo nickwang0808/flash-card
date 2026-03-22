@@ -21,6 +21,7 @@ export interface FlashCard {
   state: Card | null;
   reverseState: Card | null;
   suspended?: boolean;
+  approved?: boolean;
 }
 
 export type StudyItem = FlashCard & { isReverse: boolean };
@@ -82,6 +83,7 @@ function joinToFlashCard(
     state: forwardSrs ? srsDocToCard(forwardSrs) : null,
     reverseState: reverseSrs ? srsDocToCard(reverseSrs) : null,
     suspended: card.suspended,
+    approved: card.approved,
   };
 }
 
@@ -199,7 +201,7 @@ export function computeStudyItems(
   const endOfDay = new Date(now);
   endOfDay.setHours(23, 59, 59, 999);
 
-  const activeCards = cards.filter(card => !card.suspended);
+  const activeCards = cards.filter(card => !card.suspended && card.approved !== false);
 
   // Step 1: Collect candidates in priority order and due items
   const orphanedReverses: StudyItem[] = [];  // priority: have forward SRS but no reverse
@@ -355,7 +357,7 @@ export async function rateCardSuperEasy(card: StudyItem, days = 60, now = new Da
 
 // --- React hooks ---
 
-function useCards(deckName: string): { data: FlashCard[]; isLoading: boolean } {
+export function useCards(deckName: string): { data: FlashCard[]; isLoading: boolean } {
   const [data, setData] = useState<FlashCard[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
