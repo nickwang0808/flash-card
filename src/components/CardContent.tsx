@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { View, Text, useWindowDimensions } from 'react-native';
+import { View, Text, Platform, useWindowDimensions } from 'react-native';
 import RenderHtml, {
   HTMLContentModel,
   HTMLElementModel,
@@ -24,37 +24,48 @@ const customHTMLElementModels = {
   }),
 };
 
-const renderers: CustomTagRendererRecord = {
-  ruby: ({ tnode }: any) => {
-    // Extract base character and rt annotation from children
-    let base = '';
-    let annotation = '';
-    for (const child of tnode.children) {
-      if (child.tagName === 'rt') {
-        // Get text from rt's children
-        annotation = child.children
-          .map((c: any) => c.data ?? '')
-          .join('');
-      } else if ('data' in child) {
-        base += (child as any).data;
-      }
+function extractRubyParts(tnode: any): { base: string; annotation: string } {
+  let base = '';
+  let annotation = '';
+  for (const child of tnode.children) {
+    if (child.tagName === 'rt') {
+      annotation += child.data ?? '';
+    } else if ('data' in child) {
+      base += child.data;
     }
-    return (
-      <View style={{ alignItems: 'center', marginHorizontal: 2 }}>
-        <Text style={{ fontSize: 28 }}>{base}</Text>
-        <Text style={{ fontSize: 12, color: '#888' }}>{annotation}</Text>
-      </View>
-    );
-  },
-};
+  }
+  return { base, annotation };
+}
 
 export function CardContent({ children, foregroundColor }: Props) {
   const { width } = useWindowDimensions();
 
   const html = useMemo(() => {
-    const raw = marked.parse(children, { async: false }) as string;
-    return raw;
+    return marked.parse(children, { async: false }) as string;
   }, [children]);
+
+  const renderers: CustomTagRendererRecord = useMemo(() => ({
+    ruby: ({ tnode }: any) => {
+      const { base, annotation } = extractRubyParts(tnode);
+
+      if (Platform.OS === 'web') {
+        return (
+          <ruby style={{ fontSize: 28, color: foregroundColor }}>
+            {base}
+            <rt style={{ fontSize: 12, color: foregroundColor, paddingBottom: 4 }}>{annotation}</rt>
+          </ruby>
+        );
+      }
+
+      // Native: stack pinyin above character
+      return (
+        <View style={{ alignItems: 'center', marginHorizontal: 2 }}>
+          <Text style={{ fontSize: 12, color: foregroundColor }}>{annotation}</Text>
+          <Text style={{ fontSize: 28, color: foregroundColor }}>{base}</Text>
+        </View>
+      );
+    },
+  }), [foregroundColor]);
 
   const baseStyle: MixedStyleDeclaration = useMemo(
     () => ({ fontSize: 28, color: foregroundColor, textAlign: 'center' }),

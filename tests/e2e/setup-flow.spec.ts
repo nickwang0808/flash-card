@@ -25,8 +25,9 @@ test.describe('Setup flow', () => {
     await cloneTestRepo(page);
 
     // 30 reversible cards, default limit 10 → 5 cards × 2 directions = 10 new, 0 due
-    await expect(page.getByText('0 due')).toBeVisible();
-    await expect(page.getByText('10 new')).toBeVisible();
+    const spanishDeck = page.getByRole('button', { name: /spanish-vocab/ });
+    await expect(spanishDeck.getByText('0 due')).toBeVisible();
+    await expect(spanishDeck.getByText('10 new')).toBeVisible();
   });
 
   test('deck list has sync and settings buttons', async ({ page }) => {
