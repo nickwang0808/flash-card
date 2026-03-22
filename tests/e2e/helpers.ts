@@ -13,7 +13,7 @@ export async function resetTestDB(): Promise<void> {
  * Wipes all app data and reloads to show auth screen.
  */
 export async function wipeAppData(page: Page) {
-  await page.goto('http://localhost:5173');
+  await page.goto('/');
   await page.waitForLoadState('networkidle');
   await page.evaluate(async () => {
     // Sign out if there's a Supabase session

@@ -1,46 +1,44 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import * as Speech from 'expo-speech';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-function localStorageKey(deckName: string): string {
+function storageKey(deckName: string): string {
   return `tts-locale:${deckName}`;
 }
 
-function useAvailableVoices(): SpeechSynthesisVoice[] {
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+export interface TtsVoice {
+  identifier: string;
+  name: string;
+  language: string;
+}
+
+function useAvailableVoices(): TtsVoice[] {
+  const [voices, setVoices] = useState<TtsVoice[]>([]);
 
   useEffect(() => {
-    function update() {
-      setVoices(speechSynthesis.getVoices());
-    }
-    update();
-    speechSynthesis.addEventListener('voiceschanged', update);
-    return () => speechSynthesis.removeEventListener('voiceschanged', update);
+    Speech.getAvailableVoicesAsync().then(setVoices);
   }, []);
 
   return voices;
 }
 
 export function useTts(deckName: string) {
-  const [locale, setLocale] = useState<string | null>(() =>
-    localStorage.getItem(localStorageKey(deckName))
-  );
+  const [locale, setLocale] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const pendingText = useRef<string | null>(null);
   const voices = useAvailableVoices();
 
-  // Sync locale from localStorage when deckName changes
+  // Load locale from storage
   useEffect(() => {
-    setLocale(localStorage.getItem(localStorageKey(deckName)));
+    AsyncStorage.getItem(storageKey(deckName)).then((val) => {
+      setLocale(val);
+    });
   }, [deckName]);
 
   const speakWithLocale = useCallback((text: string, lang: string) => {
-    speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = lang;
-    // Prefer a voice matching the exact locale
-    const match = voices.find(v => v.lang === lang);
-    if (match) utterance.voice = match;
-    speechSynthesis.speak(utterance);
-  }, [voices]);
+    Speech.stop();
+    Speech.speak(text, { language: lang });
+  }, []);
 
   const speak = useCallback((text: string) => {
     if (locale) {
@@ -52,7 +50,7 @@ export function useTts(deckName: string) {
   }, [locale, speakWithLocale]);
 
   const selectLocale = useCallback((lang: string) => {
-    localStorage.setItem(localStorageKey(deckName), lang);
+    AsyncStorage.setItem(storageKey(deckName), lang);
     setLocale(lang);
     setShowPicker(false);
     if (pendingText.current) {

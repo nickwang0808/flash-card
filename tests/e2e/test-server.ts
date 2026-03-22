@@ -144,6 +144,23 @@ async function seedTestCards(userId: string, accessToken: string): Promise<void>
   if (!res.ok) {
     throw new Error(`Failed to seed cards: ${await res.text()}`);
   }
+
+  // Re-create default settings (the auto-create trigger only fires on user signup)
+  const settingsRes = await fetch(`${SUPABASE_URL}/rest/v1/settings`, {
+    method: 'POST',
+    headers: { ...headers, Prefer: 'return=minimal,resolution=merge-duplicates' },
+    body: JSON.stringify({
+      userId,
+      newCardsPerDay: 10,
+      reviewOrder: 'random',
+      theme: 'system',
+      _deleted: false,
+    }),
+  });
+
+  if (!settingsRes.ok) {
+    throw new Error(`Failed to seed settings: ${await settingsRes.text()}`);
+  }
 }
 
 /** Full setup: create user, clear data, seed cards */

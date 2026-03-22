@@ -9,7 +9,7 @@ test.describe('Setup flow', () => {
   test('shows auth screen on first visit', async ({ page }) => {
     await wipeAppData(page);
 
-    await expect(page.getByRole('heading', { name: 'Flash Cards' })).toBeVisible();
+    await expect(page.getByText('Flash Cards')).toBeVisible();
     await expect(page.getByText('Spaced repetition with cloud sync')).toBeVisible();
     await expect(page.getByRole('button', { name: /sign in with github/i })).toBeVisible();
   });
@@ -17,7 +17,7 @@ test.describe('Setup flow', () => {
   test('connecting to test repo shows deck list', async ({ page }) => {
     await cloneTestRepo(page);
 
-    await expect(page.getByRole('heading', { name: 'Decks' })).toBeVisible();
+    await expect(page.getByText('Decks')).toBeVisible();
     await expect(page.getByText('spanish-vocab')).toBeVisible();
   });
 
