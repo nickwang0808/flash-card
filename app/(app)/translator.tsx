@@ -71,10 +71,9 @@ export default function TranslatorScreen() {
     setSaveStatus('idle');
   }, [fromLang, toLang]);
 
-  const doTranslate = useCallback(async (text: string, from: string, to: string, deck: string) => {
+  const doTranslate = useCallback(async (text: string, from: string, to: string) => {
     if (!text.trim()) {
       setOutput('');
-      setSaveStatus('idle');
       return;
     }
 
@@ -83,22 +82,29 @@ export default function TranslatorScreen() {
     try {
       const { translation } = await translate(text.trim(), from, to);
       setOutput(translation);
+    } catch (err) {
+      console.error('Translation failed:', err);
+      setSaveStatus('error');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-      // Create card — determine which is the "target language" word
-      // Convention: "from" is native, "to" is target → term = translation
-      // If swapped (from=target, to=native) → term = input
-      // For simplicity: term is always the "to" side output
-      // The user picks their native lang as "from", learning lang as "to"
-      const term = translation;
-      const back = text.trim();
+  const [saving, setSaving] = useState(false);
 
-      if (!deck) return;
+  const handleAddToDeck = useCallback(async () => {
+    if (!output || !deckName || saving) return;
 
+    const term = output;
+    const back = input.trim();
+
+    setSaving(true);
+    try {
       const db = getDatabaseSync();
 
       // Check for duplicate
       const existing = await db.cards.find({
-        selector: { deckName: deck, term },
+        selector: { deckName, term },
       }).exec();
       if (existing.length > 0) {
         setSaveStatus('duplicate');
@@ -110,19 +116,19 @@ export default function TranslatorScreen() {
 
       const card = buildCard({
         userId: user.id,
-        deckName: deck,
+        deckName,
         term,
         translation: back,
       });
       await db.cards.insert(card);
       setSaveStatus('saved');
     } catch (err) {
-      console.error('Translation failed:', err);
+      console.error('Failed to save card:', err);
       setSaveStatus('error');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
-  }, []);
+  }, [output, input, deckName, saving]);
 
   const handleInputChange = useCallback((text: string) => {
     setInput(text);
@@ -133,9 +139,9 @@ export default function TranslatorScreen() {
     if (!text.trim()) return;
 
     debounceRef.current = setTimeout(() => {
-      doTranslate(text, fromLang, toLang, deckName);
+      doTranslate(text, fromLang, toLang);
     }, 800);
-  }, [fromLang, toLang, deckName, doTranslate]);
+  }, [fromLang, toLang, doTranslate]);
 
   // Cleanup debounce on unmount
   useEffect(() => {
@@ -157,8 +163,8 @@ export default function TranslatorScreen() {
 
       {/* Language selectors + swap */}
       {Platform.OS === 'web' && (
-        <View className="flex-row items-center gap-2 mb-4">
-          <View className="flex-1">
+        <div className="flex flex-row items-center gap-2 mb-4">
+          <div className="flex-1">
             <select
               value={fromLang}
               onChange={(e: any) => setFromLang(e.target.value)}
@@ -168,7 +174,7 @@ export default function TranslatorScreen() {
                 <option key={lang} value={lang}>{lang}</option>
               ))}
             </select>
-          </View>
+          </div>
 
           <Pressable
             role="button"
@@ -178,7 +184,7 @@ export default function TranslatorScreen() {
             <Text className="text-sm text-foreground">⇄</Text>
           </Pressable>
 
-          <View className="flex-1">
+          <div className="flex-1">
             <select
               value={toLang}
               onChange={(e: any) => setToLang(e.target.value)}
@@ -188,13 +194,13 @@ export default function TranslatorScreen() {
                 <option key={lang} value={lang}>{lang}</option>
               ))}
             </select>
-          </View>
-        </View>
+          </div>
+        </div>
       )}
 
       {/* Deck selector */}
       {Platform.OS === 'web' && deckNames.length > 0 && (
-        <View className="mb-4">
+        <div className="mb-4">
           <Text className="text-sm font-medium text-foreground mb-1">Deck</Text>
           <select
             value={deckName}
@@ -205,7 +211,7 @@ export default function TranslatorScreen() {
               <option key={name} value={name}>{name}</option>
             ))}
           </select>
-        </View>
+        </div>
       )}
 
       {/* Input */}
@@ -231,6 +237,20 @@ export default function TranslatorScreen() {
           <Text className="text-sm text-muted-foreground">Translation will appear here</Text>
         )}
       </View>
+
+      {/* Add to Deck button */}
+      {output && saveStatus !== 'saved' && (
+        <Pressable
+          role="button"
+          onPress={handleAddToDeck}
+          disabled={saving}
+          className="w-full rounded-md bg-primary px-4 py-2.5 items-center mb-3"
+        >
+          <Text className="text-sm font-medium text-primary-foreground">
+            {saving ? 'Adding...' : `Add to ${deckName}`}
+          </Text>
+        </Pressable>
+      )}
 
       {/* Save status */}
       {saveStatus === 'saved' && (

@@ -142,11 +142,6 @@ export default function CardListScreen() {
   const { data: cards, isLoading } = useCards(deck!);
   const [search, setSearch] = useState('');
 
-  const pendingCount = useMemo(
-    () => cards.filter((c) => !c.approved && !c.suspended).length,
-    [cards],
-  );
-
   const filtered = useMemo(() => {
     let result = cards.filter((c) => !c.suspended);
     if (search) {
@@ -177,18 +172,7 @@ export default function CardListScreen() {
           <Text className="text-sm text-muted-foreground">Back</Text>
         </Pressable>
         <Text className="text-lg font-bold text-foreground">{deck}</Text>
-        {pendingCount > 0 && (
-          <Pressable
-            role="button"
-            onPress={() => router.push(`/cards/approve/${deck}`)}
-            className="rounded-md bg-orange-500/10 border border-orange-500/20 px-3 py-1.5"
-          >
-            <Text className="text-sm font-medium text-orange-500">
-              Approve {pendingCount}
-            </Text>
-          </Pressable>
-        )}
-        {pendingCount === 0 && <View />}
+        <View />
       </View>
 
       {/* Search */}
