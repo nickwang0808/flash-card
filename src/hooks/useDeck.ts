@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { combineLatest } from 'rxjs';
 import { fsrs, createEmptyCard, Rating, State, type Grade, type Card, type ReviewLog } from 'ts-fsrs';
 import { useRxQuery } from './useRxQuery';
+import { useErrorBanner } from './useErrorBanner';
 import { getDatabaseSync, type CardDoc, type SrsStateDoc } from '../services/rxdb';
 import { supabase } from '../services/supabase';
 
@@ -410,7 +411,7 @@ export function useDeck(deckName: string) {
   const db = getDatabaseSync();
   const { data: settingsList, isLoading: settingsLoading } = useRxQuery(db.settings);
   const { data: cardsList, isLoading: cardsLoading } = useCards(deckName);
-  const [error, setError] = useState<string | null>(null);
+  const { showError } = useErrorBanner();
 
   // Only load today's review logs (for introduced-today tracking + undo)
   const todayLocal = new Date().toLocaleDateString('en-CA');
@@ -424,8 +425,7 @@ export function useDeck(deckName: string) {
 
   function handleError(err: unknown) {
     const msg = err instanceof Error ? err.message : 'An unexpected error occurred';
-    console.error('useDeck error:', err);
-    setError(msg);
+    showError(msg);
   }
 
   // Build a map of cardId → term for the introduced-today check
@@ -548,7 +548,5 @@ export function useDeck(deckName: string) {
     canUndo: logsList.length > 0,
     newItems,
     dueItems,
-    error,
-    dismissError: () => setError(null),
   };
 }

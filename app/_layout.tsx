@@ -3,6 +3,8 @@ import { Platform, View, Text } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useRxQuery } from '@/hooks/useRxQuery';
+import { ErrorBannerProvider, useErrorBanner } from '@/hooks/useErrorBanner';
+import { Snackbar } from '@/components/Snackbar';
 import { getDatabase, getDatabaseSync, type AppDatabase } from '@/services/rxdb';
 import { supabase } from '@/services/supabase';
 import { startReplication, cancelReplication, type ReplicationStates } from '@/services/supabase-replication';
@@ -24,7 +26,11 @@ export default function RootLayout() {
 
   if (!dbReady) return null;
 
-  return <AuthGatedLayout />;
+  return (
+    <ErrorBannerProvider>
+      <AuthGatedLayout />
+    </ErrorBannerProvider>
+  );
 }
 
 function AuthGatedLayout() {
@@ -33,6 +39,7 @@ function AuthGatedLayout() {
   const segments = useSegments();
   const replicationRef = useRef<ReplicationStates | null>(null);
   const [syncReady, setSyncReady] = useState(false);
+  const { error, showError, dismissError } = useErrorBanner();
 
   const db = getDatabaseSync();
   const { data: settingsList } = useRxQuery(db.settings);
@@ -82,6 +89,12 @@ function AuthGatedLayout() {
       const { states, initialSyncDone } = startReplication(db, supabase, user.id);
       replicationRef.current = states;
 
+      for (const state of states) {
+        state.error$.subscribe((err) => {
+          if (!cancelled) showError(`Sync error: ${err.message ?? err}`);
+        });
+      }
+
       initialSyncDone.then(() => {
         if (!cancelled) setSyncReady(true);
       });
@@ -109,6 +122,7 @@ function AuthGatedLayout() {
   return (
     <View className="flex-1 bg-background">
       <Slot />
+      <Snackbar message={error} onDismiss={dismissError} />
     </View>
   );
 }

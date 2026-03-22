@@ -136,12 +136,6 @@ export function startReplication(
     replicate(db.settings, client, 'settings', userId),
   ];
 
-  for (const state of states) {
-    state.error$.subscribe((err) => {
-      console.error(`[replication] ${state.replicationIdentifierHash} error:`, err.message ?? err);
-    });
-  }
-
   const initialSyncDone = Promise.all(
     states.map((s) => s.awaitInitialReplication()),
   ).then(() => {});

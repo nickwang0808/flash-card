@@ -8,7 +8,6 @@ import { getDatabaseSync } from '@/services/rxdb';
 import { useTts } from '@/hooks/useTts';
 import { TtsLocalePicker } from '@/components/TtsLocalePicker';
 import { CardContent } from '@/components/CardContent';
-import { Snackbar } from '@/components/Snackbar';
 
 function useForegroundColor(): string {
   const db = getDatabaseSync();
@@ -35,7 +34,7 @@ const ratingConfig = [
 export default function ReviewScreen() {
   const { deck } = useLocalSearchParams<{ deck: string }>();
   const router = useRouter();
-  const { currentCard, remaining, rate, superEasy, schedulePreview, suspend, undo, canUndo, isLoading, error, dismissError } = useDeck(deck!);
+  const { currentCard, remaining, rate, superEasy, schedulePreview, suspend, undo, canUndo, isLoading } = useDeck(deck!);
   const { speak, showPicker, selectLocale, dismissPicker, voices } = useTts(deck!);
   const foregroundColor = useForegroundColor();
   const [answerRevealed, setAnswerRevealed] = useState(false);
@@ -193,7 +192,6 @@ export default function ReviewScreen() {
         />
       )}
 
-      <Snackbar message={error} onDismiss={dismissError} />
     </View>
   );
 }
