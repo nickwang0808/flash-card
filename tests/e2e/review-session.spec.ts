@@ -316,6 +316,51 @@ test.describe('Review session', () => {
     expect(charColor).not.toBe('rgb(0, 0, 0)');
   });
 
+  test('Undo works on already-studied card after replication syncs', async ({ page }) => {
+    await page.getByText('spanish-vocab').click();
+    await expect(page.getByText('10 remaining')).toBeVisible();
+
+    // Rate first card as Good — stays in session (Learning, due soon)
+    const frontText = (await page.locator('[data-testid="card-front"]').textContent())?.trim();
+    await page.getByRole('button', { name: 'Show Answer' }).click();
+    await page.getByRole('button', { name: 'Good' }).click();
+
+    // Card stays in session (Learning). Rate remaining 9 cards as Easy to clear them.
+    for (let i = 10; i >= 2; i--) {
+      await expect(page.getByText(`${i} remaining`)).toBeVisible();
+      await page.getByRole('button', { name: 'Show Answer' }).click();
+      await page.getByRole('button', { name: 'Easy' }).click();
+    }
+
+    // Only the Learning card remains — it should reappear
+    await expect(page.getByText('1 remaining')).toBeVisible();
+    await expect(page.locator('[data-testid="card-front"]')).toContainText(frontText!);
+
+    // This card now has srs_state from the first rating.
+    // Wait for replication to sync (updates the _rev in local RxDB).
+    // Without incrementalRemove, this would cause a CONFLICT error on undo.
+    await page.waitForTimeout(2000);
+
+    // Rate the already-studied card again
+    await page.getByRole('button', { name: 'Show Answer' }).click();
+    await page.getByRole('button', { name: 'Good' }).click();
+
+    // Card should still be in session (still Learning)
+    await expect(page.getByText('1 remaining')).toBeVisible();
+
+    // Undo the second rating — this is the critical path:
+    // the review_log's _rev was updated by replication, so plain remove() would fail.
+    // Use force:true because replication events cause continuous React re-renders
+    // that keep detaching/reattaching the button.
+    await page.getByRole('button', { name: 'Undo' }).click({ force: true });
+
+    // Card should still be shown (rolled back to state after first rating)
+    await expect(page.locator('[data-testid="card-front"]')).toContainText(frontText!);
+    // No error snackbar should appear
+    await expect(page.locator('text=CONFLICT')).not.toBeVisible();
+    await expect(page.locator('text=Sync error')).not.toBeVisible();
+  });
+
   test('all four rating buttons are visible after revealing answer', async ({ page }) => {
     await page.getByText('spanish-vocab').click();
 

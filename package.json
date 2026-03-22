@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "main": "expo-router/entry",
   "scripts": {
-    "dev": "expo start --web",
+    "dev": "EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH expo start --web",
     "build": "expo export --platform web",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run --config tests/integration/vitest.config.ts",

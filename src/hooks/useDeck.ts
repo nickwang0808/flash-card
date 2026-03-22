@@ -117,7 +117,7 @@ async function updateSrsState(
 
   if (value === null) {
     const doc = await findSrsState(cardId, direction);
-    if (doc) await doc.remove();
+    if (doc) await doc.incrementalRemove();
   } else {
     const userId = await getAuthUserId(cardId);
     const existing = await findSrsState(cardId, direction);
@@ -530,7 +530,7 @@ export function useDeck(deckName: string) {
       }
 
       const logDoc = await db.reviewLogs.findOne(lastLog.id).exec();
-      if (logDoc) await logDoc.remove();
+      if (logDoc) await logDoc.incrementalRemove();
     } catch (err) {
       handleError(err);
     }
