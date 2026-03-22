@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Platform, View } from 'react-native';
+import { Platform, View, Text } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useRxQuery } from '@/hooks/useRxQuery';
 import { getDatabase, getDatabaseSync, type AppDatabase } from '@/services/rxdb';
 import { supabase } from '@/services/supabase';
-import { startReplication, cancelReplication } from '@/services/supabase-replication';
+import { startReplication, cancelReplication, type ReplicationStates } from '@/services/supabase-replication';
 
 import '../src/styles/global.css';
 
@@ -31,7 +31,8 @@ function AuthGatedLayout() {
   const { isSignedIn, loading: authLoading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
-  const replicationRef = useRef<ReturnType<typeof startReplication> | null>(null);
+  const replicationRef = useRef<ReplicationStates | null>(null);
+  const [syncReady, setSyncReady] = useState(false);
 
   const db = getDatabaseSync();
   const { data: settingsList } = useRxQuery(db.settings);
@@ -62,9 +63,10 @@ function AuthGatedLayout() {
     }
   }, [isSignedIn, authLoading, segments, router]);
 
-  // Start/stop replication
+  // Start/stop replication — block UI until initial pull completes
   useEffect(() => {
     if (!isSignedIn) {
+      setSyncReady(false);
       if (replicationRef.current) {
         cancelReplication(replicationRef.current);
         replicationRef.current = null;
@@ -72,13 +74,21 @@ function AuthGatedLayout() {
       return;
     }
 
+    let cancelled = false;
+
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
+      if (!user || cancelled) return;
       const db = getDatabaseSync();
-      replicationRef.current = startReplication(db, supabase, user.id);
+      const { states, initialSyncDone } = startReplication(db, supabase, user.id);
+      replicationRef.current = states;
+
+      initialSyncDone.then(() => {
+        if (!cancelled) setSyncReady(true);
+      });
     });
 
     return () => {
+      cancelled = true;
       if (replicationRef.current) {
         cancelReplication(replicationRef.current);
         replicationRef.current = null;
@@ -87,6 +97,14 @@ function AuthGatedLayout() {
   }, [isSignedIn]);
 
   if (authLoading) return null;
+
+  if (isSignedIn && !syncReady) {
+    return (
+      <View className="flex-1 bg-background items-center justify-center">
+        <Text className="text-muted-foreground">Syncing...</Text>
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 bg-background">

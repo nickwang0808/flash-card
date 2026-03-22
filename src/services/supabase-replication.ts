@@ -5,7 +5,7 @@ import type { AppDatabase } from './rxdb';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 type Checkpoint = { id: string; modified: string };
-type ReplicationStates = RxReplicationState<any, Checkpoint>[];
+export type ReplicationStates = RxReplicationState<any, Checkpoint>[];
 
 function replicate<T>(
   collection: RxCollection<T>,
@@ -119,7 +119,7 @@ export function startReplication(
   db: AppDatabase,
   client: SupabaseClient,
   userId: string,
-): ReplicationStates {
+): { states: ReplicationStates; initialSyncDone: Promise<void> } {
   const states = [
     replicate(db.cards, client, 'cards', userId),
     replicate(db.srsState, client, 'srs_state', userId),
@@ -133,7 +133,11 @@ export function startReplication(
     });
   }
 
-  return states;
+  const initialSyncDone = Promise.all(
+    states.map((s) => s.awaitInitialReplication()),
+  ).then(() => {});
+
+  return { states, initialSyncDone };
 }
 
 export async function cancelReplication(states: ReplicationStates): Promise<void> {
