@@ -1,13 +1,13 @@
 import { useState, useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import Markdown from 'react-native-markdown-display';
 import { Rating, type Grade } from 'ts-fsrs';
 import { useDeck } from '@/hooks/useDeck';
 import { useRxQuery } from '@/hooks/useRxQuery';
 import { getDatabaseSync } from '@/services/rxdb';
 import { useTts } from '@/hooks/useTts';
 import { TtsLocalePicker } from '@/components/TtsLocalePicker';
+import { CardContent } from '@/components/CardContent';
 
 function useForegroundColor(): string {
   const db = getDatabaseSync();
@@ -37,12 +37,6 @@ export default function ReviewScreen() {
   const { currentCard, remaining, rate, superEasy, schedulePreview, suspend, undo, canUndo, isLoading } = useDeck(deck!);
   const { speak, showPicker, selectLocale, dismissPicker, voices } = useTts(deck!);
   const foregroundColor = useForegroundColor();
-  const markdownStyles = useMemo(() => ({
-    body: { fontSize: 28, color: foregroundColor },
-    em: { fontStyle: 'italic' as const },
-    strong: { fontWeight: 'bold' as const },
-    blockquote: { borderLeftWidth: 3, borderLeftColor: '#888', paddingLeft: 12 },
-  }), [foregroundColor]);
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [cardKey, setCardKey] = useState(0);
 
@@ -118,7 +112,7 @@ export default function ReviewScreen() {
         )}
 
         <View className="items-center" testID="card-front">
-          <Markdown style={markdownStyles}>{currentCard.front}</Markdown>
+          <CardContent foregroundColor={foregroundColor}>{currentCard.front}</CardContent>
           {currentCard.isReverse && (
             <Text className="text-xs text-muted-foreground mt-1">reverse</Text>
           )}
@@ -136,7 +130,7 @@ export default function ReviewScreen() {
 
         {answerRevealed ? (
           <View className="items-center gap-3" testID="card-back">
-            <Markdown style={markdownStyles}>{currentCard.back}</Markdown>
+            <CardContent foregroundColor={foregroundColor}>{currentCard.back}</CardContent>
             {currentCard.isReverse && (
               <Pressable
                 role="button"
