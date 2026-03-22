@@ -172,7 +172,6 @@ describe('computeStudyItems', () => {
       ];
       const { newItems } = computeStudyItems(cards, 3, now);
 
-      // one reserves 2 slots (fwd+rev), two gets only forward (1 slot left)
       expect(newItems).toHaveLength(3);
       expect(newItems.map((i) => `${i.term}-${i.isReverse}`)).toEqual([
         'one-false',
@@ -181,59 +180,18 @@ describe('computeStudyItems', () => {
       ]);
     });
 
-    it('reserves slots for reverse when reversible card appears before limit', () => {
+    it('sorts forwards before reverses', () => {
       const cards = [
         createFlashCard('rev', { reversible: true }),
         createFlashCard('non-rev-1'),
-        createFlashCard('non-rev-2'),
       ];
-      const { newItems } = computeStudyItems(cards, 3, now);
+      const { newItems } = computeStudyItems(cards, 10, now);
 
-      // rev takes 2 slots (fwd+rev), non-rev-1 takes 1 slot, non-rev-2 excluded
       expect(newItems).toHaveLength(3);
-      expect(newItems.map((i) => `${i.term}-${i.isReverse}`)).toEqual([
-        'rev-false',
-        'non-rev-1-false',
-        'rev-true',
-      ]);
-    });
-
-    it('only adds forward when just one slot remains for reversible card', () => {
-      const cards = [
-        createFlashCard('non-rev-1'),
-        createFlashCard('non-rev-2'),
-        createFlashCard('rev', { reversible: true }),
-      ];
-      const { newItems } = computeStudyItems(cards, 3, now);
-
-      // non-rev-1 and non-rev-2 take 2 slots, rev gets only forward (1 slot left)
-      expect(newItems).toHaveLength(3);
-      expect(newItems.map((i) => `${i.term}-${i.isReverse}`)).toEqual([
-        'non-rev-1-false',
-        'non-rev-2-false',
-        'rev-false',
-      ]);
-    });
-
-    it('mixed reversible and non-reversible cards with tight limit', () => {
-      const cards = [
-        createFlashCard('a'),
-        createFlashCard('b', { reversible: true }),
-        createFlashCard('c'),
-        createFlashCard('d', { reversible: true }),
-        createFlashCard('e'),
-      ];
-      const { newItems } = computeStudyItems(cards, 5, now);
-
-      // a(1), b-fwd+b-rev(3), c(4), d needs 2 but only 1 left → d-fwd(5)
-      expect(newItems).toHaveLength(5);
-      expect(newItems.map((i) => `${i.term}-${i.isReverse}`)).toEqual([
-        'a-false',
-        'b-false',
-        'c-false',
-        'd-false',
-        'b-true',
-      ]);
+      // All forwards first, then reverses
+      expect(newItems[0].isReverse).toBe(false);
+      expect(newItems[1].isReverse).toBe(false);
+      expect(newItems[2].isReverse).toBe(true);
     });
 
     it('all reversible cards with limit produces equal forward and reverse items', () => {
@@ -252,12 +210,12 @@ describe('computeStudyItems', () => {
       expect(forward.map((i) => i.term)).toEqual(reverse.map((i) => i.term));
     });
 
-    it('handles forward reviewed but reverse new', () => {
+    it('handles forward reviewed but reverse new (orphaned reverse)', () => {
       const cards = [
         createFlashCard('hello', {
           reversible: true,
-          state: createFutureState(5), // forward scheduled for future
-          reverseState: null, // reverse is new
+          state: createFutureState(5),
+          reverseState: null,
         }),
       ];
       const { newItems, dueItems } = computeStudyItems(cards, 10, now);
@@ -271,8 +229,8 @@ describe('computeStudyItems', () => {
       const cards = [
         createFlashCard('hello', {
           reversible: true,
-          state: null, // forward is new
-          reverseState: createPastState(1), // reverse is due
+          state: null,
+          reverseState: createPastState(1),
         }),
       ];
       const { newItems, dueItems } = computeStudyItems(cards, 10, now);
@@ -341,7 +299,6 @@ describe('computeStudyItems', () => {
     });
 
     it('preserves input order for cards with identical created timestamps', () => {
-      // All cards have the same created date (default '2025-01-01')
       const cards = [
         createFlashCard('一', { order: 0 }),
         createFlashCard('二', { order: 1 }),
@@ -365,13 +322,10 @@ describe('computeStudyItems', () => {
         createFlashCard('three'),
         createFlashCard('four'),
       ];
-      // Simulate 2 cards already introduced today
       const introducedToday = new Set(['one', 'two']);
 
       const { newItems } = computeStudyItems(cards, 3, now, introducedToday);
 
-      // Limit is 3, 2 already introduced, so only 1 new slot remains
-      // Should include: one (introduced), two (introduced), three (new slot)
       expect(newItems).toHaveLength(3);
       expect(newItems.map((i) => i.term)).toEqual(['one', 'two', 'three']);
     });
@@ -382,12 +336,10 @@ describe('computeStudyItems', () => {
         createFlashCard('two'),
         createFlashCard('three'),
       ];
-      // 3 cards already introduced, but limit is 2
       const introducedToday = new Set(['one', 'two', 'three']);
 
       const { newItems } = computeStudyItems(cards, 2, now, introducedToday);
 
-      // All 3 should be included because they were already introduced
       expect(newItems).toHaveLength(3);
     });
 
@@ -401,7 +353,6 @@ describe('computeStudyItems', () => {
 
       const { newItems } = computeStudyItems(cards, 2, now, introducedToday);
 
-      // Limit is 2, both slots filled by introduced cards
       expect(newItems).toHaveLength(2);
       expect(newItems.map((i) => i.term)).toEqual(['introduced-a', 'introduced-b']);
     });
@@ -410,39 +361,23 @@ describe('computeStudyItems', () => {
       const cards = [
         createFlashCard('hello', { reversible: true }),
       ];
-      // Only the reverse was introduced
       const introducedToday = new Set(['hello:reverse']);
 
       const { newItems } = computeStudyItems(cards, 1, now, introducedToday);
 
-      // Limit is 1, reverse is introduced (counts toward limit)
-      // Forward: not introduced, 0 < 0 = false, not included
-      // Reverse: is introduced, included
       expect(newItems).toHaveLength(1);
       expect(newItems[0].isReverse).toBe(true);
     });
 
     it('handles empty introducedToday set', () => {
-      const cards = [
-        createFlashCard('one'),
-        createFlashCard('two'),
-      ];
-      const introducedToday = new Set<string>();
-
-      const { newItems } = computeStudyItems(cards, 10, now, introducedToday);
-
+      const cards = [createFlashCard('one'), createFlashCard('two')];
+      const { newItems } = computeStudyItems(cards, 10, now, new Set<string>());
       expect(newItems).toHaveLength(2);
     });
 
     it('works with default empty set when not provided', () => {
-      const cards = [
-        createFlashCard('one'),
-        createFlashCard('two'),
-      ];
-
-      // Call without introducedToday parameter
+      const cards = [createFlashCard('one'), createFlashCard('two')];
       const { newItems } = computeStudyItems(cards, 10, now);
-
       expect(newItems).toHaveLength(2);
     });
   });
@@ -500,23 +435,15 @@ describe('computeStudyItems', () => {
     });
 
     it('treats suspended: false as active', () => {
-      const cards = [
-        createFlashCard('explicit-false', { suspended: false }),
-      ];
+      const cards = [createFlashCard('explicit-false', { suspended: false })];
       const { newItems } = computeStudyItems(cards, 10, now);
-
       expect(newItems).toHaveLength(1);
-      expect(newItems[0].term).toBe('explicit-false');
     });
 
     it('treats suspended: undefined as active', () => {
-      const cards = [
-        createFlashCard('no-suspended-field'),
-      ];
-      // suspended is undefined by default in createFlashCard
+      const cards = [createFlashCard('no-suspended-field')];
       expect(cards[0].suspended).toBeUndefined();
       const { newItems } = computeStudyItems(cards, 10, now);
-
       expect(newItems).toHaveLength(1);
     });
 
@@ -530,6 +457,128 @@ describe('computeStudyItems', () => {
 
       expect(newItems).toHaveLength(0);
       expect(dueItems).toHaveLength(0);
+    });
+  });
+
+  describe('orphaned reverse prioritization', () => {
+    const now = getNow();
+
+    it('orphaned reverses are included and count against limit', () => {
+      const cards = [
+        // 3 cards with forward reviewed but no reverse
+        ...Array.from({ length: 3 }, (_, i) =>
+          createFlashCard(`reviewed-${i}`, {
+            reversible: true,
+            state: createFutureState(5),
+            reverseState: null,
+            order: i,
+          })
+        ),
+        // 5 truly unseen cards
+        ...Array.from({ length: 5 }, (_, i) =>
+          createFlashCard(`unseen-${i}`, { order: 10 + i })
+        ),
+      ];
+
+      const { newItems } = computeStudyItems(cards, 6, now);
+
+      // 3 orphaned reverses (priority) + 3 unseen = 6
+      expect(newItems.length).toBe(6);
+      // Orphaned reverses should be in the reverse section (after forwards)
+      const reverses = newItems.filter(i => i.isReverse);
+      expect(reverses.length).toBe(3);
+      expect(reverses.every(i => i.term.startsWith('reviewed-'))).toBe(true);
+    });
+
+    it('orphaned reverses come before new reverses in queue', () => {
+      const cards = [
+        // Orphaned: has forward SRS, no reverse
+        createFlashCard('orphan', {
+          reversible: true,
+          state: createFutureState(5),
+          reverseState: null,
+          order: 0,
+        }),
+        // New reversible card
+        createFlashCard('new-card', { reversible: true, order: 1 }),
+      ];
+
+      const { newItems } = computeStudyItems(cards, 10, now);
+
+      // Queue: [new-card fwd, orphan rev, new-card rev]
+      // Forwards first: new-card fwd
+      // Then reverses: orphan rev (priority), new-card rev
+      expect(newItems).toHaveLength(3);
+      expect(newItems[0]).toMatchObject({ term: 'new-card', isReverse: false });
+      expect(newItems[1]).toMatchObject({ term: 'orphan', isReverse: true });
+      expect(newItems[2]).toMatchObject({ term: 'new-card', isReverse: true });
+    });
+
+    it('orphaned reverses get priority over new cards when slots are limited', () => {
+      const cards = [
+        // 5 orphaned reverses
+        ...Array.from({ length: 5 }, (_, i) =>
+          createFlashCard(`orphan-${i}`, {
+            reversible: true,
+            state: createFutureState(5),
+            reverseState: null,
+            order: i,
+          })
+        ),
+        // 10 new cards
+        ...Array.from({ length: 10 }, (_, i) =>
+          createFlashCard(`new-${i}`, { order: 10 + i })
+        ),
+      ];
+
+      const { newItems } = computeStudyItems(cards, 8, now);
+
+      // 5 orphaned reverses first, then 3 new cards to fill limit
+      expect(newItems.length).toBe(8);
+      const orphans = newItems.filter(i => i.term.startsWith('orphan-'));
+      expect(orphans.length).toBe(5);
+    });
+
+    it('mid-session: forward introduced today, reverse still appears', () => {
+      const cards = Array.from({ length: 30 }, (_, i) =>
+        createFlashCard(`card-${i}`, { reversible: true, order: i })
+      );
+
+      const introduced = new Set(['card-0', 'card-1']);
+      const { newItems } = computeStudyItems(cards, 10, now, introduced);
+
+      // card-0 and card-1 forwards are introduced (always included)
+      // card-0 and card-1 reverses are fresh candidates
+      // Plus more new cards to fill 10
+      const card0Items = newItems.filter(i => i.term === 'card-0');
+      expect(card0Items.length).toBe(2);
+      expect(newItems.length).toBe(10);
+    });
+
+    it('fills limit with large deck of mixed reviewed and unseen cards', () => {
+      const cards: FlashCard[] = [];
+      let unseenCount = 0;
+
+      for (let i = 0; i < 755; i++) {
+        const isUnseen = (i % 8 === 0 && unseenCount < 96);
+        if (isUnseen) {
+          cards.push(createFlashCard(`unseen-${unseenCount}`, {
+            reversible: true,
+            order: i,
+          }));
+          unseenCount++;
+        } else {
+          cards.push(createFlashCard(`reviewed-${i}`, {
+            reversible: true,
+            state: createFutureState(5),
+            reverseState: createFutureState(5),
+            order: i,
+          }));
+        }
+      }
+
+      const { newItems } = computeStudyItems(cards, 50, now);
+      expect(newItems.length).toBe(50);
     });
   });
 

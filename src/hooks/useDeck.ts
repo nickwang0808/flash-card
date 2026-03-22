@@ -198,72 +198,91 @@ export function computeStudyItems(
   const endOfDay = new Date(now);
   endOfDay.setHours(23, 59, 59, 999);
 
-  const newForward: StudyItem[] = [];
-  const newReverse: StudyItem[] = [];
-  const dueForward: StudyItem[] = [];
-  const dueReverse: StudyItem[] = [];
-
   const activeCards = cards.filter(card => !card.suspended);
-  const introducedCount = introducedToday.size;
-  const remainingNewSlots = Math.max(0, newCardsLimit - introducedCount);
-  let newSlotsUsed = 0;
+
+  // Step 1: Collect candidates in priority order and due items
+  const orphanedReverses: StudyItem[] = [];  // priority: have forward SRS but no reverse
+  const newCandidates: StudyItem[] = [];     // new cards in card order (fwd, rev interleaved)
+  const dueItems: StudyItem[] = [];
 
   for (const card of activeCards) {
     if (!card.state) {
-      const forwardIntroduced = introducedToday.has(card.term);
-
+      // New card — add forward
+      newCandidates.push({ ...card, isReverse: false });
+      // Add reverse too if reversible
       if (card.reversible && !card.reverseState) {
-        const reverseKey = `${card.term}:reverse`;
-        const reverseIntroduced = introducedToday.has(reverseKey);
-        const slotsNeeded = (forwardIntroduced ? 0 : 1) + (reverseIntroduced ? 0 : 1);
-
-        if (slotsNeeded <= remainingNewSlots - newSlotsUsed) {
-          newForward.push({ ...card, isReverse: false });
-          newReverse.push({ ...card, isReverse: true });
-          newSlotsUsed += slotsNeeded;
-        } else {
-          if (forwardIntroduced) newForward.push({ ...card, isReverse: false });
-          if (reverseIntroduced) newReverse.push({ ...card, isReverse: true });
-          if (!forwardIntroduced && newSlotsUsed < remainingNewSlots) {
-            newForward.push({ ...card, isReverse: false });
-            newSlotsUsed++;
-          }
-        }
-      } else {
-        if (forwardIntroduced || newSlotsUsed < remainingNewSlots) {
-          newForward.push({ ...card, isReverse: false });
-          if (!forwardIntroduced) newSlotsUsed++;
-        }
+        newCandidates.push({ ...card, isReverse: true });
       }
     } else if (isDue(card.state, now, endOfDay)) {
-      dueForward.push({ ...card, isReverse: false });
+      dueItems.push({ ...card, isReverse: false });
     }
 
+    // Handle reverse direction separately
     if (card.reversible) {
-      const handledAtomically = !card.state && !card.reverseState;
-      if (!handledAtomically) {
-        if (!card.reverseState) {
-          const reverseKey = `${card.term}:reverse`;
-          const isIntroduced = introducedToday.has(reverseKey);
-          if (isIntroduced || newSlotsUsed < remainingNewSlots) {
-            newReverse.push({ ...card, isReverse: true });
-            if (!isIntroduced) newSlotsUsed++;
-          }
-        } else if (isDue(card.reverseState, now, endOfDay)) {
-          dueReverse.push({ ...card, isReverse: true });
-        }
+      if (card.state && !card.reverseState) {
+        // Orphaned reverse: forward has SRS but reverse doesn't
+        orphanedReverses.push({ ...card, isReverse: true });
+      } else if (card.reverseState && isDue(card.reverseState, now, endOfDay)) {
+        // Reverse is due (regardless of forward state)
+        dueItems.push({ ...card, isReverse: true });
       }
     }
   }
 
-  return {
-    newItems: [...newForward, ...newReverse],
-    dueItems: [...dueForward, ...dueReverse].sort((a, b) => {
-      const aDue = a.isReverse ? a.reverseState!.due : a.state!.due;
-      const bDue = b.isReverse ? b.reverseState!.due : b.state!.due;
-      return aDue.getTime() - bDue.getTime();
-    }),
-  };
+  // Step 2: Separate already-introduced items (always include) from fresh candidates
+  const introducedItems: StudyItem[] = [];
+  const freshOrphans: StudyItem[] = [];
+  const freshNew: StudyItem[] = [];
+
+  for (const item of orphanedReverses) {
+    const key = `${item.term}:reverse`;
+    if (introducedToday.has(key)) {
+      introducedItems.push(item);
+    } else {
+      freshOrphans.push(item);
+    }
+  }
+
+  for (const item of newCandidates) {
+    const key = item.isReverse ? `${item.term}:reverse` : item.term;
+    if (introducedToday.has(key)) {
+      introducedItems.push(item);
+    } else {
+      freshNew.push(item);
+    }
+  }
+
+  // Step 3: Fill remaining slots — orphaned reverses first, then new cards
+  const remainingSlots = Math.max(0, newCardsLimit - introducedToday.size);
+  const selected = [...introducedItems];
+  let slotsUsed = 0;
+
+  for (const item of freshOrphans) {
+    if (slotsUsed >= remainingSlots) break;
+    selected.push(item);
+    slotsUsed++;
+  }
+
+  for (const item of freshNew) {
+    if (slotsUsed >= remainingSlots) break;
+    selected.push(item);
+    slotsUsed++;
+  }
+
+  // Step 4: Sort — all forwards first, then all reverses (preserve card order within)
+  selected.sort((a, b) => {
+    if (a.isReverse !== b.isReverse) return a.isReverse ? 1 : -1;
+    return 0; // stable sort preserves card order within each group
+  });
+
+  // Sort due items by due date
+  dueItems.sort((a, b) => {
+    const aDue = a.isReverse ? a.reverseState!.due : a.state!.due;
+    const bDue = b.isReverse ? b.reverseState!.due : b.state!.due;
+    return aDue.getTime() - bDue.getTime();
+  });
+
+  return { newItems: selected, dueItems };
 }
 
 export function computeNewState(
