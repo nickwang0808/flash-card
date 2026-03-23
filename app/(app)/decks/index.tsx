@@ -56,6 +56,13 @@ export default function DeckListScreen() {
         <View className="flex-row gap-2">
           <Pressable
             role="button"
+            onPress={() => router.push('/translator')}
+            className="rounded-md border border-input px-3 py-1.5"
+          >
+            <Text className="text-sm text-foreground">Translate</Text>
+          </Pressable>
+          <Pressable
+            role="button"
             onPress={() => router.push('/sync')}
             className="rounded-md border border-input px-3 py-1.5"
           >
