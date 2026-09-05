@@ -4,8 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 
-const mode = process.argv[2] ?? 'backend';
-if (!['backend', 'cli', 'all'].includes(mode)) throw new Error('Usage: node scripts/run-acceptance.mjs [backend|cli|all]');
 const bin = (name) => join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? `${name}.cmd` : name);
 const acceptanceWorkdir = 'acceptance';
 const acceptanceSourceProjection = 'acceptance/src';
@@ -110,10 +108,6 @@ async function runSuite(config, environment) {
 
 try {
   await materializeAcceptanceSource();
-  if (mode !== 'backend') {
-    const build = spawnSync(process.execPath, ['scripts/build-cli.mjs'], { cwd: process.cwd(), encoding: 'utf8' });
-    if (build.status !== 0) fail(`building CLI failed\n${build.stderr || build.stdout}`);
-  }
   local = startAcceptanceStack();
   const drizzle = runTool('drizzle-kit', ['migrate'], { ...process.env, DATABASE_URL: local.DATABASE_URL });
   if (drizzle.status !== 0) fail(`drizzle-kit migrate failed\n${drizzle.stderr || drizzle.stdout}`);
@@ -124,8 +118,7 @@ try {
   functionProcess = spawn(bin('supabase'), ['functions', 'serve', 'api', '--env-file', envFile, '--workdir', acceptanceWorkdir], { cwd: process.cwd(), stdio: 'inherit', env: process.env });
   await waitForFunction(); await warmFunction();
   const environment = { ...process.env, ...local, FLASHCARD_TEST_CLOCK_SECRET: clockSecret, FLASHCARD_ACCEPTANCE_RUN_ID: randomUUID() };
-  if (mode === 'backend' || mode === 'all') await runSuite('vitest.acceptance.config.ts', environment);
-  if (process.exitCode !== 1 && (mode === 'cli' || mode === 'all')) await runSuite('vitest.cli-acceptance.config.ts', environment);
+  await runSuite('vitest.acceptance.config.ts', environment);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error); process.exitCode = 1;
 } finally {

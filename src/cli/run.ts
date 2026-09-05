@@ -1,13 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { CommanderError } from 'commander';
 import { z } from 'zod';
-import { readCliEnvironment } from '../api/environment.ts';
+import { readCliEnvironment, type PublicClientEnvironment } from '../api/environment.ts';
 import { CliError, toCliError } from './errors.ts';
 import { type CredentialStoreKind } from './credentials.ts';
 import { numberFlag, parseInput, schemas, validate } from './input.ts';
 import { createProgram } from './program.ts';
 import { SessionManager } from './session.ts';
-
 interface CliIo {
   stdin: NodeJS.ReadableStream & { isTTY?: boolean };
   stdout: NodeJS.WritableStream & { isTTY?: boolean };
@@ -17,12 +16,24 @@ interface CliIo {
 
 type Options = Record<string, unknown>;
 
-export async function runCli(argv: string[], io: CliIo): Promise<number> {
+type CliSessionManager = Pick<SessionManager, 'api' | 'kind' | 'login' | 'logout' | 'requireSession' | 'save'>;
+
+export interface CliRuntime {
+  createSessionManager: (environment: PublicClientEnvironment, requestedKind?: CredentialStoreKind) => Promise<CliSessionManager>;
+  createRequestId: () => string;
+}
+
+const defaultRuntime: CliRuntime = {
+  createSessionManager: SessionManager.create,
+  createRequestId: randomUUID,
+};
+
+export async function runCli(argv: string[], io: CliIo, runtime: CliRuntime = defaultRuntime): Promise<number> {
   let result: unknown;
   let actionStarted = false;
   const program = createProgram(async (operation, options) => {
     actionStarted = true;
-    result = await runOperation(operation, options, io);
+    result = await runOperation(operation, options, io, runtime);
   }, (text) => io.stdout.write(text));
   program.exitOverride();
   try {
@@ -40,10 +51,10 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   }
 }
 
-async function runOperation(operation: string, options: Options, io: CliIo): Promise<unknown> {
-  if (operation === 'auth.login') return login(options, io);
+async function runOperation(operation: string, options: Options, io: CliIo, runtime: CliRuntime): Promise<unknown> {
+  if (operation === 'auth.login') return login(options, io, runtime);
   const environment = readCliEnvironment(io.environment ?? process.env);
-  const manager = await SessionManager.create(environment);
+  const manager = await runtime.createSessionManager(environment);
   if (operation === 'auth.logout') {
     const result = await manager.logout();
     return { loggedOut: true, ...result };
@@ -71,7 +82,7 @@ async function runOperation(operation: string, options: Options, io: CliIo): Pro
     case 'card.rollback': return client.card.rollbackRevision.mutate(await input(options, schemas.cardRollback, io, () => ({ cardId: text(options.cardId), deckId: text(options.deckId), revisionId: text(options.revisionId), expectedVersion: integer(options.expectedVersion) })));
     case 'review.rate': {
       const request = await input(options, schemas.reviewRate, io, () => ({ cardId: text(options.cardId), deckId: text(options.deckId), rating: text(options.rating), expectedVersion: integer(options.expectedVersion), requestId: optionalText(options.requestId), queue: queue(options) }));
-      return client.review.rate.mutate({ ...request, requestId: request.requestId ?? randomUUID() });
+      return client.review.rate.mutate({ ...request, requestId: request.requestId ?? runtime.createRequestId() });
     }
     case 'review.history': return client.review.history.query(await input(options, schemas.reviewHistory, io, () => ({ cardId: text(options.cardId), deckId: text(options.deckId), pagination: page(options) })));
     case 'review.undo': return client.review.undo.mutate(await input(options, schemas.reviewUndo, io, () => ({ reviewId: text(options.reviewId), deckId: text(options.deckId), queue: queue(options) })));
@@ -79,17 +90,16 @@ async function runOperation(operation: string, options: Options, io: CliIo): Pro
   }
 }
 
-async function login(options: Options, io: CliIo): Promise<unknown> {
+async function login(options: Options, io: CliIo, runtime: CliRuntime): Promise<unknown> {
   const email = validate(z.string().email(), options.email);
   const requested = options.credentialStore;
   if (requested !== undefined && requested !== 'keyring' && requested !== 'file') throw new CliError('VALIDATION_FAILED', 'Credential store must be keyring or file');
   const password = options.passwordStdin ? await passwordFromStdin(io.stdin) : await passwordFromTty(io);
   const environment = readCliEnvironment(io.environment ?? process.env);
-  const manager = await SessionManager.create(environment, requested as CredentialStoreKind | undefined);
-  const { data, error } = await manager.auth.auth.signInWithPassword({ email, password });
-  if (error || !data.session || !data.user) throw new CliError('AUTHENTICATION_FAILED', 'Email or password was rejected');
-  await manager.save({ version: 1, accessToken: data.session.access_token, refreshToken: data.session.refresh_token }, true);
-  return { userId: data.user.id, email: data.user.email ?? email, credentialStore: manager.kind };
+  const manager = await runtime.createSessionManager(environment, requested as CredentialStoreKind | undefined);
+  const signedIn = await manager.login(email, password);
+  await manager.save(signedIn.session, true);
+  return { userId: signedIn.userId, email: signedIn.email, credentialStore: manager.kind };
 }
 
 async function input<T extends z.ZodType>(options: Options, schema: T, io: CliIo, fromFlags: () => unknown): Promise<z.output<T>> {

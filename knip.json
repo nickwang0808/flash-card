@@ -8,7 +8,7 @@
   ],
   "project": ["src/**/*.{ts,tsx}", "app/**/*.{ts,tsx}", "supabase/**/*.{ts,tsx}"],
   "vitest": {
-    "config": ["vitest.config.ts", "vitest.integration.config.ts", "vitest.acceptance.config.ts", "vitest.cli-acceptance.config.ts"]
+    "config": ["vitest.config.ts", "vitest.integration.config.ts", "vitest.acceptance.config.ts"]
   },
   "ignoreFiles": ["src/components/ui/**"],
   "ignoreDependencies": ["expo-updates", "expo-system-ui", "@legendapp/motion", "react-aria", "react-native-worklets", "react-stately", "tailwind-variants", "@tailwindcss/postcss", "babel-plugin-module-resolver", "supabase"],

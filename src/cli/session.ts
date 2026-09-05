@@ -68,6 +68,16 @@ export class SessionManager {
       if (remember) await this.preference.write(this.kind);
     });
   }
+  async login(email: string, password: string): Promise<{ userId: string; email: string; session: StoredSession }> {
+    const { data, error } = await this.auth.auth.signInWithPassword({ email, password });
+    if (error || !data.session || !data.user) throw new CliError('AUTHENTICATION_FAILED', 'Email or password was rejected');
+    return {
+      userId: data.user.id,
+      email: data.user.email ?? email,
+      session: { version: 1, accessToken: data.session.access_token, refreshToken: data.session.refresh_token },
+    };
+  }
+
 
   async refreshSession(): Promise<boolean> {
     return this.withLock(async () => {
