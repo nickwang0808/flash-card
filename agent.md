@@ -2,19 +2,23 @@
 
 ## Schema Changes
 
-Postgres is the single source of truth. To change the schema:
+Postgres is the durable source of truth; `src/db/schema.ts` defines the typed
+schema used to generate current forward migrations:
 
 ```bash
-# 1. Create a new migration
-npx supabase migration new my_change
+# 1. Edit src/db/schema.ts
 
-# 2. Edit the SQL file in supabase/migrations/
+# 2. Generate a forward migration
+npm run db:generate -- --name=my-change
 
-# 3. Apply locally
-npx supabase migration up
+# 3. Inspect the generated SQL under supabase/drizzle/
 
-# 4. Update src/db/schema.ts to mirror the migration
+# 4. Apply it locally
+DATABASE_URL=... npm run db:migrate
 ```
+
+Never edit an applied migration. Historical Supabase migration files remain
+archived reconstruction evidence.
 
 Server procedures live in `supabase/functions/api/routers/`; shared domain schemas and scheduling rules live in `src/domain/`.
 
@@ -25,6 +29,22 @@ Server procedures live in `supabase/functions/api/routers/`; shared domain schem
 - Backend acceptance: `npm run test:acceptance` — real Auth, JWT, Edge Function, tRPC, and Postgres journeys on an isolated local stack.
 - Repository checks: `npm run check`.
 - Web build: `npm run build` — Expo static export; exercise the actual UI once frontend reconstruction begins.
+
+### Test Boundaries
+
+Domain objects are trusted components at higher test layers. Unit tests own their
+exact rules, edge cases, and invariants. Acceptance tests assume those domain
+objects are correct and verify application composition: authentication, input
+selection, server time, persistence, history, queues, idempotency, concurrency,
+and undo.
+
+An acceptance test may use the production domain object as its expected-value
+oracle. It must not duplicate or hardcode that object's policy values. This use
+does not independently test the domain algorithm; the corresponding unit tests
+provide that coverage. When a domain rule changes, update its unit contract.
+Change acceptance coverage only when the externally observable application
+workflow or the way the application selects and invokes the domain object
+changes.
 
 Local integration tests require the Supabase stack:
 

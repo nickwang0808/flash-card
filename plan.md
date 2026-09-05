@@ -43,18 +43,38 @@ This document is the authoritative product and architecture plan. [`task.md`](./
 
 ## Locked product behavior
 
-- Cards are independent records with a name, Markdown front and back, tags, optional speech metadata, suspension state, cadence state, optimistic version, and timestamps.
+- Cards are independent records with a name, Markdown front and back, tags, optional speech metadata, suspension state, scheduling state, optimistic version, and timestamps.
 - Reciprocal prompts are ordinary independent cards. The system stores no relationship between them.
-- New cards precede reviewed cards.
-- New cards use `createdAt, id` ordering.
-- Reviewed cards use `nextReviewAt, id` ordering through an inclusive rolling 48-hour horizon.
+- `nextReviewAt` is the sole authority for queue eligibility; a null value means the card is new.
+- Studied cards due within the inclusive rolling 12-hour window precede all new cards.
+- Studied cards use `nextReviewAt, id` ordering. New cards use `createdAt, id` ordering.
+- The 12-hour horizon is fixed by the server rather than caller-configurable.
 - The queue limit is a transport working-set limit, not a daily limit.
 - Queue items contain the complete canonical card plus server-derived `new`, `due`, or `future` status.
-- Future cards may be studied early and must be visually distinguishable.
+- A short Again or initial Hard retry remains ahead of new cards because it falls inside the rolling window.
 - Rating supports exactly `again`, `hard`, `good`, and `easy`.
 - Undo applies only to the latest active review for a card and restores its recorded `beforeState` exactly.
 - Review history includes visibly undone events. Revision history remains append-only, including rollback revisions.
 - The client never computes a rating preview because cadence belongs to the server.
+
+## Cadence
+
+Cadence has no learning/review phase. Once a new card is rated, every later rating uses the same studied-card transition. `intervalDays` is the accumulated summary of earlier ratings; the scheduler does not replay review history.
+
+| Card state | Rating | Next presentation | Stored interval |
+|---|---|---|---|
+| New | Again | 1 minute | 1 day |
+| New | Hard | 10 minutes | 1 day |
+| New | Good | 1 day | 1 day |
+| New | Easy | 7 days | 7 days |
+| Studied | Again | 1 minute | `max(1, old × 0.5)` days |
+| Studied | Hard | `max(1, old × 1.2)` days | same |
+| Studied | Good | `max(1, old × 2)` days | same |
+| Studied | Easy | `max(7, old × 4)` days | same |
+
+All intervals are capped at 365 days. Easy is intentionally aggressive so confidently known cards leave the active study workload quickly. Every accepted rating increments `reviewCount`; Again on a studied card also increments `lapseCount`.
+
+Review events record exact before/after scheduling state for history and undo. They are evidence, not an input replay log. Undo restores the recorded state instead of mathematically reversing a multiplier.
 
 ## Existing server boundary
 
@@ -218,7 +238,7 @@ The old presentation at commit `787940b` is reference material for layout and in
 
 ### Study workflow
 
-- Fetch one `deck.queue` snapshot with the server defaults or explicit 48-hour/50-card options.
+- Fetch one `deck.queue` snapshot using the fixed 12-hour horizon and an explicit or default 50-card working-set limit.
 - Render each queue item directly; studying performs no per-card `card.get` request.
 - Preserve front, reveal, and back interaction.
 - Label new and future cards; future treatment must be visually unambiguous.
@@ -327,7 +347,7 @@ Reintroduce Playwright for assembled-product journeys, not backend duplication. 
 
 1. email/password login and restored session;
 2. deck and card management;
-3. new-first queue and Markdown reveal;
+3. studied-first 12-hour queue and Markdown reveal;
 4. all four ratings and replacement snapshots;
 5. future-card styling;
 6. undo and review history;

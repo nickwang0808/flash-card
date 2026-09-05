@@ -4,7 +4,7 @@ import { createActor, destroyActor, type TestActor } from './test-support/actor.
 import { closeFixtureDb } from './test-support/database.ts';
 import { createDeck, createNewCard } from './test-support/scenarios.ts';
 
-const queue = { horizonHours: 48, limit: 50 };
+const queue = { limit: 50 };
 let actor: TestActor | undefined;
 afterEach(async () => { await destroyActor(actor); actor = undefined; await closeFixtureDb(); });
 
@@ -13,12 +13,12 @@ describe('ratings and idempotency', () => {
     actor = await createActor(`rating-${rating}`);
     const deck = await createDeck(actor, `Rating ${rating}`);
     const card = await createNewCard(actor, deck);
-    const expected = new Cadence().rate({ cadencePhase: null, nextReviewAt: null, intervalDays: null, reviewCount: 0, lapseCount: 0, schedulerVersion: null }, rating, actor.clock.now());
+    const expected = new Cadence().rate({ nextReviewAt: null, intervalDays: null, reviewCount: 0, lapseCount: 0 }, rating, actor.clock.now());
     const result = await actor.api.review.rate({ cardId: card.id, deckId: deck.id, rating, expectedVersion: 0, requestId: crypto.randomUUID(), queue });
     const updated = await actor.api.card.get({ cardId: card.id, deckId: deck.id });
     expect(updated).toMatchObject({ version: 1, ...expected, updatedAt: actor.clock.iso() });
     expect(result.queue).toMatchObject({ asOf: actor.clock.iso() });
-    if (expected.nextReviewAt !== null && new Date(expected.nextReviewAt).getTime() <= actor.clock.now().getTime() + 48 * 3_600_000) {
+    if (expected.nextReviewAt !== null && new Date(expected.nextReviewAt).getTime() <= actor.clock.now().getTime() + 12 * 3_600_000) {
       expect(result.queue.items).toMatchObject([{ id: card.id, nextReviewAt: expected.nextReviewAt }]);
     } else {
       expect(result.queue.items).toEqual([]);

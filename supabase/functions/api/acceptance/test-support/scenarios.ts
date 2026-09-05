@@ -21,7 +21,7 @@ export async function createNewCard(actor: TestActor, deck: { id: string }, over
   });
 }
 
-export async function createStudiedCard(actor: TestActor, deck: { id: string }, overrides: Partial<Pick<Card, 'name' | 'frontMarkdown' | 'backMarkdown' | 'tags' | 'suspended' | 'createdAt' | 'updatedAt' | 'cadencePhase' | 'nextReviewAt' | 'intervalDays' | 'reviewCount' | 'lapseCount' | 'schedulerVersion' | 'version'>> = {}) {
+export async function createStudiedCard(actor: TestActor, deck: { id: string }, overrides: Partial<Pick<Card, 'name' | 'frontMarkdown' | 'backMarkdown' | 'tags' | 'suspended' | 'createdAt' | 'updatedAt' | 'nextReviewAt' | 'intervalDays' | 'reviewCount' | 'lapseCount' | 'version'>> = {}) {
   const timestamp = actor.clock.iso();
   const row = {
     deckId: deck.id,
@@ -34,12 +34,10 @@ export async function createStudiedCard(actor: TestActor, deck: { id: string }, 
     suspended: overrides.suspended ?? false,
     createdAt: overrides.createdAt ?? timestamp,
     updatedAt: overrides.updatedAt ?? timestamp,
-    cadencePhase: overrides.cadencePhase ?? 'review' as const,
     nextReviewAt: overrides.nextReviewAt ?? new Date(actor.clock.now().getTime() + 3_600_000).toISOString(),
     intervalDays: overrides.intervalDays ?? 1,
     reviewCount: overrides.reviewCount ?? 1,
     lapseCount: overrides.lapseCount ?? 0,
-    schedulerVersion: overrides.schedulerVersion ?? 1,
     version: overrides.version ?? 1,
   };
   const [created] = await fixtureDb().insert(cards).values(row).returning();

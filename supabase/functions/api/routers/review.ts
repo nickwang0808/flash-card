@@ -6,7 +6,7 @@ import type { Card } from '../../../../src/domain/Card.ts';
 import { ApplicationError } from '../../../../src/domain/errors.ts';
 import { ReviewHistoryEntrySchema, type ReviewEvent, type ReviewHistoryEntry } from '../../../../src/domain/ReviewEvent.ts';
 import { RatingSchema, UuidSchema, toIsoTimestamp } from '../../../../src/domain/primitives.ts';
-import { QueueOptionsSchema, QueueSnapshotSchema, StudyQueue, type QueueOptions } from '../../../../src/domain/StudyQueue.ts';
+import { QueueOptionsSchema, QueueSnapshotSchema, STUDY_HORIZON_HOURS, StudyQueue, type QueueOptions } from '../../../../src/domain/StudyQueue.ts';
 import { cards, decks, reviewEvents } from '../../../../src/db/schema.ts';
 import { cardsOwnedBy, decodeCursor, encodeCursor, requireDeck, reviewEventsOf } from '../../../../src/db/tenant.ts';
 import { protectedProcedure, t } from '../trpc.ts';
@@ -31,7 +31,7 @@ function isUniqueViolation(error: unknown): boolean {
   return typeof candidate === 'object' && candidate !== null && 'code' in candidate && candidate.code === UNIQUE_VIOLATION;
 }
 function mapCard(row: typeof cards.$inferSelect): Card {
-  return { id: row.id, deckId: row.deckId, name: row.name, frontMarkdown: row.frontMarkdown, backMarkdown: row.backMarkdown, speechText: row.speechText, speechLocale: row.speechLocale, tags: row.tags, suspended: row.suspended, createdAt: toIsoTimestamp(row.createdAt), updatedAt: toIsoTimestamp(row.updatedAt), cadencePhase: row.cadencePhase, nextReviewAt: row.nextReviewAt ? toIsoTimestamp(row.nextReviewAt) : null, intervalDays: row.intervalDays, reviewCount: row.reviewCount, lapseCount: row.lapseCount, schedulerVersion: row.schedulerVersion, version: row.version };
+  return { id: row.id, deckId: row.deckId, name: row.name, frontMarkdown: row.frontMarkdown, backMarkdown: row.backMarkdown, speechText: row.speechText, speechLocale: row.speechLocale, tags: row.tags, suspended: row.suspended, createdAt: toIsoTimestamp(row.createdAt), updatedAt: toIsoTimestamp(row.updatedAt), nextReviewAt: row.nextReviewAt ? toIsoTimestamp(row.nextReviewAt) : null, intervalDays: row.intervalDays, reviewCount: row.reviewCount, lapseCount: row.lapseCount, version: row.version };
 }
 function mapEvent(row: typeof reviewEvents.$inferSelect): ReviewEvent {
   return { id: row.id, cardId: row.cardId, rating: row.rating, reviewedAt: toIsoTimestamp(row.reviewedAt), beforeState: row.beforeState, afterState: row.afterState, requestId: row.requestId, undoneAt: row.undoneAt ? toIsoTimestamp(row.undoneAt) : null, createdAt: toIsoTimestamp(row.createdAt) };
@@ -41,15 +41,15 @@ function mapHistory(row: typeof reviewEvents.$inferSelect): ReviewHistoryEntry {
   return { ...event, beforeIntervalDays: event.beforeState?.intervalDays ?? null, afterIntervalDays: event.afterState.intervalDays, resultingNextReviewAt: event.afterState.nextReviewAt };
 }
 function cadenceStateOf(card: Card): CadenceState {
-  return { cadencePhase: card.cadencePhase, nextReviewAt: card.nextReviewAt, intervalDays: card.intervalDays, reviewCount: card.reviewCount, lapseCount: card.lapseCount, schedulerVersion: card.schedulerVersion };
+  return { nextReviewAt: card.nextReviewAt, intervalDays: card.intervalDays, reviewCount: card.reviewCount, lapseCount: card.lapseCount };
 }
 async function queueSnapshot(db: Parameters<typeof cardsOwnedBy>[0], userId: string, deckId: string, options: QueueOptions, now: Date) {
-  const horizon = new Date(now.getTime() + options.horizonHours * 3_600_000).toISOString();
-  const [newRows, reviewedRows] = await Promise.all([
-    cardsOwnedBy(db, userId).where(and(eq(cards.deckId, deckId), eq(cards.suspended, false), isNull(cards.nextReviewAt))).orderBy(asc(cards.createdAt), asc(cards.id)).limit(options.limit),
+  const horizon = new Date(now.getTime() + STUDY_HORIZON_HOURS * 3_600_000).toISOString();
+  const [studiedRows, newRows] = await Promise.all([
     cardsOwnedBy(db, userId).where(and(eq(cards.deckId, deckId), eq(cards.suspended, false), isNotNull(cards.nextReviewAt), lte(cards.nextReviewAt, horizon))).orderBy(asc(cards.nextReviewAt), asc(cards.id)).limit(options.limit),
+    cardsOwnedBy(db, userId).where(and(eq(cards.deckId, deckId), eq(cards.suspended, false), isNull(cards.nextReviewAt))).orderBy(asc(cards.createdAt), asc(cards.id)).limit(options.limit),
   ]);
-  return new StudyQueue().build([...newRows.map(({ cards: card }) => mapCard(card)), ...reviewedRows.map(({ cards: card }) => mapCard(card))], now, options);
+  return new StudyQueue().build([...studiedRows.map(({ cards: card }) => mapCard(card)), ...newRows.map(({ cards: card }) => mapCard(card))], now, options);
 }
 
 export const reviewRouter = t.router({
@@ -74,7 +74,7 @@ export const reviewRouter = t.router({
           if (isUniqueViolation(error)) throw new ReviewRequestExists(input.cardId, input.requestId);
           throw error;
         }
-        await tx.update(cards).set({ cadencePhase: afterState.cadencePhase, nextReviewAt: afterState.nextReviewAt, intervalDays: afterState.intervalDays, reviewCount: afterState.reviewCount, lapseCount: afterState.lapseCount, schedulerVersion: afterState.schedulerVersion, version: card.version + 1, updatedAt: now.toISOString() }).where(and(eq(cards.id, input.cardId), eq(cards.version, card.version)));
+        await tx.update(cards).set({ nextReviewAt: afterState.nextReviewAt, intervalDays: afterState.intervalDays, reviewCount: afterState.reviewCount, lapseCount: afterState.lapseCount, version: card.version + 1, updatedAt: now.toISOString() }).where(and(eq(cards.id, input.cardId), eq(cards.version, card.version)));
         return eventRows[0].id;
       });
     } catch (error) {
@@ -97,9 +97,9 @@ export const reviewRouter = t.router({
       if (newerRows.length > 0) throw new ApplicationError('INVALID_STATE', 'Only the latest active review can be undone');
       const cardRows = await cardsOwnedBy(tx, ctx.identity.userId).where(and(eq(cards.id, event.cardId), eq(cards.deckId, input.deckId))).limit(1).for('update', { of: cards });
       if (cardRows.length === 0) throw new ApplicationError('NOT_FOUND', 'Card not found');
-      const beforeState = event.beforeState ?? { cadencePhase: null, nextReviewAt: null, intervalDays: null, reviewCount: 0, lapseCount: 0, schedulerVersion: null };
+      const beforeState = event.beforeState ?? { nextReviewAt: null, intervalDays: null, reviewCount: 0, lapseCount: 0 };
       await tx.update(reviewEvents).set({ undoneAt: now.toISOString() }).where(eq(reviewEvents.id, event.id));
-      await tx.update(cards).set({ cadencePhase: beforeState.cadencePhase, nextReviewAt: beforeState.nextReviewAt, intervalDays: beforeState.intervalDays, reviewCount: beforeState.reviewCount, lapseCount: beforeState.lapseCount, schedulerVersion: beforeState.schedulerVersion, version: cardRows[0].cards.version + 1, updatedAt: now.toISOString() }).where(eq(cards.id, event.cardId));
+      await tx.update(cards).set({ nextReviewAt: beforeState.nextReviewAt, intervalDays: beforeState.intervalDays, reviewCount: beforeState.reviewCount, lapseCount: beforeState.lapseCount, version: cardRows[0].cards.version + 1, updatedAt: now.toISOString() }).where(eq(cards.id, event.cardId));
     });
     return { queue: await queueSnapshot(ctx.db, ctx.identity.userId, input.deckId, input.queue, now) };
   }),

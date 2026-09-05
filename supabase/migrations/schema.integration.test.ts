@@ -68,9 +68,7 @@ describe('authoritative schema contracts', () => {
     const { data: deck } = await admin.from('decks').select('id').eq('user_id', userIdA).single();
     const { error } = await admin.from('cards').insert({
       ...newCardInsert(deck!.id),
-      cadence_phase: 'review',
       next_review_at: new Date().toISOString(),
-      scheduler_version: 1,
       // interval_days intentionally missing
     });
     expect(error).not.toBeNull();
@@ -85,12 +83,10 @@ describe('authoritative schema contracts', () => {
       rating: 'good',
       reviewed_at: new Date().toISOString(),
       after_state: JSON.stringify({
-        cadence_phase: 'review',
         next_review_at: new Date(Date.now() + 86_400_000).toISOString(),
         interval_days: 1,
         review_count: 1,
         lapse_count: 0,
-        scheduler_version: 1,
       }),
       request_id: '00000000-0000-4000-8000-000000000001',
     };

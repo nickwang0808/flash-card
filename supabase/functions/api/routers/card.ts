@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { CardContentSchema, CardNameSchema, CardSchema, MarkdownSchema, type Card, type CardContent } from '../../../../src/domain/Card.ts';
 import { CardRevisionSchema, type CardRevision } from '../../../../src/domain/CardRevision.ts';
 import { ApplicationError } from '../../../../src/domain/errors.ts';
-import { QueueOptionsSchema, QueueSnapshotSchema, StudyQueue, type QueueOptions } from '../../../../src/domain/StudyQueue.ts';
+import { QueueOptionsSchema, QueueSnapshotSchema, STUDY_HORIZON_HOURS, StudyQueue, type QueueOptions } from '../../../../src/domain/StudyQueue.ts';
 import { UuidSchema, toIsoTimestamp } from '../../../../src/domain/primitives.ts';
 import { cardRevisions, cards } from '../../../../src/db/schema.ts';
 import { cardsOwnedBy, decodeCursor, deckRevisionsOf, encodeCursor, requireDeck, requireDeckForCard } from '../../../../src/db/tenant.ts';
@@ -24,15 +24,15 @@ const CardRemoveInputSchema = z.object({ cardId: UuidSchema, deckId: UuidSchema,
 const CardRevisionsInputSchema = z.object({ cardId: UuidSchema, deckId: UuidSchema, pagination: PaginationInputSchema });
 const CardRollbackRevisionInputSchema = z.object({ cardId: UuidSchema, deckId: UuidSchema, revisionId: UuidSchema, expectedVersion: ExpectedVersionSchema });
 function mapCard(row: typeof cards.$inferSelect): Card {
-  return { id: row.id, deckId: row.deckId, name: row.name, frontMarkdown: row.frontMarkdown, backMarkdown: row.backMarkdown, speechText: row.speechText, speechLocale: row.speechLocale, tags: row.tags, suspended: row.suspended, createdAt: toIsoTimestamp(row.createdAt), updatedAt: toIsoTimestamp(row.updatedAt), cadencePhase: row.cadencePhase, nextReviewAt: row.nextReviewAt ? toIsoTimestamp(row.nextReviewAt) : null, intervalDays: row.intervalDays, reviewCount: row.reviewCount, lapseCount: row.lapseCount, schedulerVersion: row.schedulerVersion, version: row.version };
+  return { id: row.id, deckId: row.deckId, name: row.name, frontMarkdown: row.frontMarkdown, backMarkdown: row.backMarkdown, speechText: row.speechText, speechLocale: row.speechLocale, tags: row.tags, suspended: row.suspended, createdAt: toIsoTimestamp(row.createdAt), updatedAt: toIsoTimestamp(row.updatedAt), nextReviewAt: row.nextReviewAt ? toIsoTimestamp(row.nextReviewAt) : null, intervalDays: row.intervalDays, reviewCount: row.reviewCount, lapseCount: row.lapseCount, version: row.version };
 }
 async function queueSnapshot(db: Parameters<typeof cardsOwnedBy>[0], userId: string, deckId: string, options: QueueOptions, now: Date) {
-  const horizon = new Date(now.getTime() + options.horizonHours * 3_600_000).toISOString();
-  const [newRows, reviewedRows] = await Promise.all([
-    cardsOwnedBy(db, userId).where(and(eq(cards.deckId, deckId), eq(cards.suspended, false), isNull(cards.nextReviewAt))).orderBy(asc(cards.createdAt), asc(cards.id)).limit(options.limit),
+  const horizon = new Date(now.getTime() + STUDY_HORIZON_HOURS * 3_600_000).toISOString();
+  const [studiedRows, newRows] = await Promise.all([
     cardsOwnedBy(db, userId).where(and(eq(cards.deckId, deckId), eq(cards.suspended, false), isNotNull(cards.nextReviewAt), lte(cards.nextReviewAt, horizon))).orderBy(asc(cards.nextReviewAt), asc(cards.id)).limit(options.limit),
+    cardsOwnedBy(db, userId).where(and(eq(cards.deckId, deckId), eq(cards.suspended, false), isNull(cards.nextReviewAt))).orderBy(asc(cards.createdAt), asc(cards.id)).limit(options.limit),
   ]);
-  return new StudyQueue().build([...newRows.map(({ cards: card }) => mapCard(card)), ...reviewedRows.map(({ cards: card }) => mapCard(card))], now, options);
+  return new StudyQueue().build([...studiedRows.map(({ cards: card }) => mapCard(card)), ...newRows.map(({ cards: card }) => mapCard(card))], now, options);
 }
 function mapRevision(row: typeof cardRevisions.$inferSelect): CardRevision {
   return { id: row.id, cardId: row.cardId, eventType: row.eventType, beforeContent: row.beforeContent, afterContent: row.afterContent, createdAt: toIsoTimestamp(row.createdAt) };

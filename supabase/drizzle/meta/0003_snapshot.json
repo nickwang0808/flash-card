@@ -1,0 +1,737 @@
+{
+  "id": "ac782ffa-20d3-4cc8-bd50-27c614b53676",
+  "prevId": "1bf7cb6c-c1ad-436d-80e8-7f8f9f8e5102",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "auth.users": {
+      "name": "users",
+      "schema": "auth",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.card_revisions": {
+      "name": "card_revisions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "card_id": {
+          "name": "card_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "before_content": {
+          "name": "before_content",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "after_content": {
+          "name": "after_content",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "card_revisions_card_created_idx": {
+          "name": "card_revisions_card_created_idx",
+          "columns": [
+            {
+              "expression": "card_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "card_revisions_card_id_cards_id_fk": {
+          "name": "card_revisions_card_id_cards_id_fk",
+          "tableFrom": "card_revisions",
+          "tableTo": "cards",
+          "columnsFrom": [
+            "card_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "card_revisions select own": {
+          "name": "card_revisions select own",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "exists (select 1 from cards join decks on decks.id = cards.deck_id and decks.user_id = auth.uid() where cards.id = \"card_revisions\".\"card_id\")"
+        },
+        "card_revisions insert own": {
+          "name": "card_revisions insert own",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "exists (select 1 from cards join decks on decks.id = cards.deck_id and decks.user_id = auth.uid() where cards.id = \"card_revisions\".\"card_id\")"
+        },
+        "card_revisions update own": {
+          "name": "card_revisions update own",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "exists (select 1 from cards join decks on decks.id = cards.deck_id and decks.user_id = auth.uid() where cards.id = \"card_revisions\".\"card_id\")"
+        },
+        "card_revisions delete own": {
+          "name": "card_revisions delete own",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "exists (select 1 from cards join decks on decks.id = cards.deck_id and decks.user_id = auth.uid() where cards.id = \"card_revisions\".\"card_id\")"
+        }
+      },
+      "checkConstraints": {
+        "card_revisions_event_type_check": {
+          "name": "card_revisions_event_type_check",
+          "value": "\"card_revisions\".\"event_type\" in ('created', 'edited', 'restored', 'ai_generated')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.cards": {
+      "name": "cards",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "deck_id": {
+          "name": "deck_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "front_markdown": {
+          "name": "front_markdown",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "back_markdown": {
+          "name": "back_markdown",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "speech_text": {
+          "name": "speech_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "speech_locale": {
+          "name": "speech_locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tags": {
+          "name": "tags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "suspended": {
+          "name": "suspended",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "next_review_at": {
+          "name": "next_review_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "interval_days": {
+          "name": "interval_days",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "review_count": {
+          "name": "review_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "lapse_count": {
+          "name": "lapse_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "cards_deck_id_idx": {
+          "name": "cards_deck_id_idx",
+          "columns": [
+            {
+              "expression": "deck_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "cards_new_order_idx": {
+          "name": "cards_new_order_idx",
+          "columns": [
+            {
+              "expression": "deck_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "next_review_at is null and not suspended",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "cards_review_order_idx": {
+          "name": "cards_review_order_idx",
+          "columns": [
+            {
+              "expression": "deck_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_review_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "next_review_at is not null and not suspended",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "cards_deck_id_decks_id_fk": {
+          "name": "cards_deck_id_decks_id_fk",
+          "tableFrom": "cards",
+          "tableTo": "decks",
+          "columnsFrom": [
+            "deck_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "cards select own": {
+          "name": "cards select own",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "exists (select 1 from decks where decks.id = \"cards\".\"deck_id\" and decks.user_id = auth.uid())"
+        },
+        "cards insert own": {
+          "name": "cards insert own",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "exists (select 1 from decks where decks.id = \"cards\".\"deck_id\" and decks.user_id = auth.uid())"
+        },
+        "cards update own": {
+          "name": "cards update own",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "exists (select 1 from decks where decks.id = \"cards\".\"deck_id\" and decks.user_id = auth.uid())"
+        },
+        "cards delete own": {
+          "name": "cards delete own",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "exists (select 1 from decks where decks.id = \"cards\".\"deck_id\" and decks.user_id = auth.uid())"
+        }
+      },
+      "checkConstraints": {
+        "cards_name_check": {
+          "name": "cards_name_check",
+          "value": "btrim(\"cards\".\"name\") <> ''"
+        },
+        "cards_interval_days_check": {
+          "name": "cards_interval_days_check",
+          "value": "\"cards\".\"interval_days\" is null or \"cards\".\"interval_days\" > 0"
+        },
+        "cards_review_count_check": {
+          "name": "cards_review_count_check",
+          "value": "\"cards\".\"review_count\" >= 0"
+        },
+        "cards_lapse_count_check": {
+          "name": "cards_lapse_count_check",
+          "value": "\"cards\".\"lapse_count\" >= 0"
+        },
+        "scheduling_fields_all_or_none": {
+          "name": "scheduling_fields_all_or_none",
+          "value": "(\"cards\".\"next_review_at\" is null and \"cards\".\"interval_days\" is null) or (\"cards\".\"next_review_at\" is not null and \"cards\".\"interval_days\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.decks": {
+      "name": "decks",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "default_speech_locale": {
+          "name": "default_speech_locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "decks_user_id_idx": {
+          "name": "decks_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "decks_user_id_users_id_fk": {
+          "name": "decks_user_id_users_id_fk",
+          "tableFrom": "decks",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "decks_user_id_name_key": {
+          "name": "decks_user_id_name_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "user_id",
+            "name"
+          ]
+        }
+      },
+      "policies": {
+        "decks select own": {
+          "name": "decks select own",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "user_id = auth.uid()"
+        },
+        "decks insert own": {
+          "name": "decks insert own",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "user_id = auth.uid()"
+        },
+        "decks update own": {
+          "name": "decks update own",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "user_id = auth.uid()"
+        },
+        "decks delete own": {
+          "name": "decks delete own",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "user_id = auth.uid()"
+        }
+      },
+      "checkConstraints": {
+        "decks_version_check": {
+          "name": "decks_version_check",
+          "value": "\"decks\".\"version\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.review_events": {
+      "name": "review_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "card_id": {
+          "name": "card_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rating": {
+          "name": "rating",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reviewed_at": {
+          "name": "reviewed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "before_state": {
+          "name": "before_state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "after_state": {
+          "name": "after_state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "undone_at": {
+          "name": "undone_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "review_events_card_reviewed_idx": {
+          "name": "review_events_card_reviewed_idx",
+          "columns": [
+            {
+              "expression": "card_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reviewed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "review_events_card_id_cards_id_fk": {
+          "name": "review_events_card_id_cards_id_fk",
+          "tableFrom": "review_events",
+          "tableTo": "cards",
+          "columnsFrom": [
+            "card_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "review_events_card_id_request_id_key": {
+          "name": "review_events_card_id_request_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "card_id",
+            "request_id"
+          ]
+        }
+      },
+      "policies": {
+        "review_events select own": {
+          "name": "review_events select own",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "exists (select 1 from cards join decks on decks.id = cards.deck_id and decks.user_id = auth.uid() where cards.id = \"review_events\".\"card_id\")"
+        },
+        "review_events insert own": {
+          "name": "review_events insert own",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "exists (select 1 from cards join decks on decks.id = cards.deck_id and decks.user_id = auth.uid() where cards.id = \"review_events\".\"card_id\")"
+        },
+        "review_events update own": {
+          "name": "review_events update own",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "exists (select 1 from cards join decks on decks.id = cards.deck_id and decks.user_id = auth.uid() where cards.id = \"review_events\".\"card_id\")"
+        },
+        "review_events delete own": {
+          "name": "review_events delete own",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "exists (select 1 from cards join decks on decks.id = cards.deck_id and decks.user_id = auth.uid() where cards.id = \"review_events\".\"card_id\")"
+        }
+      },
+      "checkConstraints": {
+        "review_events_rating_check": {
+          "name": "review_events_rating_check",
+          "value": "\"review_events\".\"rating\" in ('again', 'hard', 'good', 'easy')"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

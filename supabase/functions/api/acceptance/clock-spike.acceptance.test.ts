@@ -8,7 +8,7 @@ import { closeFixtureDb, fixtureDb } from './test-support/database.ts';
 import { functionUrl } from './test-support/environment.ts';
 import { createDeck, createNewCard } from './test-support/scenarios.ts';
 
-const queueOptions = { horizonHours: 48, limit: 50 };
+const queueOptions = { limit: 50 }
 const actors: TestActor[] = [];
 
 afterEach(async () => {
@@ -40,8 +40,8 @@ describe('request-scoped application clock over the served Edge Function', () =>
     expect(advancedA.asOf).toBe('2026-01-01T12:01:00.000Z');
     expect(stableB.asOf).toBe('2030-06-15T08:30:00.000Z');
 
-    const rated = await a.api.review.rate({ cardId: cardA.id, deckId: deckA.id, rating: 'good', expectedVersion: 0, requestId: crypto.randomUUID(), queue: queueOptions });
-    const expectedState = new Cadence().rate({ cadencePhase: null, nextReviewAt: null, intervalDays: null, reviewCount: 0, lapseCount: 0, schedulerVersion: null }, 'good', a.clock.now());
+    const rated = await a.api.review.rate({ cardId: cardA.id, deckId: deckA.id, rating: 'again', expectedVersion: 0, requestId: crypto.randomUUID(), queue: queueOptions });
+    const expectedState = new Cadence().rate({ nextReviewAt: null, intervalDays: null, reviewCount: 0, lapseCount: 0 }, 'again', a.clock.now());
     expect(rated.queue.asOf).toBe(a.clock.iso());
     expect(rated.queue.items[0]).toMatchObject({ id: cardA.id, nextReviewAt: expectedState.nextReviewAt });
 

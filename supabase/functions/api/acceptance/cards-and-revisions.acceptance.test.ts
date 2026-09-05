@@ -3,7 +3,7 @@ import { createActor, destroyActor, type TestActor } from './test-support/actor.
 import { closeFixtureDb } from './test-support/database.ts';
 import { createDeck, createNewCard } from './test-support/scenarios.ts';
 
-const queue = { horizonHours: 48, limit: 50 };
+const queue = { limit: 50 }
 let actor: TestActor | undefined;
 afterEach(async () => { await destroyActor(actor); actor = undefined; await closeFixtureDb(); });
 

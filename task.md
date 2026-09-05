@@ -14,6 +14,8 @@ Active work is limited to the shared API client, frontend, CLI, assembled-produc
 - Keep cadence, queue construction, authorization, optimistic-concurrency policy, and undo behavior out of clients.
 - Keep the frontend queue only in React memory.
 - Never restore RxDB, replication, FSRS, reverse-card state, daily limits, persistent study sessions, GitHub authentication, or client-side mutation reconciliation.
+- Treat `nextReviewAt` as the sole queue-eligibility timestamp; do not introduce a cadence phase.
+- Preserve the fixed 12-hour studied-card horizon and studied-before-new ordering.
 - Never expose a database URL, JWT secret, service-role key, deployment token, or acceptance clock secret to frontend or CLI output.
 - Do not modify production data or deploy production without explicit operator authorization.
 - Check an item only after its observable behavior is implemented and verified.
@@ -115,8 +117,8 @@ Active work is limited to the shared API client, frontend, CLI, assembled-produc
 - [ ] Verify login, restored session, refresh, protected routes, and sign-out.
 - [ ] Verify deck create, rename, and confirmed removal.
 - [ ] Verify card search, create, edit, suspend, restore, rollback, and removal.
-- [ ] Verify new-first study, reveal, all four ratings, and replacement snapshots.
-- [ ] Verify future cards are visually distinct.
+- [ ] Verify studied-first 12-hour queue behavior, reveal, all four ratings, and replacement snapshots.
+- [ ] Verify future cards inside the 12-hour horizon are visually distinct.
 - [ ] Verify undo restores the queue and history marks the event undone.
 - [ ] Verify revision history and rollback through the UI.
 - [ ] Verify ruby visually on web and native.
@@ -171,9 +173,9 @@ Active work is limited to the shared API client, frontend, CLI, assembled-produc
 - [ ] Restore Playwright configuration for the actual Expo web application.
 - [ ] Add an email/password login and restored-session journey.
 - [ ] Add deck and card management journeys.
-- [ ] Add the new-first queue and Markdown reveal journey.
+- [ ] Add the studied-first 12-hour queue and Markdown reveal journey.
 - [ ] Cover all four ratings and replacement queue behavior.
-- [ ] Cover future-card styling.
+- [ ] Cover future-card styling inside the fixed horizon.
 - [ ] Cover undo and visibly undone review history.
 - [ ] Cover suspension and queue removal.
 - [ ] Cover revision history and rollback.

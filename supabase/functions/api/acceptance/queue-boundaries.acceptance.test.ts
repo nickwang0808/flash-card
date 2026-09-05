@@ -13,17 +13,17 @@ describe('queue boundaries', () => {
     const now = actor.clock.now().getTime();
     const [due, horizon, outside] = await Promise.all([
       createStudiedCard(actor, deck, { name: 'due', nextReviewAt: new Date(now).toISOString() }),
-      createStudiedCard(actor, deck, { name: 'horizon', nextReviewAt: new Date(now + 48 * 3_600_000).toISOString() }),
-      createStudiedCard(actor, deck, { name: 'outside', nextReviewAt: new Date(now + 48 * 3_600_000 + 1).toISOString() }),
+      createStudiedCard(actor, deck, { name: 'horizon', nextReviewAt: new Date(now + 12 * 3_600_000).toISOString() }),
+      createStudiedCard(actor, deck, { name: 'outside', nextReviewAt: new Date(now + 12 * 3_600_000 + 1).toISOString() }),
     ]);
-    const snapshot = await actor.api.deck.queue({ deckId: deck.id, horizonHours: 48, limit: 50 });
+    const snapshot = await actor.api.deck.queue({ deckId: deck.id, limit: 50 });
     expect(snapshot.items).toMatchObject([{ id: due.id, status: 'due' }, { id: horizon.id, status: 'future' }]);
     expect(snapshot.items.map((item) => item.id)).not.toContain(outside.id);
 
-    const limited = await actor.api.deck.queue({ deckId: deck.id, horizonHours: 48, limit: 1 });
+    const limited = await actor.api.deck.queue({ deckId: deck.id, limit: 1 });
     expect(limited.items).toEqual([expect.objectContaining({ id: due.id })]);
     actor.clock.advance({ milliseconds: 1 });
-    const after = await actor.api.deck.queue({ deckId: deck.id, horizonHours: 48, limit: 50 });
+    const after = await actor.api.deck.queue({ deckId: deck.id, limit: 50 });
     expect(after.items[0]).toMatchObject({ id: due.id, status: 'due' });
   });
 });

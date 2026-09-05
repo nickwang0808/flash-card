@@ -3,7 +3,7 @@ import { createActor, destroyActor, type TestActor } from './test-support/actor.
 import { functionUrl } from './test-support/environment.ts';
 import { createDeck, createNewCard } from './test-support/scenarios.ts';
 
-const queue = { horizonHours: 48, limit: 50 };
+const queue = { limit: 50 }
 const actors: TestActor[] = [];
 afterEach(async () => { await Promise.all(actors.splice(0).map(destroyActor)); });
 

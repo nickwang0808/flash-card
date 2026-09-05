@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CadencePhaseSchema, TimestampSchema } from './primitives.ts';
+import { TimestampSchema } from './primitives.ts';
 
 export const MarkdownSchema = z
   .string()
@@ -25,21 +25,19 @@ export const CardContentSchema = z.object({
 });
 
 const CadenceFields = {
-  cadencePhase: CadencePhaseSchema.nullable(),
   nextReviewAt: TimestampSchema.nullable(),
   intervalDays: z.number().finite().positive().nullable(),
   reviewCount: z.number().int().nonnegative(),
   lapseCount: z.number().int().nonnegative(),
-  schedulerVersion: z.number().int().positive().nullable(),
 };
 
 function withCadenceRefinement<T extends z.ZodTypeAny>(schema: T) {
   return schema.superRefine((card, context) => {
-    const value = card as { cadencePhase: string | null; nextReviewAt: string | null; intervalDays: number | null; schedulerVersion: number | null };
-    const isNew = value.cadencePhase === null && value.nextReviewAt === null && value.intervalDays === null && value.schedulerVersion === null;
-    const isStudied = value.cadencePhase !== null && value.nextReviewAt !== null && value.intervalDays !== null && value.schedulerVersion !== null;
+    const value = card as { nextReviewAt: string | null; intervalDays: number | null };
+    const isNew = value.nextReviewAt === null && value.intervalDays === null;
+    const isStudied = value.nextReviewAt !== null && value.intervalDays !== null;
     if (!isNew && !isStudied) {
-      context.addIssue({ code: 'custom', message: 'Cadence fields must be all null for new cards or all populated for studied cards' });
+      context.addIssue({ code: 'custom', message: 'Scheduling fields must be all null for new cards or all populated for studied cards' });
     }
   });
 }

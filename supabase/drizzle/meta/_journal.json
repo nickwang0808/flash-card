@@ -15,6 +15,20 @@
       "when": 1788576176779,
       "tag": "0001_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788626473050,
+      "tag": "0002_remove-cadence-phase",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788627571713,
+      "tag": "0003_remove-scheduler-version",
+      "breakpoints": true
     }
   ]
 }
