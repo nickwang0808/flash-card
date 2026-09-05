@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { DeckSchema } from '../../domain/Deck';
-import { QueueOptionsSchema, QueueSnapshotSchema } from '../../domain/StudyQueue';
-import { UuidSchema } from '../../domain/primitives';
-import { ExpectedVersionSchema, ConfirmationSchema } from './common';
+import { DeckSchema } from '../../domain/Deck.ts';
+import { QueueOptionsSchema, QueueSnapshotSchema } from '../../domain/StudyQueue.ts';
+import { UuidSchema } from '../../domain/primitives.ts';
+import { ExpectedVersionSchema, ConfirmationSchema } from './common.ts';
 
 export const DeckListInputSchema = z.object({});
 export const DeckListOutputSchema = z.object({ decks: z.array(DeckSchema) });

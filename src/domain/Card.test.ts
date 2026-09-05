@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CardSchema } from './Card';
+import { CardSchema } from './Card.ts';
 
 const validCard = {
   id: '11111111-1111-4111-8111-111111111111',

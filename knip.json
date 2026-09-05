@@ -1,6 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "entry": ["app/**/*.{ts,tsx}", "**/*.integration.test.{ts,tsx}"],
+  "entry": [
+    "app/**/*.{ts,tsx}",
+    "**/*.integration.test.{ts,tsx}",
+    "supabase/functions/api/index.ts"
+  ],
   "project": ["src/**/*.{ts,tsx}", "app/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}", "supabase/**/*.{ts,tsx}"],
   "vitest": {
     "config": ["vitest.config.ts", "vitest.integration.config.ts"]

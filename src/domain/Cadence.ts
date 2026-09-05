@@ -1,6 +1,6 @@
-import { ApplicationError } from './errors';
-import type { CadenceState } from './CadenceState';
-import type { Rating } from './primitives';
+import { ApplicationError } from './errors.ts';
+import type { CadenceState } from './CadenceState.ts';
+import type { Rating } from './primitives.ts';
 
 export const CADENCE_V1 = Object.freeze({
   schedulerVersion: 1,

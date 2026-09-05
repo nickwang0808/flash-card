@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { CardContentSchema } from './Card';
-import { TimestampSchema, UuidSchema } from './primitives';
+import { CardContentSchema } from './Card.ts';
+import { TimestampSchema, UuidSchema } from './primitives.ts';
 
 export const RevisionEventTypeSchema = z.enum(['created', 'edited', 'restored', 'ai_generated']);
 

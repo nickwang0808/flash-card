@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { StudyQueue } from './StudyQueue';
-import type { Card } from './Card';
+import { StudyQueue } from './StudyQueue.ts';
+import type { Card } from './Card.ts';
 
 const now = new Date('2026-01-01T12:00:00.000Z');
 

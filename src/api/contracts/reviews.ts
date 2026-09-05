@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { QueueOptionsSchema, QueueSnapshotSchema } from '../../domain/StudyQueue';
-import { RatingSchema, UuidSchema } from '../../domain/primitives';
-import { ReviewHistoryEntrySchema } from '../../domain/ReviewEvent';
-import { PaginationInputSchema, PageInfoSchema } from '../pagination';
-import { ExpectedVersionSchema, RequestIdSchema } from './common';
+import { QueueOptionsSchema, QueueSnapshotSchema } from '../../domain/StudyQueue.ts';
+import { RatingSchema, UuidSchema } from '../../domain/primitives.ts';
+import { ReviewHistoryEntrySchema } from '../../domain/ReviewEvent.ts';
+import { PaginationInputSchema, PageInfoSchema } from '../pagination.ts';
+import { ExpectedVersionSchema, RequestIdSchema } from './common.ts';
 
 export const ReviewRateInputSchema = z.object({
   cardId: UuidSchema,

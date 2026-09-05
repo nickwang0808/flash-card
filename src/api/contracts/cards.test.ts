@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CardCreateInputSchema } from './cards';
+import { CardCreateInputSchema } from './cards.ts';
 
 const deckId = '22222222-2222-4222-8222-222222222222';
 

@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { QueueSnapshotSchema } from '../../domain/StudyQueue';
-import { UuidSchema } from '../../domain/primitives';
+import { QueueSnapshotSchema } from '../../domain/StudyQueue.ts';
+import { UuidSchema } from '../../domain/primitives.ts';
 
 export const ExpectedVersionSchema = z.number().int().nonnegative();
 export const ReplacementQueueSchema = z.object({ queue: QueueSnapshotSchema });

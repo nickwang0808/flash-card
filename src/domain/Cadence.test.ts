@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CADENCE_V1, Cadence } from './Cadence';
-import type { CadenceState } from './CadenceState';
+import { CADENCE_V1, Cadence } from './Cadence.ts';
+import type { CadenceState } from './CadenceState.ts';
 
 const now = new Date('2026-01-01T00:00:00.000Z');
 const newState: CadenceState = {

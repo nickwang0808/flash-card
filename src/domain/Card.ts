@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { CadenceStateFieldsSchema } from './CadenceState';
-import { TimestampSchema, UuidSchema } from './primitives';
+import { CadenceStateFieldsSchema } from './CadenceState.ts';
+import { TimestampSchema, UuidSchema } from './primitives.ts';
 
 export const MarkdownSchema = z
   .string()

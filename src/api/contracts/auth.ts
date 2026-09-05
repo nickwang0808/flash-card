@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { TimestampSchema, UuidSchema } from '../../domain/primitives';
+import { TimestampSchema, UuidSchema } from '../../domain/primitives.ts';
 
 export const AuthSessionInputSchema = z.object({});
 export const AuthSessionOutputSchema = z.object({

@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "@trpc/server": "npm:@trpc/server@11",
+    "@trpc/server/adapters/fetch": "npm:@trpc/server@11/adapters/fetch",
+    "jose": "npm:jose@6",
+    "postgres": "npm:postgres@3",
+    "zod": "npm:zod@4"
+  }
+}

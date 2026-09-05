@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { TimestampSchema, UuidSchema } from './primitives';
+import { TimestampSchema, UuidSchema } from './primitives.ts';
 
 export const DeckSchema = z.object({
   id: UuidSchema,

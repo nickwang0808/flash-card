@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CadencePhaseSchema, TimestampSchema } from './primitives';
+import { CadencePhaseSchema, TimestampSchema } from './primitives.ts';
 
 export const CadenceStateFieldsSchema = z.object({
   cadencePhase: CadencePhaseSchema.nullable(),

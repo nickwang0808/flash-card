@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { ApplicationError } from './errors';
-import { CardSchema } from './Card';
-import type { Card } from './Card';
-import { TimestampSchema } from './primitives';
+import { ApplicationError } from './errors.ts';
+import { CardSchema } from './Card.ts';
+import type { Card } from './Card.ts';
+import { TimestampSchema } from './primitives.ts';
 
 export const QueueStatusSchema = z.enum(['new', 'due', 'future']);
 export const QueueOptionsSchema = z.object({

@@ -1,42 +1,7 @@
-import { execSync } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '../../src/types/supabase';
-
-/**
- * Local-stack credentials are never committed. Discovery order:
- * explicit env vars (CI or remote), then the running local stack via
- * `supabase status -o env`.
- */
-function localStackEnv(): Record<string, string> {
-  const fromProcess = (
-    key: string,
-    aliases: string[] = [],
-  ): string | undefined => [key, ...aliases].map((k) => process.env[k]).find((v) => v !== undefined);
-
-  const known = fromProcess('SUPABASE_URL');
-  if (known) return knownEnv();
-
-  const raw = execSync('npx supabase status -o env', { encoding: 'utf8' });
-  const env: Record<string, string> = {};
-  for (const match of raw.matchAll(/^(\w+)="(.*)"$/gm)) {
-    env[match[1]] = match[2];
-  }
-  return {
-    SUPABASE_URL: env.API_URL,
-    SUPABASE_ANON_KEY: fromProcess('SUPABASE_ANON_KEY') ?? env.PUBLISHABLE_KEY,
-    SUPABASE_SERVICE_KEY: fromProcess('SUPABASE_SERVICE_KEY') ?? env.SECRET_KEY,
-  };
-}
-
-function knownEnv(): Record<string, string> {
-  return {
-    SUPABASE_URL: process.env.SUPABASE_URL!,
-    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY!,
-    SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY!,
-  };
-}
-
+import type { Database } from '../../src/types/supabase.ts';
+import { deleteUserByEmail, localStackEnv } from './local-stack.test-support.ts';
 const env = localStackEnv();
 
 const emailA = 'schema-test-a@example.com';
@@ -52,6 +17,8 @@ beforeAll(async () => {
   admin = createClient<Database>(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
   anon = createClient<Database>(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, { auth: { persistSession: false } });
 
+  await deleteUserByEmail(admin, emailA);
+  await deleteUserByEmail(admin, emailB);
   const createdA = await admin.auth.admin.createUser({ email: emailA, password, email_confirm: true });
   const createdB = await admin.auth.admin.createUser({ email: emailB, password, email_confirm: true });
   if (!createdA.data.user || !createdB.data.user) {

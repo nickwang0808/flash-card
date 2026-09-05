@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { CadenceStateSchema } from './CadenceState';
-import { RatingSchema, TimestampSchema, UuidSchema } from './primitives';
+import { CadenceStateSchema } from './CadenceState.ts';
+import { RatingSchema, TimestampSchema, UuidSchema } from './primitives.ts';
 
 export const ReviewEventSchema = z.object({
   id: UuidSchema,

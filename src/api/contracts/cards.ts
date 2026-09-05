@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import { CardSchema, CardContentSchema, CardNameSchema, MarkdownSchema } from '../../domain/Card';
-import { CardRevisionSchema } from '../../domain/CardRevision';
-import { QueueOptionsSchema } from '../../domain/StudyQueue';
-import { UuidSchema } from '../../domain/primitives';
-import { PaginationInputSchema, PageInfoSchema } from '../pagination';
-import { ExpectedVersionSchema, ConfirmationSchema, ReplacementQueueSchema } from './common';
+import { CardSchema, CardContentSchema, CardNameSchema, MarkdownSchema } from '../../domain/Card.ts';
+import { CardRevisionSchema } from '../../domain/CardRevision.ts';
+import { QueueOptionsSchema } from '../../domain/StudyQueue.ts';
+import { UuidSchema } from '../../domain/primitives.ts';
+import { PaginationInputSchema, PageInfoSchema } from '../pagination.ts';
+import { ExpectedVersionSchema, ConfirmationSchema, ReplacementQueueSchema } from './common.ts';
 
 const CardMutationContentSchema = CardContentSchema.extend({
   tags: z.array(z.string().trim().min(1).max(100)).max(100).default([]),
@@ -40,6 +40,7 @@ export const CardSuspendInputSchema = z.object({
   queue: QueueOptionsSchema,
 });
 export const CardSuspendOutputSchema = ReplacementQueueSchema;
+export type CardSuspendInput = z.output<typeof CardSuspendInputSchema>;
 export type CardRestoreInput = CardSuspendInput;
 export const CardRestoreInputSchema = CardSuspendInputSchema;
 export const CardRestoreOutputSchema = z.object({ card: CardSchema, queue: ReplacementQueueSchema.shape.queue });
