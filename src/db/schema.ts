@@ -5,9 +5,8 @@ import { pgTable, pgSchema, uuid, text, timestamp, boolean, integer, doublePreci
 import { sql } from 'drizzle-orm';
 
 /**
- * Drizzle view of the authoritative Postgres schema. The canonical schema is
- * the SQL migration; these builders mirror it so repositories query through
- * Drizzle types. snake_case names match the database columns exactly.
+ * Drizzle view of the authoritative Postgres schema. The SQL migration is
+ * canonical; tenant-scoped procedures query through these typed builders.
  */
 
 export const decks = pgTable(
@@ -17,8 +16,8 @@ export const decks = pgTable(
     userId: uuid('user_id').notNull().references(() => authUsers.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     defaultSpeechLocale: text('default_speech_locale'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { mode: 'string', withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'string', withTimezone: true }).notNull().defaultNow(),
     version: integer('version').notNull().default(0),
   },
   (table) => [
@@ -44,10 +43,10 @@ export const cards = pgTable(
     speechLocale: text('speech_locale'),
     tags: text('tags').array().notNull().default([]),
     suspended: boolean('suspended').notNull().default(false),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { mode: 'string', withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'string', withTimezone: true }).notNull().defaultNow(),
     cadencePhase: text('cadence_phase', { enum: ['learning', 'review'] }),
-    nextReviewAt: timestamp('next_review_at', { withTimezone: true }),
+    nextReviewAt: timestamp('next_review_at', { mode: 'string', withTimezone: true }),
     intervalDays: doublePrecision('interval_days'),
     reviewCount: integer('review_count').notNull().default(0),
     lapseCount: integer('lapse_count').notNull().default(0),
@@ -78,12 +77,12 @@ export const reviewEvents = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     cardId: uuid('card_id').notNull().references(() => cards.id, { onDelete: 'cascade' }),
     rating: text('rating', { enum: ['again', 'hard', 'good', 'easy'] }).notNull(),
-    reviewedAt: timestamp('reviewed_at', { withTimezone: true }).notNull(),
+    reviewedAt: timestamp('reviewed_at', { mode: 'string', withTimezone: true }).notNull(),
     beforeState: jsonb('before_state').$type<CadenceState | null>(),
     afterState: jsonb('after_state').$type<CadenceState>().notNull(),
     requestId: uuid('request_id').notNull(),
-    undoneAt: timestamp('undone_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    undoneAt: timestamp('undone_at', { mode: 'string', withTimezone: true }),
+    createdAt: timestamp('created_at', { mode: 'string', withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     unique('review_events_card_id_request_id_key').on(table.cardId, table.requestId),
@@ -104,7 +103,7 @@ export const cardRevisions = pgTable(
     eventType: text('event_type', { enum: ['created', 'edited', 'restored', 'ai_generated'] }).notNull(),
     beforeContent: jsonb('before_content').$type<CardContent | null>(),
     afterContent: jsonb('after_content').$type<CardContent>().notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { mode: 'string', withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index('card_revisions_card_created_idx').on(table.cardId, table.createdAt.desc(), table.id),

@@ -1,12 +1,16 @@
 import { z } from 'zod';
 import { CardContentSchema } from './Card.ts';
-import { cardRevisionBaseSchema } from '../db/zod.ts';
+import { TimestampSchema } from './primitives.ts';
 
-export const RevisionEventTypeSchema = cardRevisionBaseSchema.shape.eventType;
+const RevisionEventTypeSchema = z.enum(['created', 'edited', 'restored', 'ai_generated']);
 
-export const CardRevisionSchema = cardRevisionBaseSchema.extend({
+export const CardRevisionSchema = z.object({
+  id: z.string().uuid(),
+  cardId: z.string().uuid(),
+  eventType: RevisionEventTypeSchema,
   beforeContent: CardContentSchema.nullable(),
   afterContent: CardContentSchema,
+  createdAt: TimestampSchema,
 });
 
 export type CardRevision = z.output<typeof CardRevisionSchema>;

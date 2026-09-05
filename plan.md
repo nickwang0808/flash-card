@@ -2,7 +2,12 @@
 
 ## Status
 
-Planning baseline for the server-authoritative rewrite. This is a clean cutover, not an incremental extension of the RxDB architecture.
+The server-authoritative API collapse milestone is implemented. The working tree now
+contains vertical-slice tRPC routers, tenant-scoped Drizzle access, shared domain
+schemas, and a minimal Expo export stub. Frontend reconstruction, CLI work, browser
+journeys, and production cutover remain future phases.
+
+This is a clean cutover, not an incremental extension of the RxDB architecture.
 
 ## Goals
 
@@ -72,14 +77,14 @@ This consequence is accepted by the current new-first decision. If it proves und
 
 | Layer | Technology | Decision rationale |
 |---|---|---|
-| Frontend | Existing Expo Router, React, React Native Web | Preserves the working UI, mobile viability, TTS, and static export. The current complexity is not caused by Expo. |
+| Frontend | Expo Router, React, React Native Web | The current milestone keeps a minimal static-export stub; the rebuilt frontend remains a later phase. |
 | Static hosting | GitHub Pages | Already configured and free. |
 | Typed API | tRPC v11 with Zod | Shared TypeScript procedure types and runtime input validation for web and CLI clients. |
 | Serverless runtime | One Supabase Edge Function named `api` | Reuses the existing platform and should remain inside the free allowance. |
 | Authentication | Supabase Auth email and password | No OAuth-provider or routine email-delivery dependency; JWT sessions integrate with Edge Functions. |
 | Database | Supabase Postgres | Existing source of truth and migration workflow. |
 | Database client | Postgres.js through the Supabase transaction pooler | Allows transactions and row locks from TypeScript without putting business logic in SQL functions. |
-| Schema management | Supabase SQL migrations and generated TypeScript types | Keeps Postgres as the schema source of truth. |
+| Schema management | Supabase SQL migrations plus typed Drizzle schema | Postgres remains canonical while server queries use compile-time schema types. |
 | Markdown | Existing Markdown stack with a sanitized ruby-HTML subset | Preserves standard `<ruby>/<rt>` Pinyin annotations without allowing arbitrary HTML. |
 | Unit/API tests | Vitest | Already used and suitable for pure domain and tRPC caller tests. |
 | Browser tests | Playwright | Already used and verifies the deployed interaction surface. |
@@ -97,56 +102,51 @@ Agent-friendly CLI --------/
 
 The Edge Function contains no persistent in-memory state. Every request authenticates the user, reads current Postgres state, applies pure domain behavior, and returns a fresh result.
 
-## Proposed repository layout
+## Current and proposed repository layout
+
+The implemented server-collapse milestone uses this layout:
 
 ```text
-app/                                  Expo routes
+app/
+  index.tsx                         Minimal Expo static-export stub
 src/
-  api/
-    client.ts                         Authenticated tRPC client
-  components/
+  db/
+    client.ts                       Typed Postgres.js/Drizzle client
+    schema.ts                       Typed view of the SQL schema
+    tenant.ts                       User-scoped query bases and cursors
   domain/
-    Cadence.ts                        Testable Cadence v1 policy object
-    Cadence.test.ts                   Neighboring unit tests
-    StudyQueue.ts                     Testable queue policy object
-    StudyQueue.test.ts                Neighboring unit tests
-    types.ts                          Plain immutable domain records
-  hooks/
-    useStudyQueue.ts                  Queue snapshot/request state only
+    Card.ts                         Canonical card schemas and content rules
+    CardRevision.ts                 Revision schemas
+    Cadence.ts                      Pure cadence policy
+    CadenceState.ts                 Cadence state schema
+    Deck.ts                         Deck schema
+    ReviewEvent.ts                  Review schemas
+    StudyQueue.ts                   Pure queue policy
+    errors.ts                       Stable application errors
+    primitives.ts                   Shared primitives and timestamps
 
 supabase/
   functions/
     api/
-      index.ts                        Edge Fetch entry point
-      router.ts                       Root tRPC router
-      router.test.ts                  Neighboring tRPC caller tests
-      context.ts                      JWT authentication and request context
-      db.ts                           Postgres.js transaction-pooler client
-      repositories/
-        CardRepository.ts             Card/content persistence
-        CardRepository.integration.test.ts
-        DeckRepository.ts             Tenant-scoped deck persistence
-        DeckRepository.integration.test.ts
-        StudyRepository.ts            Queue, cadence state, and review-event persistence
-        StudyRepository.integration.test.ts
-      services/
-        CardService.ts                Card commands and revision history
-        CardService.test.ts
-        DeckService.ts                Deck commands
-        DeckService.test.ts
-        StudyService.ts               Queue, rating, undo, and review history
-        StudyService.test.ts
+      index.ts                      Edge Fetch entry point
+      router.ts                     Root tRPC router
+      trpc.ts                       Context, auth, and error formatting
+      routers/
+        auth.ts                     Session procedure
+        deck.ts                     Deck procedures and queue construction
+        card.ts                     Card procedures and revisions
+        review.ts                   Rating, history, and undo
+        *.integration.test.ts       Caller-level integration suites
   migrations/
 
-cli/
-  index.ts                            Agent-facing command entry point
-  index.test.ts                       Neighboring CLI contract tests
-
-tests/
-  e2e/                               Cross-cutting Playwright user journeys only
+cli/                                Future agent-facing client
+tests/e2e/                          Future browser journeys
 ```
 
-Use classes for cohesive services and policy objects, not one class per database entity. `Card`, `Deck`, `ReviewEvent`, and API payloads remain plain immutable records. `StudyService` centralizes the complete study workflow; `CardService` centralizes content behavior; `DeckService` centralizes deck behavior. `Cadence` and `StudyQueue` encapsulate their respective pure policies. Repository classes centralize SQL without introducing a generic base repository. Avoid static utility classes, global service singletons, inheritance hierarchies, and entity methods that hide database I/O.
+Procedure-specific input/output schemas and database operations stay in their
+vertical router files. Shared domain vocabulary remains independent of edge
+function code. The frontend is intentionally a stub until the frontend-cutover
+phase; the CLI and browser journeys are also future work.
 
 ## Data model
 

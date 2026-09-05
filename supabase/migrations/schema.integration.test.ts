@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '../../src/types/supabase.ts';
 import { deleteUserByEmail, localStackEnv } from './local-stack.test-support.ts';
 const env = localStackEnv();
 
@@ -8,14 +7,14 @@ const emailA = 'schema-test-a@example.com';
 const emailB = 'schema-test-b@example.com';
 const password = 'test-password-123';
 
-let admin: SupabaseClient<Database>;
-let anon: SupabaseClient<Database>;
+let admin: SupabaseClient;
+let anon: SupabaseClient;
 let userIdA: string;
 let userIdB: string;
 
 beforeAll(async () => {
-  admin = createClient<Database>(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
-  anon = createClient<Database>(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+  admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
+  anon = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, { auth: { persistSession: false } });
 
   await deleteUserByEmail(admin, emailA);
   await deleteUserByEmail(admin, emailB);

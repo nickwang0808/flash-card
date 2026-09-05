@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createClient } from '@supabase/supabase-js';
-import type { Database } from '../../../src/types/supabase.ts';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createTestUser, deleteUserByEmail, deleteTestUser, localStackEnv, TEST_PASSWORD } from '../../../supabase/migrations/local-stack.test-support.ts';
 
 /**
@@ -12,7 +11,7 @@ const env = localStackEnv();
 const FUNCTION_URL = `${env.SUPABASE_URL}/functions/v1/api`;
 const EMAIL = 'smoke-test@example.com';
 
-let admin: ReturnType<typeof createClient<Database>>;
+let admin: SupabaseClient;
 let userId: string;
 let accessToken: string;
 
@@ -46,12 +45,12 @@ async function trpcResult<T>(path: string, response: Response): Promise<T> {
 }
 
 beforeAll(async () => {
-  admin = createClient<Database>(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
+  admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
   await deleteUserByEmail(admin, EMAIL);
   const user = await createTestUser(admin, EMAIL);
   userId = user.id;
 
-  const { data, error } = await createClient<Database>(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+  const { data, error } = await createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
     auth: { persistSession: false },
   }).auth.signInWithPassword({ email: EMAIL, password: TEST_PASSWORD });
   if (error || !data.session) {

@@ -1,21 +1,14 @@
 import { z } from 'zod';
-import { cardBaseSchema } from '../db/zod.ts';
+import { CadencePhaseSchema, TimestampSchema } from './primitives.ts';
 
-export const CadenceStateFieldsSchema = cardBaseSchema
-  .pick({
-    cadencePhase: true,
-    nextReviewAt: true,
-    intervalDays: true,
-    reviewCount: true,
-    lapseCount: true,
-    schedulerVersion: true,
-  })
-  .extend({
-    intervalDays: z.number().finite().positive().nullable(),
-    reviewCount: z.number().int().nonnegative(),
-    lapseCount: z.number().int().nonnegative(),
-    schedulerVersion: z.number().int().positive().nullable(),
-  });
+const CadenceStateFieldsSchema = z.object({
+  cadencePhase: CadencePhaseSchema.nullable(),
+  nextReviewAt: TimestampSchema.nullable(),
+  intervalDays: z.number().finite().positive().nullable(),
+  reviewCount: z.number().int().nonnegative(),
+  lapseCount: z.number().int().nonnegative(),
+  schedulerVersion: z.number().int().positive().nullable(),
+});
 
 export const CadenceStateSchema = CadenceStateFieldsSchema.superRefine((state, context) => {
   const isNew = state.cadencePhase === null && state.nextReviewAt === null && state.intervalDays === null && state.schedulerVersion === null;

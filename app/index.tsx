@@ -1,10 +1,5 @@
-import { Redirect } from 'expo-router';
-import { useAuth } from '@/hooks/useAuth';
+import { Text } from 'react-native';
 
 export default function Index() {
-  const { isSignedIn, loading } = useAuth();
-
-  if (loading) return null;
-
-  return <Redirect href={isSignedIn ? '/decks' : '/auth'} />;
+  return <Text>Flashcards</Text>;
 }

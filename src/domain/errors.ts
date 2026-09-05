@@ -1,4 +1,4 @@
-export const applicationErrorCodes = [
+const applicationErrorCodes = [
   'UNAUTHENTICATED',
   'FORBIDDEN',
   'NOT_FOUND',
@@ -11,7 +11,7 @@ export const applicationErrorCodes = [
 
 export type ApplicationErrorCode = (typeof applicationErrorCodes)[number];
 
-export const trpcCodeByApplicationError: Readonly<Record<ApplicationErrorCode, string>> = {
+const trpcCodeByApplicationError: Readonly<Record<ApplicationErrorCode, string>> = {
   UNAUTHENTICATED: 'UNAUTHORIZED',
   FORBIDDEN: 'FORBIDDEN',
   NOT_FOUND: 'NOT_FOUND',

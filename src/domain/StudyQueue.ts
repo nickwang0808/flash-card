@@ -4,12 +4,12 @@ import { CardSchema } from './Card.ts';
 import type { Card } from './Card.ts';
 import { TimestampSchema } from './primitives.ts';
 
-export const QueueStatusSchema = z.enum(['new', 'due', 'future']);
+const QueueStatusSchema = z.enum(['new', 'due', 'future']);
 export const QueueOptionsSchema = z.object({
   horizonHours: z.number().int().min(1).max(168).default(48),
   limit: z.number().int().min(1).max(100).default(50),
 });
-export const QueueCardSchema = CardSchema.and(z.object({ status: QueueStatusSchema }));
+const QueueCardSchema = CardSchema.and(z.object({ status: QueueStatusSchema }));
 export const QueueSnapshotSchema = z.object({
   asOf: TimestampSchema,
   horizon: TimestampSchema,
@@ -17,7 +17,7 @@ export const QueueSnapshotSchema = z.object({
 });
 
 export type QueueOptions = z.output<typeof QueueOptionsSchema>;
-export type QueueCard = z.output<typeof QueueCardSchema>;
+type QueueCard = z.output<typeof QueueCardSchema>;
 export type QueueSnapshot = z.output<typeof QueueSnapshotSchema>;
 
 const DEFAULT_QUEUE_OPTIONS: QueueOptions = Object.freeze({ horizonHours: 48, limit: 50 });

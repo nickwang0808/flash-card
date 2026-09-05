@@ -30,7 +30,7 @@ export function localStackEnv(): Record<string, string> {
   };
 }
 
-export interface TestUser {
+interface TestUser {
   id: string;
   email: string;
   password: string;

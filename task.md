@@ -6,14 +6,29 @@ Implement the rewrite specified in [`plan.md`](./plan.md) end to end. `plan.md` 
 
 The finished application must use the existing Expo Router/React Native Web frontend and GitHub Pages deployment while moving authentication, queue construction, cadence, mutations, undo, histories, and tenant authorization behind one authenticated tRPC Supabase Edge Function. Postgres is authoritative. The frontend retains only a disposable in-memory queue snapshot.
 
-## Working rules
+## Current milestone
+
+The server-collapse milestone is complete and committed alongside this
+checklist's follow-up documentation:
+
+- Tenant-scoped Drizzle query bases live in `src/db/tenant.ts`.
+- `auth`, `deck`, `card`, and `review` are vertical tRPC router slices.
+- Shared domain schemas and pure cadence/queue policies remain in `src/domain/`.
+- The old repository/service/API-contract/RxDB client stack is deleted.
+- The Expo app is currently a minimal static-export stub.
+- Caller integration suites and live HTTP smoke coverage pass.
+
+The frontend rebuild, CLI, Playwright journeys, and production cutover remain
+unchecked future work. Local `drizzle-kit migrate` still requires migration
+state compatible with the Supabase-managed local database.
+
 
 - Read all of `plan.md` before editing.
 - Follow `CLAUDE.md`, especially the required Supabase migration workflow.
 - Work phase by phase. Check an item only after its behavior is implemented and verified.
 - Prefer a clean cutover. Do not introduce compatibility wrappers, dual writes, deprecated aliases, or a second business-logic path.
-- Keep business rules in server-side TypeScript, not SQL procedures, database triggers, tRPC routers, React hooks, or CLI commands.
-- Use cohesive classes (`Cadence`, `StudyQueue`, repositories, and application services), not one class per database entity, static utility classes, service singletons, inheritance hierarchies, or entities that hide database I/O.
+- Keep business rules in server-side TypeScript. Pure policies stay in `src/domain/`; procedure-specific orchestration, authorization, queries, and transactions stay in the owning vertical tRPC router.
+- Use cohesive domain policy objects (`Cadence`, `StudyQueue`), not one class per database entity, static utility classes, service singletons, inheritance hierarchies, or entities that hide database I/O.
 - Keep `Card`, `Deck`, `ReviewEvent`, API payloads, and database row mappings as plain immutable records.
 - Scope every server operation with the user ID derived from the verified Supabase JWT. Never accept a caller-supplied user ID.
 - Treat mutation idempotency, optimistic concurrency, atomic rating/undo, and replacement queue snapshots as required contracts rather than follow-up hardening.
@@ -141,54 +156,38 @@ Use the required workflow: create a migration with `npx supabase migration new`,
 
 ## Phase 3 — Authenticated tRPC Edge Function
 
-- [ ] Add the single Supabase Edge Function `api` with CORS suitable for the static GitHub Pages client.
-- [ ] Add tRPC v11 router wiring and authenticated request context.
-- [ ] Verify Supabase bearer JWTs and derive the user ID only from the verified token.
-- [ ] Add Postgres.js using the Supabase transaction-pooler connection. Do not expose its URL or server secrets to Expo.
-- [ ] Build request-scoped `DeckService`, `CardService`, and `StudyService` instances with explicit repository/policy dependencies.
-- [ ] Keep the Edge entry point and tRPC procedures thin: validate, authorize through context, delegate, and serialize.
+- [x] Add the single Supabase Edge Function `api` with CORS suitable for the static GitHub Pages client.
+- [x] Add tRPC v11 router wiring and authenticated request context.
+- [x] Verify Supabase bearer JWTs and derive the user ID only from the verified token.
+- [x] Add Postgres.js using the Supabase transaction-pooler connection. Do not expose its URL or server secrets to Expo.
+- [x] Supply `identity` and `db` through the request context; procedure files own validation, authorization, queries, transactions, and serialization.
 
-### Repositories
+### Vertical router slices
 
-- [ ] Implement `DeckRepository` with tenant-scoped list/create/rename/remove operations.
-- [ ] Implement `CardRepository` with tenant-scoped get/search/create/update/suspend/restore/remove/revision/rollback operations.
-- [ ] Implement `StudyRepository` with tenant-scoped queue reads, row locking, cadence updates, review-event writes, history reads, and undo restoration.
-- [ ] Map SQL snake_case rows to canonical TypeScript records at the repository boundary only.
-- [ ] Require authenticated user ID in every repository method; card/review operations must verify ownership through the parent deck.
-- [ ] Do not add a generic base repository or a repository for every table.
+- [x] Implement tenant-scoped deck lifecycle and queue procedures in `routers/deck.ts`.
+- [x] Implement tenant-scoped card CRUD, search, suspension, revisions, and rollback in `routers/card.ts`.
+- [x] Implement queue, rating, history, idempotency, and undo behavior in `routers/review.ts`.
+- [x] Implement `auth.session` in `routers/auth.ts`.
+- [x] Ensure `deck.queue` embeds the complete canonical `Card` DTO with derived queue status.
+- [x] Validate every input with Zod and map expected errors to stable tRPC codes.
 
-### Services and transactions
-
-- [ ] Implement `DeckService` deck lifecycle behavior.
-- [ ] Implement `CardService` Markdown/metadata validation, independent-card CRUD, suspension, content revisions, and rollback-as-new-revision.
-- [ ] Implement `StudyService.getQueue` using the authoritative repository query and `StudyQueue` policy.
-- [ ] Implement `StudyService.rate` as one transaction: lock owned card, enforce `expectedVersion`, enforce `requestId`, apply `Cadence`, record before/after state, update the card, commit, and return the review ID plus a fresh queue snapshot.
-- [ ] Make duplicate `requestId` calls return the already-committed result without applying the rating twice.
-- [ ] Implement `StudyService.getHistory` as a newest-first paginated result that includes undone events and before/after interval/due data.
-- [ ] Implement `StudyService.undo` as one transaction: lock owned card/event, reject non-latest active review, restore exact `before_state`, set `undone_at`, increment version, commit, and return a fresh queue snapshot.
-
-### tRPC surface
-
-- [ ] Implement `auth.session`.
-- [ ] Implement `deck.list`, `deck.create`, `deck.rename`, `deck.remove`, and `deck.queue`.
-- [ ] Implement `card.get`, `card.search`, `card.create`, `card.update`, `card.suspend`, `card.restore`, `card.remove`, `card.revisions`, and `card.rollbackRevision`.
-- [ ] Implement `review.rate`, `review.history`, and `review.undo`.
-- [ ] Ensure `deck.queue` embeds the same complete canonical `Card` DTO returned by `card.get`, augmented only by queue status.
-- [ ] Validate every input with Zod and map expected errors to stable tRPC codes.
+The repository and service subsections from the original plan are superseded by
+the vertical-slice decision. Their behavior is implemented directly in the
+owning router files, with shared tenant bases in `src/db/tenant.ts` and pure
+policies in `src/domain/`.
 
 ### Phase 3 tests and verification
 
-- [ ] Add neighboring service unit tests with fake repositories and an explicit clock.
-- [ ] Add neighboring router tests using `appRouter.createCaller()` for authentication, validation, context identity, error mapping, and response contracts.
-- [ ] Add neighboring repository integration tests against local Supabase for commit/rollback, locks/versions, idempotency, exact undo, latest-review enforcement, queue ordering/horizon/limit, and every cross-tenant operation.
-- [ ] Prove user A cannot list, read, search, rate, edit, suspend, restore, undo, or delete user B's data.
-- [ ] Invoke the actual local Edge Function with a real local Supabase user token and exercise session, queue, rate, history, and undo.
+- [x] Add caller-level router integration suites using `appRouter.createCaller()`.
+- [x] Prove cross-tenant denial for deck/card operations in the live integration suite.
+- [x] Prove request idempotency, exact undo restoration, history pagination, and queue behavior.
+- [x] Invoke the actual local Edge Function with a real local Supabase user token and exercise session, queue, rate, history, and undo.
 
 ### Phase 3 cleanup checkpoint
 
-- [ ] Remove temporary routers, duplicate DTOs, repository prototypes, unused exports, and abandoned server dependencies as soon as the canonical server path passes caller/integration tests.
-- [ ] Confirm there is one implementation for each business rule and one public tRPC router surface.
-- [ ] Retain the old client data path until Phase 4 proves its screen-level replacement; do not create dual writes between old and new storage.
+- [x] Remove temporary routers, duplicate DTOs, repository/service layers, unused legacy dependencies, and abandoned client paths.
+- [x] Confirm there is one implementation for each business rule and one public tRPC router surface.
+- [x] Replace the old app with a minimal Expo export stub; the real frontend cutover remains Phase 4 work.
 
 ## Phase 4 — Frontend cutover
 

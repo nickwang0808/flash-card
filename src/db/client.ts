@@ -9,7 +9,7 @@ export type AppDb = PostgresJsDatabase<typeof schema>;
  * The typed database plus the underlying postgres pool, so callers can end it.
  * `getDb()` returns this intersection; the pool is exposed as `$client`.
  */
-export type AppDbWithPool = AppDb & { $client: ReturnType<typeof postgres> };
+export type AppDbWithPool = AppDb & { $client: postgres.Sql };
 
 /**
  * A transaction handle. PgTransaction extends the PgDatabase surface, so the

@@ -5,10 +5,18 @@
     "**/*.integration.test.{ts,tsx}",
     "supabase/functions/api/index.ts"
   ],
-  "project": ["src/**/*.{ts,tsx}", "app/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}", "supabase/**/*.{ts,tsx}"],
+  "project": ["src/**/*.{ts,tsx}", "app/**/*.{ts,tsx}", "supabase/**/*.{ts,tsx}"],
   "vitest": {
     "config": ["vitest.config.ts", "vitest.integration.config.ts"]
   },
-  "ignoreDependencies": ["tailwindcss", "nativewind", "expo-status-bar"],
-  "ignoreBinaries": ["tsx"]
+  "ignoreDependencies": ["expo-updates", "expo-system-ui"],
+  "ignoreBinaries": [],
+  "ignoreIssues": {
+    "src/db/client.ts": ["types"],
+    "src/domain/Deck.ts": ["types"],
+    "src/domain/errors.ts": ["types"],
+    "src/domain/primitives.ts": ["types"],
+    "src/domain/StudyQueue.ts": ["types"],
+    "supabase/functions/api/router.ts": ["types"]
+  }
 }

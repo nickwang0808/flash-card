@@ -7,3 +7,9 @@ export const CadencePhaseSchema = z.enum(['learning', 'review']);
 
 export type Rating = z.output<typeof RatingSchema>;
 export type CadencePhase = z.output<typeof CadencePhaseSchema>;
+
+export function toIsoTimestamp(value: string): string {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) throw new Error('Database returned an invalid timestamp');
+  return timestamp.toISOString();
+}
