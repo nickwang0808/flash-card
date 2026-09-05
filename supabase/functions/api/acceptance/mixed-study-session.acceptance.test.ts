@@ -49,4 +49,18 @@ describe('mixed study state', () => {
     const undone = await actor.api.review.undo({ reviewId: rate.reviewId, deckId: deck.id, queue });
     expect(undone.queue.items.filter((item) => item.status === 'new').map((item) => item.id)).toEqual([newA.id, newB.id].sort());
   });
+
+  test('backfills limit-one mutation snapshots from persisted queue rows', async () => {
+    actor = await createActor('limited-snapshot');
+    const deck = await createDeck(actor);
+    const first = await createNewCard(actor, deck, { name: 'first' });
+    const second = await createNewCard(actor, deck, { name: 'second' });
+    const limitOne = { limit: 1 };
+    expect((await actor.api.deck.queue({ deckId: deck.id, ...limitOne })).items).toHaveLength(1);
+    const rated = await actor.api.review.rate({ cardId: first.id, deckId: deck.id, rating: 'good', expectedVersion: 0, requestId: crypto.randomUUID(), queue: limitOne });
+    expect(rated.queue.items.map(({ id }) => id)).toEqual([second.id]);
+    expect(rated.queue).toEqual(await actor.api.deck.queue({ deckId: deck.id, ...limitOne }));
+    const undone = await actor.api.review.undo({ reviewId: rated.reviewId, deckId: deck.id, queue: limitOne });
+    expect(undone.queue).toEqual(await actor.api.deck.queue({ deckId: deck.id, ...limitOne }));
+  });
 });

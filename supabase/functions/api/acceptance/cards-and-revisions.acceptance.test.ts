@@ -36,4 +36,60 @@ describe('card and deck lifecycle', () => {
     await expect(actor.api.card.remove({ cardId: card.id, deckId: deck.id, expectedVersion: 4, confirmation: true, queue })).resolves.toMatchObject({ queue: { items: [] } });
     await expect(actor.api.deck.remove({ deckId: deck.id, expectedVersion: 0, confirmation: true })).resolves.toEqual({ removed: true });
   });
+
+  test('persists every mutable field, paginates revisions, and preserves tags on rollback', async () => {
+    actor = await createActor('content-revisions');
+    const deck = await createDeck(actor);
+    const original = { name: 'Original', frontMarkdown: 'Original front', backMarkdown: 'Original back', speechText: 'こんにちは', speechLocale: 'ja-JP' };
+    const card = await actor.api.card.create({ deckId: deck.id, ...original, tags: ['original'] });
+    expect(card).toMatchObject({ ...original, tags: ['original'] });
+    expect(await actor.api.card.get({ cardId: card.id, deckId: deck.id })).toMatchObject({ ...original, tags: ['original'] });
+    actor.clock.advance({ minutes: 1 });
+    const edited = { name: 'Edited', frontMarkdown: 'Edited front', backMarkdown: 'Edited back', speechText: 'こんばんは', speechLocale: 'ja-JP' };
+    await expect(actor.api.card.update({ cardId: card.id, deckId: deck.id, ...edited, tags: ['edited'], expectedVersion: 0 })).resolves.toMatchObject({ ...edited, tags: ['edited'], version: 1 });
+    expect((await actor.api.card.search({ deckId: deck.id, query: 'Edited front', pagination: { limit: 10 } })).cards).toMatchObject([{ id: card.id, ...edited, tags: ['edited'] }]);
+    const first = await actor.api.card.revisions({ cardId: card.id, deckId: deck.id, pagination: { limit: 1 } });
+    expect(first.revisions).toMatchObject([{ eventType: 'edited', beforeContent: original, afterContent: edited }]);
+    expect(first.pageInfo.nextCursor).not.toBeNull();
+    expect(first.revisions[0].afterContent).not.toHaveProperty('tags');
+    const second = await actor.api.card.revisions({ cardId: card.id, deckId: deck.id, pagination: { limit: 1, cursor: first.pageInfo.nextCursor } });
+    expect(second).toMatchObject({ revisions: [{ eventType: 'created', beforeContent: null, afterContent: original }], pageInfo: { nextCursor: null } });
+    expect(second.revisions[0].afterContent).not.toHaveProperty('tags');
+    actor.clock.advance({ minutes: 1 });
+    const restored = await actor.api.card.rollbackRevision({ cardId: card.id, deckId: deck.id, revisionId: second.revisions[0].id, expectedVersion: 1 });
+    expect(restored).toMatchObject({ ...original, tags: ['edited'], version: 2, updatedAt: actor.clock.iso() });
+    expect((await actor.api.card.revisions({ cardId: card.id, deckId: deck.id, pagination: { limit: 10 } })).revisions.map(({ eventType }) => eventType)).toContain('restored');
+  });
+
+  test('serializes card updates and traverses scoped and unscoped search cursors', async () => {
+    actor = await createActor('card-cas-search');
+    const deckA = await createDeck(actor, 'A');
+    const deckB = await createDeck(actor, 'B');
+    const raced = await createNewCard(actor, deckA, { name: 'Raced marker' });
+    const updates = await Promise.allSettled([
+      actor.api.card.update({ cardId: raced.id, deckId: deckA.id, name: 'Winner one', frontMarkdown: 'one', backMarkdown: 'one', tags: [], speechText: null, speechLocale: null, expectedVersion: 0 }),
+      actor.api.card.update({ cardId: raced.id, deckId: deckA.id, name: 'Winner two', frontMarkdown: 'two', backMarkdown: 'two', tags: [], speechText: null, speechLocale: null, expectedVersion: 0 }),
+    ]);
+    const winner = updates.find((result) => result.status === 'fulfilled');
+    expect(winner?.status).toBe('fulfilled');
+    if (!winner || winner.status !== 'fulfilled') throw new Error('No update won');
+    expect(updates.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(await actor.api.card.get({ cardId: raced.id, deckId: deckA.id })).toMatchObject({ name: winner.value.name, version: 1 });
+    expect((await actor.api.card.revisions({ cardId: raced.id, deckId: deckA.id, pagination: { limit: 10 } })).revisions.map(({ eventType }) => eventType).sort()).toEqual(['created', 'edited']);
+    actor.clock.advance({ minutes: 1 });
+    const a1 = await createNewCard(actor, deckA, { name: 'Marker one' });
+    actor.clock.advance({ minutes: 1 });
+    const a2 = await createNewCard(actor, deckA, { name: 'Marker two' });
+    actor.clock.advance({ minutes: 1 });
+    const b = await createNewCard(actor, deckB, { name: 'Marker three' });
+    const page1 = await actor.api.card.search({ deckId: deckA.id, query: 'Marker', pagination: { limit: 1 } });
+    const page2 = await actor.api.card.search({ deckId: deckA.id, query: 'Marker', pagination: { limit: 1, cursor: page1.pageInfo.nextCursor } });
+    expect([page1, page2].flatMap(({ cards }) => cards.map(({ id }) => id))).toEqual([a2.id, a1.id]);
+    expect(page1.pageInfo.nextCursor).not.toBeNull();
+    expect(page2.pageInfo.nextCursor).toBeNull();
+    const all = await actor.api.card.search({ query: 'Marker', pagination: { limit: 2 } });
+    const allNext = await actor.api.card.search({ query: 'Marker', pagination: { limit: 2, cursor: all.pageInfo.nextCursor } });
+    expect([...all.cards, ...allNext.cards].map(({ id }) => id)).toEqual([b.id, a2.id, a1.id]);
+    expect(allNext.pageInfo.nextCursor).toBeNull();
+  });
 });
