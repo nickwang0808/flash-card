@@ -3,12 +3,30 @@
   "private": true,
   "version": "0.1.0",
   "main": "expo-router/entry",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "bin": {
+    "flashcard": "dist-cli/flashcard.mjs"
+  },
+  "files": [
+    "dist-cli/",
+    "README.md",
+    "docs/cli.md",
+    "package.json"
+  ],
   "scripts": {
     "dev": "expo start --web",
     "build": "expo export --platform web",
+    "build:cli": "node scripts/build-cli.mjs",
+    "prepack": "npm run build:cli",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
-    "test:acceptance": "node scripts/run-acceptance.mjs",
+    "test:acceptance": "node scripts/run-acceptance.mjs backend",
+    "test:acceptance:all": "node scripts/run-acceptance.mjs all",
+    "test:cli:acceptance": "node scripts/run-acceptance.mjs cli",
+    "test:cli": "vitest run --config vitest.config.ts src/cli",
+    "test:cli:package": "node scripts/test-cli-package.mjs",
     "test": "vitest run",
     "knip": "knip",
     "check": "tsc && knip",
@@ -24,10 +42,12 @@
     "@gluestack-ui/utils": "^5.0.6",
     "@legendapp/motion": "^2.5.3",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@napi-rs/keyring": "^2.0.0",
     "@supabase/supabase-js": "^2.95.3",
     "@tanstack/react-query": "^5.102.8",
     "@trpc/client": "^11.18.0",
     "@trpc/server": "^11.18.0",
+    "commander": "^15.0.0",
     "drizzle-orm": "^0.45.2",
     "expo": "~55.0.8",
     "expo-crypto": "~55.0.19",
@@ -61,9 +81,11 @@
     "@types/react": "~19.2.2",
     "babel-plugin-module-resolver": "^5.0.3",
     "drizzle-kit": "^0.31.10",
+    "esbuild": "^0.28.2",
     "jsdom": "^25.0.0",
     "knip": "^5.83.1",
     "tailwindcss": "^4.3.3",
+    "supabase": "^2.116.0",
     "typescript": "~5.9.2",
     "vitest": "^2.1.0"
   },

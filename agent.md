@@ -29,6 +29,12 @@ Server procedures live in `supabase/functions/api/routers/`; shared domain schem
 - Backend acceptance: `npm run test:acceptance` — real Auth, JWT, Edge Function, tRPC, and Postgres journeys on an isolated local stack.
 - Repository checks: `npm run check`.
 - Web build: `npm run build` — Expo static export; exercise the actual UI once frontend reconstruction begins.
+- CLI unit tests: `npm run test:cli`; bundle/package smoke: `npm run build:cli && npm run test:cli:package`.
+- CLI acceptance: `npm run test:cli:acceptance`; combined backend then CLI acceptance: `npm run test:acceptance:all`.
+
+### CLI boundaries
+
+CLI source is in `src/cli/`; `src/api/client.ts#createApiClient` remains its only application transport. Build the private executable with `npm run build:cli`; its OS-keyring and explicit file-store sessions are isolated per Supabase URL and must never be substituted with frontend storage. CLI acceptance is a representative black-box subprocess journey. Existing backend acceptance tests retain cadence, queue-ordering, concurrency, and rollback policy coverage.
 
 ### Test Boundaries
 

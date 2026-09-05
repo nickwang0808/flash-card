@@ -10,6 +10,7 @@ export interface TestActor {
   userId: string;
   email: string;
   accessToken: string;
+  password: string;
   api: AcceptanceApiClient;
   clock: TestClock;
   admin: SupabaseClient;
@@ -28,7 +29,7 @@ export async function createActor(label: string, initialTime = '2026-01-01T12:00
   }
 
   const clock = new TestClock(initialTime);
-  return { userId: created.user.id, email, accessToken: signedIn.session.access_token, api: new AcceptanceApiClient(signedIn.session.access_token, clock), clock, admin };
+  return { userId: created.user.id, email, password: TEST_PASSWORD, accessToken: signedIn.session.access_token, api: new AcceptanceApiClient(signedIn.session.access_token, clock), clock, admin };
 }
 
 export async function destroyActor(actor: TestActor | undefined): Promise<void> {
