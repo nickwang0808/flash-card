@@ -1,14 +1,17 @@
-import type { Sql, TransactionSql } from 'postgres';
+import { and, arrayContains, desc, eq, ilike, lt, or, type SQL } from 'drizzle-orm';
 import type { Card, CardContent } from '../../../../src/domain/Card.ts';
 import type { CardRevision } from '../../../../src/domain/CardRevision.ts';
 import { ApplicationError } from '../../../../src/domain/errors.ts';
 import type { PaginationInput, PageInfo } from '../../../../src/api/pagination.ts';
+import type { AppDb, DbTransaction } from '../../../../src/db/client.ts';
+import { cardRevisions, cards, decks } from '../../../../src/db/schema.ts';
+import type { CardRow } from '../../../../src/db/schema.ts';
 import { decodeCursor, encodeCursor } from './cursor.ts';
-import { mapCardRevisionRow, mapCardRow, type CardRevisionRow, type CardRow } from './mappers.ts';
+import { mapCardRevisionRow, mapCardRow } from './mappers.ts';
 
 /** Tenant-scoped card persistence. Every read/write verifies deck ownership. */
 export interface CardRepository {
-  transaction<T>(work: (tx: TransactionSql) => Promise<T>): Promise<T>;
+  transaction<T>(work: (tx: DbTransaction) => Promise<T>): Promise<T>;
   get(cardId: string, deckId: string): Promise<Card | null>;
   search(input: { deckId: string | null; query: string; pagination: PaginationInput }): Promise<{ cards: Card[]; pageInfo: PageInfo }>;
   create(input: { deckId: string; content: CardContent; tags: string[] }): Promise<Card>;
@@ -19,80 +22,99 @@ export interface CardRepository {
   rollbackRevision(input: { cardId: string; deckId: string; revisionId: string; expectedVersion: number }): Promise<Card>;
 }
 
+/** Owner-scoped card select: joins through the user's deck so unowned rows never match. */
+function ownedCardSelect(db: AppDb, userId: string) {
+  return db.select().from(cards).innerJoin(decks, and(eq(decks.id, cards.deckId), eq(decks.userId, userId)));
+}
+
+function unwrapCard(rows: { cards: CardRow; decks: { id: string } }[]): CardRow | null {
+  return rows.length === 0 ? null : rows[0].cards;
+}
+
+/** Keyset predicate for (createdAt desc, id desc) ordering: rows strictly before the cursor. */
+function createdBeforeCursor(
+  createdAt: typeof cards.createdAt | typeof cardRevisions.createdAt,
+  id: typeof cards.id | typeof cardRevisions.id,
+  after: { timestamp: string; id: string },
+) {
+  const timestamp = new Date(after.timestamp);
+  return or(lt(createdAt, timestamp), and(eq(createdAt, timestamp), lt(id, after.id)));
+}
+
 export class PostgresCardRepository implements CardRepository {
-  /** Spliced raw into select/returning lists; a template fragment, not a quoted value. */
-  private readonly cardColumns: ReturnType<Sql>;
-
   constructor(
-    private readonly sql: Sql,
+    private readonly db: AppDb,
     private readonly userId: string,
-  ) {
-    this.cardColumns = sql`c.id, c.deck_id, c.name, c.front_markdown, c.back_markdown,
-      c.speech_text, c.speech_locale, c.tags, c.suspended, c.created_at, c.updated_at, c.cadence_phase,
-      c.next_review_at, c.interval_days, c.review_count, c.lapse_count, c.scheduler_version, c.version`;
-  }
+  ) {}
 
-  transaction<T>(work: (tx: TransactionSql) => Promise<T>): Promise<T> {
-    return this.sql.begin(work) as Promise<T>;
+  transaction<T>(work: (tx: DbTransaction) => Promise<T>): Promise<T> {
+    return this.db.transaction(work);
   }
 
   async get(cardId: string, deckId: string): Promise<Card | null> {
-    const rows = await this.sql<CardRow[]>`
-      select ${this.cardColumns}
-      from cards c
-      join decks d on d.id = c.deck_id and d.user_id = ${this.userId}
-      where c.id = ${cardId} and c.deck_id = ${deckId}
-      limit 1
-    `;
-    return rows.length === 0 ? null : mapCardRow(rows[0]);
+    const rows = await ownedCardSelect(this.db, this.userId)
+      .where(and(eq(cards.id, cardId), eq(cards.deckId, deckId)))
+      .limit(1);
+    const row = unwrapCard(rows);
+    return row ? mapCardRow(row) : null;
   }
 
   async search(input: { deckId: string | null; query: string; pagination: PaginationInput }): Promise<{ cards: Card[]; pageInfo: PageInfo }> {
-    const { query, pagination } = input;
-    const limit = pagination.limit + 1;
-    const deckScope = input.deckId === null ? this.sql`` : this.sql`and c.deck_id = ${input.deckId}`;
-    const after = pagination.cursor ? decodeCursor(pagination.cursor) : null;
-    const afterClause = after
-      ? this.sql`and (c.created_at, c.id) < (${after.timestamp}::timestamptz, ${after.id}::uuid)`
-      : this.sql``;
+    const limit = input.pagination.limit + 1;
+    const needle = `%${input.query.toLowerCase()}%`;
+    const after = input.pagination.cursor ? decodeCursor(input.pagination.cursor) : null;
+    const conditions: (SQL | undefined)[] = [
+      or(
+        ilike(cards.name, needle),
+        ilike(cards.frontMarkdown, needle),
+        ilike(cards.backMarkdown, needle),
+        arrayContains(cards.tags, [input.query]),
+      ),
+    ];
+    if (input.deckId !== null) {
+      conditions.push(eq(cards.deckId, input.deckId));
+    }
+    if (after) {
+      conditions.push(createdBeforeCursor(cards.createdAt, cards.id, after));
+    }
 
-    const rows = await this.sql<CardRow[]>`
-      select ${this.cardColumns}
-      from cards c
-      join decks d on d.id = c.deck_id and d.user_id = ${this.userId}
-      where (
-        strpos(lower(c.name), lower(${query})) > 0
-        or strpos(lower(c.front_markdown), lower(${query})) > 0
-        or strpos(lower(c.back_markdown), lower(${query})) > 0
-        or exists (select 1 from unnest(c.tags) as tag where lower(tag) = lower(${query}))
-      )
-      ${deckScope}
-      ${afterClause}
-      order by c.created_at desc, c.id desc
-      limit ${limit}
-    `;
+    const rows = await ownedCardSelect(this.db, this.userId)
+      .where(and(...conditions))
+      .orderBy(desc(cards.createdAt), desc(cards.id))
+      .limit(limit);
 
-    const { items, pageInfo } = this.paginate(rows.map(mapCardRow), pagination.limit, (card) =>
-      encodeCursor(card.createdAt, card.id),
-    );
-    return { cards: items, pageInfo };
+    const items = rows.map((row) => mapCardRow(row.cards));
+    const hasMore = items.length > input.pagination.limit;
+    const pageItems = hasMore ? items.slice(0, input.pagination.limit) : items;
+    return {
+      cards: pageItems,
+      pageInfo: { nextCursor: hasMore ? encodeCursor(pageItems[pageItems.length - 1].createdAt, pageItems[pageItems.length - 1].id) : null },
+    };
   }
 
   async create(input: { deckId: string; content: CardContent; tags: string[] }): Promise<Card> {
     return this.transaction(async (tx) => {
-      const rows = await tx<CardRow[]>`
-        insert into cards (deck_id, name, front_markdown, back_markdown, speech_text, speech_locale, tags)
-        select ${input.deckId}, ${input.content.name}, ${input.content.frontMarkdown},
-               ${input.content.backMarkdown}, ${input.content.speechText}, ${input.content.speechLocale},
-               ${input.tags}
-        where exists (select 1 from decks where id = ${input.deckId} and user_id = ${this.userId})
-        returning id, deck_id, name, front_markdown, back_markdown, speech_text,
-                  speech_locale, tags, suspended, created_at, updated_at, cadence_phase,
-                  next_review_at, interval_days, review_count, lapse_count, scheduler_version, version
-      `;
-      if (rows.length === 0) {
+      const owned = await tx
+        .select({ id: decks.id })
+        .from(decks)
+        .where(and(eq(decks.id, input.deckId), eq(decks.userId, this.userId)))
+        .limit(1);
+      if (owned.length === 0) {
         throw new ApplicationError('NOT_FOUND', 'Deck not found');
       }
+
+      const rows = await tx
+        .insert(cards)
+        .values({
+          deckId: input.deckId,
+          name: input.content.name,
+          frontMarkdown: input.content.frontMarkdown,
+          backMarkdown: input.content.backMarkdown,
+          speechText: input.content.speechText,
+          speechLocale: input.content.speechLocale,
+          tags: input.tags,
+        })
+        .returning();
       const card = mapCardRow(rows[0]);
       await this.recordRevision(tx, card.id, 'created', null, input.content);
       return card;
@@ -102,24 +124,21 @@ export class PostgresCardRepository implements CardRepository {
   async update(input: { cardId: string; deckId: string; expectedVersion: number; content: CardContent; tags: string[] }): Promise<Card> {
     return this.transaction(async (tx) => {
       const before = await this.lockContentForUpdate(tx, input.cardId, input.deckId, input.expectedVersion);
-      const rows = await tx<CardRow[]>`
-        update cards c
-        set name = ${input.content.name},
-            front_markdown = ${input.content.frontMarkdown},
-            back_markdown = ${input.content.backMarkdown},
-            speech_text = ${input.content.speechText},
-            speech_locale = ${input.content.speechLocale},
-            tags = ${input.tags},
-            version = c.version + 1,
-            updated_at = now()
-        from decks d
-        where d.id = c.deck_id and d.user_id = ${this.userId}
-          and c.id = ${input.cardId} and c.deck_id = ${input.deckId}
-          and c.version = ${input.expectedVersion}
-        returning c.id, c.deck_id, c.name, c.front_markdown, c.back_markdown, c.speech_text,
-                  c.speech_locale, c.tags, c.suspended, c.created_at, c.updated_at, c.cadence_phase,
-                  c.next_review_at, c.interval_days, c.review_count, c.lapse_count, c.scheduler_version, c.version
-      `;
+      const rows = await tx
+        .update(cards)
+        .set({
+          name: input.content.name,
+          frontMarkdown: input.content.frontMarkdown,
+          backMarkdown: input.content.backMarkdown,
+          speechText: input.content.speechText,
+          speechLocale: input.content.speechLocale,
+          tags: input.tags,
+          version: input.expectedVersion + 1,
+          updatedAt: new Date(),
+        })
+        .from(decks)
+        .where(and(eq(decks.id, cards.deckId), eq(decks.userId, this.userId), eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion)))
+        .returning();
       if (rows.length === 0) {
         throw await this.versionOrMissingError(input.cardId, input.deckId, input.expectedVersion);
       }
@@ -130,15 +149,12 @@ export class PostgresCardRepository implements CardRepository {
   }
 
   async setSuspended(input: { cardId: string; deckId: string; expectedVersion: number; suspended: boolean }): Promise<Card> {
-    const rows = await this.sql<CardRow[]>`
-      update cards c
-      set suspended = ${input.suspended}, version = c.version + 1, updated_at = now()
-      from decks d
-      where d.id = c.deck_id and d.user_id = ${this.userId}
-        and c.id = ${input.cardId} and c.deck_id = ${input.deckId}
-        and c.version = ${input.expectedVersion}
-      returning ${this.cardColumns}
-    `;
+    const rows = await this.db
+      .update(cards)
+      .set({ suspended: input.suspended, version: input.expectedVersion + 1, updatedAt: new Date() })
+      .from(decks)
+      .where(and(eq(decks.id, cards.deckId), eq(decks.userId, this.userId), eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion)))
+      .returning();
     if (rows.length === 0) {
       throw await this.versionOrMissingError(input.cardId, input.deckId, input.expectedVersion);
     }
@@ -146,98 +162,116 @@ export class PostgresCardRepository implements CardRepository {
   }
 
   async remove(input: { cardId: string; deckId: string; expectedVersion: number }): Promise<void> {
-    const result = await this.sql`
-      delete from cards c
-      using decks d
-      where d.id = c.deck_id and d.user_id = ${this.userId}
-        and c.id = ${input.cardId} and c.deck_id = ${input.deckId}
-        and c.version = ${input.expectedVersion}
-    `;
-    if (result.count === 0) {
-      throw await this.versionOrMissingError(input.cardId, input.deckId, input.expectedVersion);
-    }
+    return this.transaction(async (tx) => {
+      const owned = await tx
+        .select({ id: decks.id })
+        .from(decks)
+        .where(and(eq(decks.id, input.deckId), eq(decks.userId, this.userId)))
+        .limit(1);
+      if (owned.length === 0) {
+        throw new ApplicationError('NOT_FOUND', 'Card not found');
+      }
+      const rows = await tx
+        .delete(cards)
+        .where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion)))
+        .returning({ id: cards.id });
+      if (rows.length === 0) {
+        throw await this.versionOrMissingError(input.cardId, input.deckId, input.expectedVersion);
+      }
+    });
+    return this.transaction(async (tx) => {
+      const owned = await tx
+        .select({ id: decks.id })
+        .from(decks)
+        .where(and(eq(decks.id, input.deckId), eq(decks.userId, this.userId)))
+        .limit(1);
+      if (owned.length === 0) {
+        throw new ApplicationError('NOT_FOUND', 'Card not found');
+      }
+      const rows = await tx
+        .delete(cards)
+        .where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion)))
+        .returning({ id: cards.id });
+      if (rows.length === 0) {
+        throw await this.versionOrMissingError(input.cardId, input.deckId, input.expectedVersion);
+      }
+    });
   }
 
   async revisions(input: { cardId: string; deckId: string; pagination: PaginationInput }): Promise<{ revisions: CardRevision[]; pageInfo: PageInfo }> {
-    const { pagination } = input;
-    const limit = pagination.limit + 1;
-    const after = pagination.cursor ? decodeCursor(pagination.cursor) : null;
-    const afterClause = after
-      ? this.sql`and (r.created_at, r.id) < (${after.timestamp}::timestamptz, ${after.id}::uuid)`
-      : this.sql``;
+    const limit = input.pagination.limit + 1;
+    const after = input.pagination.cursor ? decodeCursor(input.pagination.cursor) : null;
+    const conditions: (SQL | undefined)[] = [eq(cardRevisions.cardId, input.cardId), eq(cards.deckId, input.deckId)];
+    if (after) {
+      conditions.push(createdBeforeCursor(cardRevisions.createdAt, cardRevisions.id, after));
+    }
 
-    const rows = await this.sql<CardRevisionRow[]>`
-      select r.id, r.card_id, r.event_type, r.before_content, r.after_content, r.created_at
-      from card_revisions r
-      join cards c on c.id = r.card_id
-      join decks d on d.id = c.deck_id and d.user_id = ${this.userId}
-      where r.card_id = ${input.cardId} and c.deck_id = ${input.deckId}
-      ${afterClause}
-      order by r.created_at desc, r.id desc
-      limit ${limit}
-    `;
+    const rows = await this.db
+      .select({ revision: cardRevisions })
+      .from(cardRevisions)
+      .innerJoin(cards, eq(cards.id, cardRevisions.cardId))
+      .innerJoin(decks, and(eq(decks.id, cards.deckId), eq(decks.userId, this.userId)))
+      .where(and(...conditions))
+      .orderBy(desc(cardRevisions.createdAt), desc(cardRevisions.id))
+      .limit(limit);
 
-    const { items, pageInfo } = this.paginate(rows.map(mapCardRevisionRow), pagination.limit, (revision) =>
-      encodeCursor(revision.createdAt, revision.id),
-    );
-    return { revisions: items, pageInfo };
+    const items = rows.map((row) => mapCardRevisionRow(row.revision));
+    const hasMore = items.length > input.pagination.limit;
+    const pageItems = hasMore ? items.slice(0, input.pagination.limit) : items;
+    return {
+      revisions: pageItems,
+      pageInfo: { nextCursor: hasMore ? encodeCursor(pageItems[pageItems.length - 1].createdAt, pageItems[pageItems.length - 1].id) : null },
+    };
   }
 
   async rollbackRevision(input: { cardId: string; deckId: string; revisionId: string; expectedVersion: number }): Promise<Card> {
     return this.transaction(async (tx) => {
-      const [revision] = await tx<CardRevisionRow[]>`
-        select r.id, r.card_id, r.event_type, r.before_content, r.after_content, r.created_at
-        from card_revisions r
-        join cards c on c.id = r.card_id
-        join decks d on d.id = c.deck_id and d.user_id = ${this.userId}
-        where r.id = ${input.revisionId} and r.card_id = ${input.cardId} and c.deck_id = ${input.deckId}
-        limit 1
-      `;
-      if (!revision) {
+      const revisionRows = await tx
+        .select({ revision: cardRevisions })
+        .from(cardRevisions)
+        .innerJoin(cards, eq(cards.id, cardRevisions.cardId))
+        .innerJoin(decks, and(eq(decks.id, cards.deckId), eq(decks.userId, this.userId)))
+        .where(and(eq(cardRevisions.id, input.revisionId), eq(cardRevisions.cardId, input.cardId), eq(cards.deckId, input.deckId)))
+        .limit(1);
+      if (revisionRows.length === 0) {
         throw new ApplicationError('NOT_FOUND', 'Revision not found');
       }
+      const revision = revisionRows[0].revision;
 
-      const rows = await tx<CardRow[]>`
-        update cards c
-        set name = ${revision.after_content.name},
-            front_markdown = ${revision.after_content.frontMarkdown},
-            back_markdown = ${revision.after_content.backMarkdown},
-            speech_text = ${revision.after_content.speechText},
-            speech_locale = ${revision.after_content.speechLocale},
-            version = c.version + 1,
-            updated_at = now()
-        from decks d
-        where d.id = c.deck_id and d.user_id = ${this.userId}
-          and c.id = ${input.cardId} and c.deck_id = ${input.deckId}
-          and c.version = ${input.expectedVersion}
-        returning c.id, c.deck_id, c.name, c.front_markdown, c.back_markdown, c.speech_text,
-                  c.speech_locale, c.tags, c.suspended, c.created_at, c.updated_at, c.cadence_phase,
-                  c.next_review_at, c.interval_days, c.review_count, c.lapse_count, c.scheduler_version, c.version
-      `;
+      const rows = await tx
+        .update(cards)
+        .set({
+          name: revision.afterContent.name,
+          frontMarkdown: revision.afterContent.frontMarkdown,
+          backMarkdown: revision.afterContent.backMarkdown,
+          speechText: revision.afterContent.speechText,
+          speechLocale: revision.afterContent.speechLocale,
+          version: input.expectedVersion + 1,
+          updatedAt: new Date(),
+        })
+        .from(decks)
+        .where(and(eq(decks.id, cards.deckId), eq(decks.userId, this.userId), eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion)))
+        .returning();
       if (rows.length === 0) {
         throw await this.versionOrMissingError(input.cardId, input.deckId, input.expectedVersion);
       }
       const card = mapCardRow(rows[0]);
-      await this.recordRevision(tx, card.id, 'restored', cardContentOf(card), revision.after_content);
+      await this.recordRevision(tx, card.id, 'restored', cardContentOf(card), revision.afterContent);
       return card;
     });
   }
 
   /** Locks the owned card row and returns its current content, or rejects on a stale version. */
-  private async lockContentForUpdate(tx: TransactionSql, cardId: string, deckId: string, expectedVersion: number): Promise<Card> {
-    const rows = await tx<CardRow[]>`
-      select c.id, c.deck_id, c.name, c.front_markdown, c.back_markdown, c.speech_text,
-             c.speech_locale, c.tags, c.suspended, c.created_at, c.updated_at, c.cadence_phase,
-             c.next_review_at, c.interval_days, c.review_count, c.lapse_count, c.scheduler_version, c.version
-      from cards c
-      join decks d on d.id = c.deck_id and d.user_id = ${this.userId}
-      where c.id = ${cardId} and c.deck_id = ${deckId}
-      for update of c
-    `;
-    if (rows.length === 0) {
+  private async lockContentForUpdate(tx: DbTransaction, cardId: string, deckId: string, expectedVersion: number): Promise<Card> {
+    const rows = await ownedCardSelect(tx, this.userId)
+      .where(and(eq(cards.id, cardId), eq(cards.deckId, deckId)))
+      .limit(1)
+      .for('update', { of: cards });
+    const row = unwrapCard(rows);
+    if (!row) {
       throw new ApplicationError('NOT_FOUND', 'Card not found');
     }
-    const card = mapCardRow(rows[0]);
+    const card = mapCardRow(row);
     if (card.version !== expectedVersion) {
       throw new ApplicationError('CONFLICT', `Card changed since version ${expectedVersion}`);
     }
@@ -245,21 +279,18 @@ export class PostgresCardRepository implements CardRepository {
   }
 
   private async recordRevision(
-    tx: TransactionSql,
+    tx: DbTransaction,
     cardId: string,
     eventType: 'created' | 'edited' | 'restored' | 'ai_generated',
     beforeContent: CardContent | null,
     afterContent: CardContent,
   ): Promise<void> {
-    await tx`
-      insert into card_revisions (card_id, event_type, before_content, after_content)
-      values (
-        ${cardId},
-        ${eventType},
-        ${beforeContent === null ? null : tx.json(beforeContent)},
-        ${tx.json(afterContent)}
-      )
-    `;
+    await tx.insert(cardRevisions).values({
+      cardId,
+      eventType,
+      beforeContent,
+      afterContent,
+    });
   }
 
   /** Resolve a failed guarded write into NOT_FOUND vs CONFLICT without leaking. */
@@ -269,15 +300,6 @@ export class PostgresCardRepository implements CardRepository {
       return new ApplicationError('NOT_FOUND', 'Card not found');
     }
     return new ApplicationError('CONFLICT', `Card changed since version ${expectedVersion}`);
-  }
-
-  private paginate<T>(rows: T[], limit: number, cursorOf: (row: T) => string): { items: T[]; pageInfo: PageInfo } {
-    const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
-    return {
-      items,
-      pageInfo: { nextCursor: hasMore ? cursorOf(items[items.length - 1]) : null },
-    };
   }
 }
 

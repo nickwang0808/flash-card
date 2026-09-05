@@ -1,6 +1,6 @@
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import { readApiEnv } from './env.ts';
-import { getDb } from './db.ts';
+import { getDb } from '../../../src/db/client.ts';
 import { bearerToken, verifyAccessToken } from './jwt.ts';
 import type { VerifiedIdentity } from './identity.ts';
 import { appRouter } from './router.ts';

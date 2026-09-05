@@ -77,7 +77,7 @@ export class StudyService {
         const beforeState = cadenceStateOf(card);
         const afterState = this.cadence.rate(beforeState, input.rating, now);
 
-        const { event } = await this.study.insertReviewEvent(tx, {
+        const event = await this.study.insertReviewEvent(tx, {
           cardId: input.cardId,
           rating: input.rating,
           reviewedAt: now,
@@ -85,7 +85,7 @@ export class StudyService {
           afterState,
           requestId: input.requestId,
         });
-        await this.study.setCardCadenceState(tx, input.cardId, afterState);
+        await this.study.setCardCadenceState(tx, input.cardId, afterState, card.version);
 
         return event.id;
       });
@@ -150,8 +150,13 @@ export class StudyService {
         lapseCount: 0,
         schedulerVersion: null,
       };
+      const card = await this.study.lockCardForUpdate(tx, event.cardId, input.deckId);
+      if (!card) {
+        throw new ApplicationError('NOT_FOUND', 'Card not found');
+      }
+
       await this.study.markEventUndone(tx, event.id, now);
-      await this.study.setCardCadenceState(tx, event.cardId, beforeState);
+      await this.study.setCardCadenceState(tx, event.cardId, beforeState, card.version);
     });
 
     return this.buildQueueSnapshot(input.deckId, options, now);

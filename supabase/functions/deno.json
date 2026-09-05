@@ -2,6 +2,10 @@
   "imports": {
     "@trpc/server": "npm:@trpc/server@11",
     "@trpc/server/adapters/fetch": "npm:@trpc/server@11/adapters/fetch",
+    "drizzle-orm": "npm:drizzle-orm@0.45.2",
+    "drizzle-orm/pg-core": "npm:drizzle-orm@0.45.2/pg-core",
+    "drizzle-orm/postgres-js": "npm:drizzle-orm@0.45.2/postgres-js",
+    "drizzle-zod": "npm:drizzle-zod@0.8.3",
     "jose": "npm:jose@6",
     "postgres": "npm:postgres@3",
     "zod": "npm:zod@4"

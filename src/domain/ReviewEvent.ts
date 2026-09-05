@@ -1,17 +1,11 @@
-import { z } from 'zod';
+import { reviewEventBaseSchema } from '../db/zod.ts';
 import { CadenceStateSchema } from './CadenceState.ts';
-import { RatingSchema, TimestampSchema, UuidSchema } from './primitives.ts';
+import { TimestampSchema } from './primitives.ts';
+import { z } from 'zod';
 
-export const ReviewEventSchema = z.object({
-  id: UuidSchema,
-  cardId: UuidSchema,
-  rating: RatingSchema,
-  reviewedAt: TimestampSchema,
+export const ReviewEventSchema = reviewEventBaseSchema.extend({
   beforeState: CadenceStateSchema.nullable(),
   afterState: CadenceStateSchema,
-  requestId: UuidSchema,
-  undoneAt: TimestampSchema.nullable(),
-  createdAt: TimestampSchema,
 });
 
 export const ReviewHistoryEntrySchema = ReviewEventSchema.extend({

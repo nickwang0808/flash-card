@@ -1,4 +1,4 @@
-import type { TransactionSql } from 'postgres';
+import type { DbTransaction } from '../../../../src/db/client.ts';
 import type { PaginationInput, PageInfo } from '../../../../src/api/pagination.ts';
 import type { Card, CardContent } from '../../../../src/domain/Card.ts';
 import type { CardRevision } from '../../../../src/domain/CardRevision.ts';
@@ -103,8 +103,8 @@ export class FakeCardRepository implements CardRepository {
   cards = new Map<string, Card>();
   revisionLog: CardRevision[] = [];
 
-  async transaction<T>(work: (tx: TransactionSql) => Promise<T>): Promise<T> {
-    return work(null as unknown as TransactionSql);
+  async transaction<T>(work: (tx: DbTransaction) => Promise<T>): Promise<T> {
+    return work(null as unknown as DbTransaction);
   }
 
   async get(cardId: string, deckId: string): Promise<Card | null> {
@@ -222,8 +222,8 @@ export class FakeStudyRepository implements StudyRepository {
   /** Simulate a concurrent winner: the next insert loses the unique-key race. */
   raceNextInsert = false;
 
-  async transaction<T>(work: (tx: TransactionSql) => Promise<T>): Promise<T> {
-    return work(null as unknown as TransactionSql);
+  async transaction<T>(work: (tx: DbTransaction) => Promise<T>): Promise<T> {
+    return work(null as unknown as DbTransaction);
   }
 
   async deckOwned(deckId: string): Promise<boolean> {
@@ -265,8 +265,8 @@ export class FakeStudyRepository implements StudyRepository {
 
   async insertReviewEvent(
     _tx: unknown,
-    input: { cardId: string; rating: Rating; reviewedAt: Date; beforeState: CadenceState; afterState: CadenceState; requestId: string },
-  ): Promise<{ inserted: boolean; event: ReviewEvent }> {
+    input: { cardId: string; rating: Rating; reviewedAt: Date; beforeState: CadenceState | null; afterState: CadenceState; requestId: string },
+  ): Promise<ReviewEvent> {
     if (this.failNextInsert) {
       this.failNextInsert = false;
       throw new Error('simulated insert failure');
@@ -276,7 +276,7 @@ export class FakeStudyRepository implements StudyRepository {
       throw new ReviewRequestExists(input.cardId, input.requestId);
     }
     const existing = await this.findReviewByRequest(_tx, input.cardId, input.requestId);
-    if (existing) return { inserted: false, event: existing };
+    if (existing) throw new ReviewRequestExists(input.cardId, input.requestId);
     const event: ReviewEvent = {
       id: crypto.randomUUID(),
       cardId: input.cardId,
@@ -289,13 +289,14 @@ export class FakeStudyRepository implements StudyRepository {
       createdAt: input.reviewedAt.toISOString(),
     };
     this.events.push(event);
-    return { inserted: true, event };
+    return event;
   }
 
-  async setCardCadenceState(_tx: unknown, cardId: string, state: CadenceState): Promise<void> {
+  async setCardCadenceState(_tx: unknown, cardId: string, state: CadenceState, expectedVersion: number): Promise<void> {
     const card = this.cards.get(cardId);
     if (!card) throw new ApplicationError('NOT_FOUND', 'Card not found');
-    this.cards.set(cardId, { ...card, ...state, version: card.version + 1, updatedAt: new Date().toISOString() });
+    if (card.version !== expectedVersion) throw new ApplicationError('CONFLICT', 'Card changed');
+    this.cards.set(cardId, { ...card, ...state, version: expectedVersion + 1, updatedAt: new Date().toISOString() });
   }
 
   async getHistory(input: { cardId: string; deckId: string; pagination: PaginationInput }): Promise<{

@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import postgres from 'postgres';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '../../../../src/types/supabase.ts';
 import { ApplicationError } from '../../../../src/domain/errors.ts';
@@ -11,12 +10,15 @@ import { PostgresDeckRepository } from './DeckRepository.ts';
 import { PostgresCardRepository } from './CardRepository.ts';
 import { PostgresStudyRepository } from './StudyRepository.ts';
 import { newCardState } from './mappers.ts';
+import { getDb, type AppDbWithPool } from '../../../../src/db/client.ts';
+import { reviewEvents } from '../../../../src/db/schema.ts';
+import { eq } from 'drizzle-orm';
 
 const env = localStackEnv();
 const EMAIL_A = 'repo-test-a@example.com';
 const EMAIL_B = 'repo-test-b@example.com';
 
-let sql: ReturnType<typeof postgres>;
+let sql: AppDbWithPool;
 let userIdA: string;
 let userIdB: string;
 let sequence = 0;
@@ -38,13 +40,13 @@ beforeAll(async () => {
   const [userA, userB] = await Promise.all([createTestUser(admin, EMAIL_A), createTestUser(admin, EMAIL_B)]);
   userIdA = userA.id;
   userIdB = userB.id;
-  sql = postgres(env.DATABASE_URL!);
+  sql = getDb(env.DATABASE_URL!);
 });
 
 afterAll(async () => {
   const admin = createClient<Database>(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
   await Promise.all([deleteTestUser(admin, userIdA), deleteTestUser(admin, userIdB)]);
-  await sql.end();
+  await sql.$client.end?.();
 });
 
 describe('DeckRepository', () => {
@@ -209,8 +211,8 @@ describe('StudyRepository', () => {
       schedulerVersion: 1,
     };
     await a.study.transaction(async (tx) => {
-      await a.study.setCardCadenceState(tx, inside.id, { ...studied, nextReviewAt: '2026-09-05T00:00:00.000Z' });
-      await a.study.setCardCadenceState(tx, far.id, { ...studied, intervalDays: 20, nextReviewAt: '2026-09-20T00:00:00.000Z' });
+      await a.study.setCardCadenceState(tx, inside.id, { ...studied, nextReviewAt: '2026-09-05T00:00:00.000Z' }, 0);
+      await a.study.setCardCadenceState(tx, far.id, { ...studied, intervalDays: 20, nextReviewAt: '2026-09-20T00:00:00.000Z' }, 0);
     });
 
     const buckets = await a.study.queueBuckets({ deckId: deck.id, now, horizonMs: horizon * 3_600_000, limit: 10 });
@@ -236,11 +238,11 @@ describe('StudyRepository', () => {
         afterState: after,
         requestId,
       });
-      await a.study.setCardCadenceState(tx, newCard.id, after);
+      await a.study.setCardCadenceState(tx, newCard.id, after, 0);
       return { inserted, after };
     });
 
-    expect(outcome.inserted.inserted).toBe(true);
+    expect(outcome.inserted).toBeDefined();
 
     // Replay through the service: same request_id must not apply twice.
     const service = new StudyService(a.study, new StudyQueue(), new Cadence());
@@ -253,7 +255,7 @@ describe('StudyRepository', () => {
       queue: { horizonHours: 48, limit: 50 },
       now,
     });
-    expect(replay.reviewId).toBe(outcome.inserted.event.id);
+    expect(replay.reviewId).toBe(outcome.inserted.id);
     const card = await a.cards.get(newCard.id, deck.id);
     expect(card?.reviewCount).toBe(1); // applied exactly once
     expect(card?.version).toBe(1);
@@ -274,13 +276,13 @@ describe('StudyRepository', () => {
           afterState: after,
           requestId: '00000000-0000-4000-8000-0000000000a2',
         });
-        await a.study.setCardCadenceState(tx, newCard.id, after);
+        await a.study.setCardCadenceState(tx, newCard.id, after, 0);
         throw new Error('boom');
       }),
     ).rejects.toThrow('boom');
 
-    const events = await sql`select count(*)::int as n from review_events e join cards c on c.id = e.card_id where c.id = ${newCard.id}`;
-    expect(events[0].n).toBe(0);
+    const events = await sql.select().from(reviewEvents).where(eq(reviewEvents.cardId, newCard.id));
+    expect(events).toHaveLength(0);
     const card = await a.cards.get(newCard.id, deck.id);
     expect(card?.version).toBe(0);
   });
@@ -293,16 +295,16 @@ describe('StudyRepository', () => {
 
     const firstLearning = { ...before, cadencePhase: 'learning' as const, nextReviewAt: '2026-09-04T12:01:00.000Z', intervalDays: 1 / 1440, reviewCount: 1, schedulerVersion: 1 };
     const first = await a.study.transaction(async (tx) => {
-      const { event } = await a.study.insertReviewEvent(tx, { cardId: newCard.id, rating: 'again', reviewedAt: now, beforeState: before, afterState: firstLearning, requestId: '00000000-0000-4000-8000-0000000000a3' });
-      await a.study.setCardCadenceState(tx, newCard.id, firstLearning);
+      const event = await a.study.insertReviewEvent(tx, { cardId: newCard.id, rating: 'again', reviewedAt: now, beforeState: before, afterState: firstLearning, requestId: '00000000-0000-4000-8000-0000000000a3' });
+      await a.study.setCardCadenceState(tx, newCard.id, firstLearning, 0);
       return event;
     });
 
     // A second, later rating makes the first no longer "latest active".
     const secondReview = { ...firstLearning, cadencePhase: 'review' as const, nextReviewAt: '2026-09-05T12:00:00.000Z', intervalDays: 1, reviewCount: 2, schedulerVersion: 1 };
     const second = await a.study.transaction(async (tx) => {
-      const { event } = await a.study.insertReviewEvent(tx, { cardId: newCard.id, rating: 'good', reviewedAt: later, beforeState: firstLearning, afterState: secondReview, requestId: '00000000-0000-4000-8000-0000000000a4' });
-      await a.study.setCardCadenceState(tx, newCard.id, secondReview);
+      const event = await a.study.insertReviewEvent(tx, { cardId: newCard.id, rating: 'good', reviewedAt: later, beforeState: firstLearning, afterState: secondReview, requestId: '00000000-0000-4000-8000-0000000000a4' });
+      await a.study.setCardCadenceState(tx, newCard.id, secondReview, 1);
       return event;
     });
 
@@ -320,7 +322,7 @@ describe('StudyRepository', () => {
       const event = await a.study.lockReviewForUpdate(tx, second.id, deck.id);
       if (!event || event.undoneAt) throw new Error('missing');
       await a.study.markEventUndone(tx, second.id, now);
-      await a.study.setCardCadenceState(tx, newCard.id, event.beforeState!);
+      await a.study.setCardCadenceState(tx, newCard.id, event.beforeState!, 2);
     });
 
     const cardAfterUndo = await a.cards.get(newCard.id, deck.id);

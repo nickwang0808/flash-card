@@ -1,7 +1,9 @@
-import type { Sql } from 'postgres';
+import { and, eq } from 'drizzle-orm';
 import type { Deck } from '../../../../src/domain/Deck.ts';
 import { ApplicationError } from '../../../../src/domain/errors.ts';
-import { mapDeckRow, type DeckRow } from './mappers.ts';
+import type { AppDb } from '../../../../src/db/client.ts';
+import { decks } from '../../../../src/db/schema.ts';
+import { mapDeckRow } from './mappers.ts';
 
 /** Tenant-scoped deck persistence. Every method is bound to one authenticated user. */
 export interface DeckRepository {
@@ -18,37 +20,34 @@ const UNIQUE_VIOLATION = '23505';
 
 export class PostgresDeckRepository implements DeckRepository {
   constructor(
-    private readonly sql: Sql,
+    private readonly db: AppDb,
     private readonly userId: string,
   ) {}
 
   async list(): Promise<Deck[]> {
-    const rows = await this.sql<DeckRow[]>`
-      select id, user_id, name, default_speech_locale, created_at, updated_at, version
-      from decks
-      where user_id = ${this.userId}
-      order by name, id
-    `;
+    const rows = await this.db
+      .select()
+      .from(decks)
+      .where(eq(decks.userId, this.userId))
+      .orderBy(decks.name, decks.id);
     return rows.map(mapDeckRow);
   }
 
   async getById(deckId: string): Promise<Deck | null> {
-    const rows = await this.sql<DeckRow[]>`
-      select id, user_id, name, default_speech_locale, created_at, updated_at, version
-      from decks
-      where id = ${deckId} and user_id = ${this.userId}
-      limit 1
-    `;
+    const rows = await this.db
+      .select()
+      .from(decks)
+      .where(and(eq(decks.id, deckId), eq(decks.userId, this.userId)))
+      .limit(1);
     return rows.length === 0 ? null : mapDeckRow(rows[0]);
   }
 
   async create(input: { name: string; defaultSpeechLocale: string | null }): Promise<Deck> {
     try {
-      const rows = await this.sql<DeckRow[]>`
-        insert into decks (user_id, name, default_speech_locale)
-        values (${this.userId}, ${input.name}, ${input.defaultSpeechLocale})
-        returning id, user_id, name, default_speech_locale, created_at, updated_at, version
-      `;
+      const rows = await this.db
+        .insert(decks)
+        .values({ userId: this.userId, name: input.name, defaultSpeechLocale: input.defaultSpeechLocale })
+        .returning();
       return mapDeckRow(rows[0]);
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -60,12 +59,11 @@ export class PostgresDeckRepository implements DeckRepository {
 
   async rename(deckId: string, name: string, expectedVersion: number): Promise<Deck> {
     try {
-      const rows = await this.sql<DeckRow[]>`
-        update decks
-        set name = ${name}, version = version + 1, updated_at = now()
-        where id = ${deckId} and user_id = ${this.userId} and version = ${expectedVersion}
-        returning id, user_id, name, default_speech_locale, created_at, updated_at, version
-      `;
+      const rows = await this.db
+        .update(decks)
+        .set({ name, version: expectedVersion + 1, updatedAt: new Date() })
+        .where(and(eq(decks.id, deckId), eq(decks.userId, this.userId), eq(decks.version, expectedVersion)))
+        .returning();
       if (rows.length === 0) {
         throw await this.versionOrMissingError(deckId, expectedVersion);
       }
@@ -79,19 +77,21 @@ export class PostgresDeckRepository implements DeckRepository {
   }
 
   async remove(deckId: string, expectedVersion: number): Promise<void> {
-    const result = await this.sql`
-      delete from decks
-      where id = ${deckId} and user_id = ${this.userId} and version = ${expectedVersion}
-    `;
-    if (result.count === 0) {
+    const rows = await this.db
+      .delete(decks)
+      .where(and(eq(decks.id, deckId), eq(decks.userId, this.userId), eq(decks.version, expectedVersion)))
+      .returning({ id: decks.id });
+    if (rows.length === 0) {
       throw await this.versionOrMissingError(deckId, expectedVersion);
     }
   }
 
   async owned(deckId: string): Promise<boolean> {
-    const rows = await this.sql`
-      select 1 from decks where id = ${deckId} and user_id = ${this.userId} limit 1
-    `;
+    const rows = await this.db
+      .select({ id: decks.id })
+      .from(decks)
+      .where(and(eq(decks.id, deckId), eq(decks.userId, this.userId)))
+      .limit(1);
     return rows.length === 1;
   }
 
@@ -106,5 +106,14 @@ export class PostgresDeckRepository implements DeckRepository {
 }
 
 function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: string }).code === UNIQUE_VIOLATION;
+  const candidate =
+    typeof error === 'object' && error !== null && 'cause' in error && error.cause !== undefined
+      ? error.cause
+      : error;
+  return (
+    typeof candidate === 'object' &&
+    candidate !== null &&
+    'code' in candidate &&
+    candidate.code === UNIQUE_VIOLATION
+  );
 }
