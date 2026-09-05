@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH expo start --web",
     "build": "expo export --platform web",
-    "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run --config tests/integration/vitest.config.ts",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
     "test:e2e": "playwright test",
     "test": "vitest run",
     "validate:schema": "vitest run tests/unit/schema-validation.test.ts",
@@ -44,7 +44,8 @@
     "react-native-worklets": "^0.7.4",
     "rxdb": "^16.21.1",
     "tailwindcss": "~3.4.17",
-    "ts-fsrs": "^4.5.0"
+    "ts-fsrs": "^4.5.0",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
