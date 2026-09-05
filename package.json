@@ -8,6 +8,7 @@
     "build": "expo export --platform web",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
+    "test:acceptance": "node scripts/run-acceptance.mjs",
     "test": "vitest run",
     "knip": "knip",
     "check": "tsc && knip",

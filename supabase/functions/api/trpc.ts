@@ -6,18 +6,21 @@ import type { VerifiedIdentity } from './identity.ts';
 export interface ApiContext {
   identity: VerifiedIdentity;
   db: AppDb;
+  /** One immutable application instant for the complete HTTP request. */
+  now: Date;
 }
 
 const t = initTRPC.context<ApiContext>().create({
   errorFormatter({ error, shape }) {
     const cause = rootCause(error.cause);
     const applicationError = cause instanceof ApplicationError ? cause : null;
+    const { stack: _stack, ...data } = shape.data;
     return {
       ...shape,
       message: applicationError?.message ?? shape.message,
       data: {
-        ...shape.data,
-        code: applicationError ? toTRPCErrorCode(applicationError.code) : shape.data.code,
+        ...data,
+        code: applicationError ? toTRPCErrorCode(applicationError.code) : data.code,
         applicationCode: applicationError?.code,
       },
     };

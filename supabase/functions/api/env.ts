@@ -14,6 +14,11 @@ export interface ApiEnv {
   jwtSecret: string | null;
   databaseUrl: string;
   allowedOrigins: readonly string[];
+  /**
+   * Ephemeral secret set only by the local acceptance-test runner. Its absence
+   * keeps application time bound to the Edge Runtime clock.
+   */
+  testClockSecret: string | null;
 }
 
 export function readApiEnv(): ApiEnv {
@@ -43,5 +48,5 @@ export function readApiEnv(): ApiEnv {
     }
   }
 
-  return { jwkSet, jwtSecret, databaseUrl, allowedOrigins };
+  return { jwkSet, jwtSecret, databaseUrl, allowedOrigins, testClockSecret: Deno.env.get('FLASHCARD_TEST_CLOCK_SECRET') ?? null };
 }

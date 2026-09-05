@@ -1,0 +1,1 @@
+-- Intentionally empty historical Drizzle baseline.

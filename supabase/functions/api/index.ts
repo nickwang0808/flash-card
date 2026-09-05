@@ -16,11 +16,26 @@ const env = readApiEnv();
 function corsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get('origin');
   const allowed = env.allowedOrigins.includes('*') || (origin !== null && env.allowedOrigins.includes(origin)) ? (origin ?? '*') : null;
-  return { 'Access-Control-Allow-Origin': allowed ?? 'null', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Max-Age': '86400', Vary: 'Origin' };
+  return {
+    'Access-Control-Allow-Origin': allowed ?? 'null',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Flashcard-Test-Clock, X-Flashcard-Test-Secret',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  };
 }
 
-function buildContext(identity: VerifiedIdentity): ApiContext {
-  return { identity, db: getDb(env.databaseUrl) };
+function requestNow(request: Request): Date {
+  const suppliedSecret = request.headers.get('x-flashcard-test-secret');
+  const suppliedClock = request.headers.get('x-flashcard-test-clock');
+  if (env.testClockSecret === null || suppliedSecret !== env.testClockSecret || suppliedClock === null) return new Date();
+  const now = new Date(suppliedClock);
+  if (Number.isNaN(now.getTime())) return new Date();
+  return now;
+}
+
+function buildContext(identity: VerifiedIdentity, now: Date): ApiContext {
+  return { identity, db: getDb(env.databaseUrl), now };
 }
 
 Deno.serve(async (request: Request) => {
@@ -33,11 +48,12 @@ Deno.serve(async (request: Request) => {
   } catch {
     return new Response(JSON.stringify({ error: { message: 'Invalid or expired access token', code: 'UNAUTHORIZED' } }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders(request) } });
   }
+  const now = requestNow(request);
   return fetchRequestHandler({
     endpoint: '/api',
     req: request,
     router: appRouter,
-    createContext: () => buildContext(identity),
+    createContext: () => buildContext(identity, now),
     onError({ error }) {
       if (Deno.env.get('DEV') === 'true') console.error('tRPC error:', error.message);
     },

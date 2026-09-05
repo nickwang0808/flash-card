@@ -45,7 +45,8 @@ export const deckRouter = t.router({
   }),
   create: protectedProcedure.input(DeckCreateInputSchema).output(DeckSchema).mutation(async ({ ctx, input }) => {
     try {
-      const rows = await ctx.db.insert(decks).values({ userId: ctx.identity.userId, name: input.name, defaultSpeechLocale: input.defaultSpeechLocale }).returning();
+      const timestamp = ctx.now.toISOString();
+      const rows = await ctx.db.insert(decks).values({ userId: ctx.identity.userId, name: input.name, defaultSpeechLocale: input.defaultSpeechLocale, createdAt: timestamp, updatedAt: timestamp }).returning();
       return mapDeck(rows[0]);
     } catch (error) {
       if (isUniqueViolation(error)) throw new ApplicationError('CONFLICT', `A deck named "${input.name}" already exists`);
@@ -54,7 +55,7 @@ export const deckRouter = t.router({
   }),
   rename: protectedProcedure.input(DeckRenameInputSchema).output(DeckSchema).mutation(async ({ ctx, input }) => {
     try {
-      const rows = await ctx.db.update(decks).set({ name: input.name, version: input.expectedVersion + 1, updatedAt: new Date().toISOString() }).where(and(eq(decks.id, input.deckId), eq(decks.userId, ctx.identity.userId), eq(decks.version, input.expectedVersion))).returning();
+      const rows = await ctx.db.update(decks).set({ name: input.name, version: input.expectedVersion + 1, updatedAt: ctx.now.toISOString() }).where(and(eq(decks.id, input.deckId), eq(decks.userId, ctx.identity.userId), eq(decks.version, input.expectedVersion))).returning();
       if (rows.length === 0) {
         await requireDeck(ctx.db, ctx.identity.userId, input.deckId);
         throw new ApplicationError('CONFLICT', `Deck changed since version ${input.expectedVersion}`);
@@ -75,6 +76,6 @@ export const deckRouter = t.router({
   }),
   queue: protectedProcedure.input(DeckQueueInputSchema).output(QueueSnapshotSchema).query(async ({ ctx, input }) => {
     await requireDeck(ctx.db, ctx.identity.userId, input.deckId);
-    return queueSnapshot(ctx.db, ctx.identity.userId, input.deckId, input, new Date());
+    return queueSnapshot(ctx.db, ctx.identity.userId, input.deckId, input, ctx.now);
   }),
 });

@@ -14,6 +14,6 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['src/**/*.test.{ts,tsx}', 'supabase/functions/**/*.test.{ts,tsx}', 'tests/**/*.test.{ts,tsx}'],
-    exclude: ['**/*.integration.test.*'],
+    exclude: ['**/*.integration.test.*', '**/acceptance/**/*.acceptance.test.*'],
   },
 });

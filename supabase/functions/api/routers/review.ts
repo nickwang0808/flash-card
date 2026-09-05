@@ -54,7 +54,7 @@ async function queueSnapshot(db: Parameters<typeof cardsOwnedBy>[0], userId: str
 
 export const reviewRouter = t.router({
   rate: protectedProcedure.input(ReviewRateInputSchema).output(ReviewRateOutputSchema).mutation(async ({ ctx, input }) => {
-    const now = new Date();
+    const now = ctx.now;
     let reviewId: string;
     try {
       reviewId = await ctx.db.transaction(async (tx) => {
@@ -69,7 +69,7 @@ export const reviewRouter = t.router({
         const afterState = new Cadence().rate(beforeState, input.rating, now);
         let eventRows;
         try {
-          eventRows = await tx.insert(reviewEvents).values({ cardId: input.cardId, rating: input.rating, reviewedAt: now.toISOString(), beforeState, afterState, requestId: input.requestId }).returning();
+          eventRows = await tx.insert(reviewEvents).values({ cardId: input.cardId, rating: input.rating, reviewedAt: now.toISOString(), beforeState, afterState, requestId: input.requestId, createdAt: now.toISOString() }).returning();
         } catch (error) {
           if (isUniqueViolation(error)) throw new ReviewRequestExists(input.cardId, input.requestId);
           throw error;
@@ -86,7 +86,7 @@ export const reviewRouter = t.router({
     return { reviewId, queue: await queueSnapshot(ctx.db, ctx.identity.userId, input.deckId, input.queue, now) };
   }),
   undo: protectedProcedure.input(ReviewUndoInputSchema).output(ReviewUndoOutputSchema).mutation(async ({ ctx, input }) => {
-    const now = new Date();
+    const now = ctx.now;
     await ctx.db.transaction(async (tx) => {
       await requireDeck(tx, ctx.identity.userId, input.deckId);
       const eventRows = await reviewEventsOf(tx, ctx.identity.userId).where(and(eq(reviewEvents.id, input.reviewId), eq(decks.id, input.deckId))).limit(1).for('update', { of: reviewEvents });

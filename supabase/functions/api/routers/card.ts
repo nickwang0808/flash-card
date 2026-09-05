@@ -50,8 +50,8 @@ async function versionError(db: Parameters<typeof cardsOwnedBy>[0], userId: stri
   const rows = await cardsOwnedBy(db, userId).where(and(eq(cards.id, cardId), eq(cards.deckId, deckId))).limit(1);
   return new ApplicationError(rows.length === 0 ? 'NOT_FOUND' : 'CONFLICT', rows.length === 0 ? 'Card not found' : `Card changed since version ${expectedVersion}`);
 }
-async function recordRevision(tx: Parameters<typeof cardsOwnedBy>[0], cardId: string, eventType: 'created' | 'edited' | 'restored' | 'ai_generated', beforeContent: CardContent | null, afterContent: CardContent) {
-  await tx.insert(cardRevisions).values({ cardId, eventType, beforeContent, afterContent });
+async function recordRevision(tx: Parameters<typeof cardsOwnedBy>[0], cardId: string, eventType: 'created' | 'edited' | 'restored' | 'ai_generated', beforeContent: CardContent | null, afterContent: CardContent, now: Date) {
+  await tx.insert(cardRevisions).values({ cardId, eventType, beforeContent, afterContent, createdAt: now.toISOString() });
 }
 
 export const cardRouter = t.router({
@@ -72,9 +72,10 @@ export const cardRouter = t.router({
     await requireDeck(ctx.db, ctx.identity.userId, input.deckId);
     const content = { name: input.name, frontMarkdown: input.frontMarkdown, backMarkdown: input.backMarkdown, speechText: input.speechText, speechLocale: input.speechLocale };
     return ctx.db.transaction(async (tx) => {
-      const rows = await tx.insert(cards).values({ deckId: input.deckId, ...content, tags: input.tags }).returning();
+      const timestamp = ctx.now.toISOString();
+      const rows = await tx.insert(cards).values({ deckId: input.deckId, ...content, tags: input.tags, createdAt: timestamp, updatedAt: timestamp }).returning();
       const card = mapCard(rows[0]);
-      await recordRevision(tx, card.id, 'created', null, content);
+      await recordRevision(tx, card.id, 'created', null, content, ctx.now);
       return card;
     });
   }),
@@ -83,31 +84,30 @@ export const cardRouter = t.router({
     return ctx.db.transaction(async (tx) => {
       const before = mapCard(await requireDeckForCard(tx, ctx.identity.userId, input.cardId, input.deckId));
       if (before.version !== input.expectedVersion) throw new ApplicationError('CONFLICT', `Card changed since version ${input.expectedVersion}`);
-      const rows = await tx.update(cards).set({ ...content, tags: input.tags, version: input.expectedVersion + 1, updatedAt: new Date().toISOString() }).where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion))).returning();
+      const rows = await tx.update(cards).set({ ...content, tags: input.tags, version: input.expectedVersion + 1, updatedAt: ctx.now.toISOString() }).where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion))).returning();
       if (rows.length === 0) throw await versionError(tx, ctx.identity.userId, input.cardId, input.deckId, input.expectedVersion);
       const card = mapCard(rows[0]);
-      await recordRevision(tx, card.id, 'edited', contentOf(before), content);
+      await recordRevision(tx, card.id, 'edited', contentOf(before), content, ctx.now);
       return card;
     });
   }),
   suspend: protectedProcedure.input(CardSuspendInputSchema).output(ReplacementQueueSchema).mutation(async ({ ctx, input }) => {
     await requireDeckForCard(ctx.db, ctx.identity.userId, input.cardId, input.deckId);
-    const rows = await ctx.db.update(cards).set({ suspended: true, version: input.expectedVersion + 1, updatedAt: new Date().toISOString() }).where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion))).returning();
+    const rows = await ctx.db.update(cards).set({ suspended: true, version: input.expectedVersion + 1, updatedAt: ctx.now.toISOString() }).where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion))).returning();
     if (rows.length === 0) throw await versionError(ctx.db, ctx.identity.userId, input.cardId, input.deckId, input.expectedVersion);
-    const now = new Date();
-    return { queue: await queueSnapshot(ctx.db, ctx.identity.userId, input.deckId, input.queue, now) };
+    return { queue: await queueSnapshot(ctx.db, ctx.identity.userId, input.deckId, input.queue, ctx.now) };
   }),
   restore: protectedProcedure.input(CardSuspendInputSchema).output(z.object({ card: CardSchema, queue: ReplacementQueueSchema.shape.queue })).mutation(async ({ ctx, input }) => {
     await requireDeckForCard(ctx.db, ctx.identity.userId, input.cardId, input.deckId);
-    const rows = await ctx.db.update(cards).set({ suspended: false, version: input.expectedVersion + 1, updatedAt: new Date().toISOString() }).where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion))).returning();
+    const rows = await ctx.db.update(cards).set({ suspended: false, version: input.expectedVersion + 1, updatedAt: ctx.now.toISOString() }).where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion))).returning();
     if (rows.length === 0) throw await versionError(ctx.db, ctx.identity.userId, input.cardId, input.deckId, input.expectedVersion);
-    return { card: mapCard(rows[0]), queue: await queueSnapshot(ctx.db, ctx.identity.userId, input.deckId, input.queue, new Date()) };
+    return { card: mapCard(rows[0]), queue: await queueSnapshot(ctx.db, ctx.identity.userId, input.deckId, input.queue, ctx.now) };
   }),
   remove: protectedProcedure.input(CardRemoveInputSchema).output(ReplacementQueueSchema).mutation(async ({ ctx, input }) => {
     await requireDeckForCard(ctx.db, ctx.identity.userId, input.cardId, input.deckId);
     const rows = await ctx.db.delete(cards).where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion))).returning({ id: cards.id });
     if (rows.length === 0) throw await versionError(ctx.db, ctx.identity.userId, input.cardId, input.deckId, input.expectedVersion);
-    return { queue: await queueSnapshot(ctx.db, ctx.identity.userId, input.deckId, input.queue, new Date()) };
+    return { queue: await queueSnapshot(ctx.db, ctx.identity.userId, input.deckId, input.queue, ctx.now) };
   }),
   revisions: protectedProcedure.input(CardRevisionsInputSchema).output(z.object({ revisions: z.array(CardRevisionSchema), pageInfo: PageInfoSchema })).query(async ({ ctx, input }) => {
     await requireDeckForCard(ctx.db, ctx.identity.userId, input.cardId, input.deckId);
@@ -126,10 +126,10 @@ export const cardRouter = t.router({
     if (rows.length === 0) throw new ApplicationError('NOT_FOUND', 'Revision not found');
     const revision = rows[0].revision;
     if (before.version !== input.expectedVersion) throw new ApplicationError('CONFLICT', `Card changed since version ${input.expectedVersion}`);
-    const rowsUpdated = await tx.update(cards).set({ name: revision.afterContent.name, frontMarkdown: revision.afterContent.frontMarkdown, backMarkdown: revision.afterContent.backMarkdown, speechText: revision.afterContent.speechText, speechLocale: revision.afterContent.speechLocale, version: input.expectedVersion + 1, updatedAt: new Date().toISOString() }).where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion))).returning();
+    const rowsUpdated = await tx.update(cards).set({ name: revision.afterContent.name, frontMarkdown: revision.afterContent.frontMarkdown, backMarkdown: revision.afterContent.backMarkdown, speechText: revision.afterContent.speechText, speechLocale: revision.afterContent.speechLocale, version: input.expectedVersion + 1, updatedAt: ctx.now.toISOString() }).where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion))).returning();
     if (rowsUpdated.length === 0) throw await versionError(tx, ctx.identity.userId, input.cardId, input.deckId, input.expectedVersion);
     const card = mapCard(rowsUpdated[0]);
-    await recordRevision(tx, card.id, 'restored', contentOf(before), revision.afterContent);
+    await recordRevision(tx, card.id, 'restored', contentOf(before), revision.afterContent, ctx.now);
     return card;
   })),
 });

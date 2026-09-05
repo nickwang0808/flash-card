@@ -17,13 +17,11 @@ export type AppDbWithPool = AppDb & { $client: postgres.Sql };
  */
 export type DbTransaction = AppDb;
 
-let shared: AppDb | undefined;
+let shared: { databaseUrl: string; db: AppDbWithPool } | undefined;
 
-/**
- * One Drizzle pool per function worker, reused across requests. The
- * connection string is a server-only secret and never reaches the client.
- */
+/** Returns one production pool per Edge Function worker and database URL. */
 export function getDb(databaseUrl: string): AppDbWithPool {
+  if (shared?.databaseUrl === databaseUrl) return shared.db;
   const pool = postgres(databaseUrl, {
     max: 5,
     // Supabase transaction-pooler URLs carry sslmode=require; local URLs do not.
@@ -31,6 +29,6 @@ export function getDb(databaseUrl: string): AppDbWithPool {
   });
   const db = drizzle(pool, { schema }) as AppDbWithPool;
   Object.defineProperty(db, '$client', { value: pool, enumerable: true });
-  shared = db;
+  shared = { databaseUrl, db };
   return db;
 }

@@ -30,26 +30,6 @@ export function localStackEnv(): Record<string, string> {
   };
 }
 
-interface TestUser {
-  id: string;
-  email: string;
-  password: string;
-}
-
-export const TEST_PASSWORD = 'test-password-123';
-
-/** Creates an email-confirmed user through the admin API; the caller deletes after. */
-export async function createTestUser(client: SupabaseClient, email: string): Promise<TestUser> {
-  const { data, error } = await client.auth.admin.createUser({ email, password: TEST_PASSWORD, email_confirm: true });
-  if (!data.user || error) {
-    throw new Error(`Failed to create test user ${email}: ${error?.message ?? 'unknown'}`);
-  }
-  return { id: data.user.id, email, password: TEST_PASSWORD };
-}
-
-export async function deleteTestUser(client: SupabaseClient, userId: string): Promise<void> {
-  await client.auth.admin.deleteUser(userId);
-}
 
 /**
  * Deletes a user by email if one exists. Integration suites call this in

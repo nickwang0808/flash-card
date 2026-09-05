@@ -7,7 +7,7 @@
   ],
   "project": ["src/**/*.{ts,tsx}", "app/**/*.{ts,tsx}", "supabase/**/*.{ts,tsx}"],
   "vitest": {
-    "config": ["vitest.config.ts", "vitest.integration.config.ts"]
+    "config": ["vitest.config.ts", "vitest.integration.config.ts", "vitest.acceptance.config.ts"]
   },
   "ignoreDependencies": ["expo-updates", "expo-system-ui"],
   "ignoreBinaries": [],
