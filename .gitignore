@@ -15,3 +15,10 @@ tsconfig.tsbuildinfo
 .expo/
 ios/
 android/
+
+
+# Isolated local acceptance-stack state
+acceptance/supabase/.temp/
+acceptance/supabase/.branches/
+acceptance/supabase/snippets/
+acceptance/src/
