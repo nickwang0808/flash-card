@@ -34,35 +34,35 @@ export type Database = {
   }
   public: {
     Tables: {
-      card_snapshots: {
+      card_revisions: {
         Row: {
-          cardId: string
-          createdAt: string
-          eventType: string
+          after_content: Json
+          before_content: Json | null
+          card_id: string
+          created_at: string
+          event_type: string
           id: string
-          snapshot: Json
-          userId: string
         }
         Insert: {
-          cardId: string
-          createdAt?: string
-          eventType: string
+          after_content: Json
+          before_content?: Json | null
+          card_id: string
+          created_at?: string
+          event_type: string
           id?: string
-          snapshot: Json
-          userId: string
         }
         Update: {
-          cardId?: string
-          createdAt?: string
-          eventType?: string
+          after_content?: Json
+          before_content?: Json | null
+          card_id?: string
+          created_at?: string
+          event_type?: string
           id?: string
-          snapshot?: Json
-          userId?: string
         }
         Relationships: [
           {
-            foreignKeyName: "card_snapshots_cardId_fkey"
-            columns: ["cardId"]
+            foreignKeyName: "card_revisions_card_id_fkey"
+            columns: ["card_id"]
             isOneToOne: false
             referencedRelation: "cards"
             referencedColumns: ["id"]
@@ -71,203 +71,143 @@ export type Database = {
       }
       cards: {
         Row: {
-          _deleted: boolean
-          _modified: string
-          approved: boolean
-          back: string
-          created: string
-          deckName: string
-          front: string | null
+          back_markdown: string
+          cadence_phase: string | null
+          created_at: string
+          deck_id: string
+          front_markdown: string
           id: string
-          order: number
-          reversible: boolean
+          interval_days: number | null
+          lapse_count: number
+          name: string
+          next_review_at: string | null
+          review_count: number
+          scheduler_version: number | null
+          speech_locale: string | null
+          speech_text: string | null
           suspended: boolean
-          tags: string | null
-          term: string
-          userId: string
+          tags: string[]
+          updated_at: string
+          version: number
         }
         Insert: {
-          _deleted?: boolean
-          _modified?: string
-          approved?: boolean
-          back: string
-          created: string
-          deckName: string
-          front?: string | null
+          back_markdown: string
+          cadence_phase?: string | null
+          created_at?: string
+          deck_id: string
+          front_markdown: string
           id?: string
-          order?: number
-          reversible?: boolean
+          interval_days?: number | null
+          lapse_count?: number
+          name: string
+          next_review_at?: string | null
+          review_count?: number
+          scheduler_version?: number | null
+          speech_locale?: string | null
+          speech_text?: string | null
           suspended?: boolean
-          tags?: string | null
-          term: string
-          userId: string
+          tags?: string[]
+          updated_at?: string
+          version?: number
         }
         Update: {
-          _deleted?: boolean
-          _modified?: string
-          approved?: boolean
-          back?: string
-          created?: string
-          deckName?: string
-          front?: string | null
+          back_markdown?: string
+          cadence_phase?: string | null
+          created_at?: string
+          deck_id?: string
+          front_markdown?: string
           id?: string
-          order?: number
-          reversible?: boolean
+          interval_days?: number | null
+          lapse_count?: number
+          name?: string
+          next_review_at?: string | null
+          review_count?: number
+          scheduler_version?: number | null
+          speech_locale?: string | null
+          speech_text?: string | null
           suspended?: boolean
-          tags?: string | null
-          term?: string
-          userId?: string
-        }
-        Relationships: []
-      }
-      review_logs: {
-        Row: {
-          _deleted: boolean
-          _modified: string
-          cardId: string
-          difficulty: number
-          due: string
-          elapsedDays: number
-          id: string
-          isReverse: boolean
-          lastElapsedDays: number
-          rating: number
-          review: string
-          scheduledDays: number
-          stability: number
-          state: number
-          userId: string
-        }
-        Insert: {
-          _deleted?: boolean
-          _modified?: string
-          cardId: string
-          difficulty: number
-          due: string
-          elapsedDays: number
-          id?: string
-          isReverse?: boolean
-          lastElapsedDays: number
-          rating: number
-          review: string
-          scheduledDays: number
-          stability: number
-          state: number
-          userId: string
-        }
-        Update: {
-          _deleted?: boolean
-          _modified?: string
-          cardId?: string
-          difficulty?: number
-          due?: string
-          elapsedDays?: number
-          id?: string
-          isReverse?: boolean
-          lastElapsedDays?: number
-          rating?: number
-          review?: string
-          scheduledDays?: number
-          stability?: number
-          state?: number
-          userId?: string
+          tags?: string[]
+          updated_at?: string
+          version?: number
         }
         Relationships: [
           {
-            foreignKeyName: "review_logs_cardId_fkey"
-            columns: ["cardId"]
+            foreignKeyName: "cards_deck_id_fkey"
+            columns: ["deck_id"]
             isOneToOne: false
-            referencedRelation: "cards"
+            referencedRelation: "decks"
             referencedColumns: ["id"]
           },
         ]
       }
-      settings: {
+      decks: {
         Row: {
-          _deleted: boolean
-          _modified: string
+          created_at: string
+          default_speech_locale: string | null
           id: string
-          newCardsPerDay: number
-          reviewOrder: string
-          theme: string
-          userId: string
+          name: string
+          updated_at: string
+          user_id: string
+          version: number
         }
         Insert: {
-          _deleted?: boolean
-          _modified?: string
+          created_at?: string
+          default_speech_locale?: string | null
           id?: string
-          newCardsPerDay?: number
-          reviewOrder?: string
-          theme?: string
-          userId: string
+          name: string
+          updated_at?: string
+          user_id: string
+          version?: number
         }
         Update: {
-          _deleted?: boolean
-          _modified?: string
+          created_at?: string
+          default_speech_locale?: string | null
           id?: string
-          newCardsPerDay?: number
-          reviewOrder?: string
-          theme?: string
-          userId?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+          version?: number
         }
         Relationships: []
       }
-      srs_state: {
+      review_events: {
         Row: {
-          _deleted: boolean
-          _modified: string
-          cardId: string
-          difficulty: number | null
-          direction: string
-          due: string | null
-          elapsedDays: number | null
+          after_state: Json
+          before_state: Json | null
+          card_id: string
+          created_at: string
           id: string
-          lapses: number | null
-          lastReview: string | null
-          reps: number | null
-          scheduledDays: number | null
-          stability: number | null
-          state: number | null
-          userId: string
+          rating: string
+          request_id: string
+          reviewed_at: string
+          undone_at: string | null
         }
         Insert: {
-          _deleted?: boolean
-          _modified?: string
-          cardId: string
-          difficulty?: number | null
-          direction: string
-          due?: string | null
-          elapsedDays?: number | null
+          after_state: Json
+          before_state?: Json | null
+          card_id: string
+          created_at?: string
           id?: string
-          lapses?: number | null
-          lastReview?: string | null
-          reps?: number | null
-          scheduledDays?: number | null
-          stability?: number | null
-          state?: number | null
-          userId: string
+          rating: string
+          request_id: string
+          reviewed_at: string
+          undone_at?: string | null
         }
         Update: {
-          _deleted?: boolean
-          _modified?: string
-          cardId?: string
-          difficulty?: number | null
-          direction?: string
-          due?: string | null
-          elapsedDays?: number | null
+          after_state?: Json
+          before_state?: Json | null
+          card_id?: string
+          created_at?: string
           id?: string
-          lapses?: number | null
-          lastReview?: string | null
-          reps?: number | null
-          scheduledDays?: number | null
-          stability?: number | null
-          state?: number | null
-          userId?: string
+          rating?: string
+          request_id?: string
+          reviewed_at?: string
+          undone_at?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "srs_state_cardId_fkey"
-            columns: ["cardId"]
+            foreignKeyName: "review_events_card_id_fkey"
+            columns: ["card_id"]
             isOneToOne: false
             referencedRelation: "cards"
             referencedColumns: ["id"]

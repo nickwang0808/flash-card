@@ -40,6 +40,7 @@ export const CardSuspendInputSchema = z.object({
   queue: QueueOptionsSchema,
 });
 export const CardSuspendOutputSchema = ReplacementQueueSchema;
+export type CardRestoreInput = CardSuspendInput;
 export const CardRestoreInputSchema = CardSuspendInputSchema;
 export const CardRestoreOutputSchema = z.object({ card: CardSchema, queue: ReplacementQueueSchema.shape.queue });
 export const CardRemoveInputSchema = z.object({
