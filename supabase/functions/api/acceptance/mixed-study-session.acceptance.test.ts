@@ -34,7 +34,7 @@ describe('mixed study state', () => {
     expect(snapshot.items[2]).toMatchObject({ id: future.id, status: 'future' });
 
     const firstNew = snapshot.items.find((item) => item.status === 'new')!;
-    const rate = await actor.api.review.rate({ cardId: firstNew.id, deckId: deck.id, rating: 'again', expectedVersion: 0, requestId: crypto.randomUUID(), queue });
+    const rate = await actor.api.review.rate({ cadenceId: firstNew.id, deckId: deck.id, rating: 'again', expectedVersion: 0, requestId: crypto.randomUUID(), queue });
     const retryIndex = rate.queue.items.findIndex((item) => item.id === firstNew.id);
     const remainingNewIndex = rate.queue.items.findIndex((item) => item.status === 'new');
     expect(retryIndex).toBeGreaterThanOrEqual(0);
@@ -43,7 +43,7 @@ describe('mixed study state', () => {
 
     const reloaded = await actor.api.deck.queue({ deckId: deck.id, ...queue });
     expect(reloaded).toEqual(rate.queue);
-    const history = await actor.api.review.history({ cardId: firstNew.id, deckId: deck.id, pagination: { limit: 10 } });
+    const history = await actor.api.review.history({ cadenceId: firstNew.id, deckId: deck.id, pagination: { limit: 10 } });
     expect(history.events).toHaveLength(1);
 
     const undone = await actor.api.review.undo({ reviewId: rate.reviewId, deckId: deck.id, queue });
@@ -57,7 +57,7 @@ describe('mixed study state', () => {
     const second = await createNewCard(actor, deck, { name: 'second' });
     const limitOne = { limit: 1 };
     expect((await actor.api.deck.queue({ deckId: deck.id, ...limitOne })).items).toHaveLength(1);
-    const rated = await actor.api.review.rate({ cardId: first.id, deckId: deck.id, rating: 'good', expectedVersion: 0, requestId: crypto.randomUUID(), queue: limitOne });
+    const rated = await actor.api.review.rate({ cadenceId: first.cadences[0].id, deckId: deck.id, rating: 'good', expectedVersion: 0, requestId: crypto.randomUUID(), queue: limitOne });
     expect(rated.queue.items.map(({ id }) => id)).toEqual([second.id]);
     expect(rated.queue).toEqual(await actor.api.deck.queue({ deckId: deck.id, ...limitOne }));
     const undone = await actor.api.review.undo({ reviewId: rated.reviewId, deckId: deck.id, queue: limitOne });

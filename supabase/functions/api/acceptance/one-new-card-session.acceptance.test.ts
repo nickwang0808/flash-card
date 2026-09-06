@@ -21,12 +21,12 @@ describe('one new card study session', () => {
     expect(initial).toMatchObject({ asOf: actor.clock.iso(), items: [{ id: card.id, status: 'new', name: 'Hola', frontMarkdown: 'Hello', backMarkdown: 'Hola', tags: ['greeting'] }] });
 
     const expected = new Cadence().rate({ nextReviewAt: null, intervalDays: null, reviewCount: 0, lapseCount: 0 }, 'good', actor.clock.now());
-    const rated = await actor.api.review.rate({ cardId: card.id, deckId: deck.id, rating: 'good', expectedVersion: 0, requestId: crypto.randomUUID(), queue });
+    const rated = await actor.api.review.rate({ cadenceId: card.cadences[0].id, deckId: deck.id, rating: 'good', expectedVersion: 0, requestId: crypto.randomUUID(), queue });
     expect(rated.queue).toMatchObject({ asOf: actor.clock.iso(), items: [] });
 
     const afterRate = await actor.api.card.get({ cardId: card.id, deckId: deck.id });
     expect(afterRate).toMatchObject({ version: 1, ...expected, updatedAt: actor.clock.iso() });
-    const history = await actor.api.review.history({ cardId: card.id, deckId: deck.id, pagination: { limit: 10 } });
+    const history = await actor.api.review.history({ cadenceId: card.cadences[0].id, deckId: deck.id, pagination: { limit: 10 } });
     expect(history.events).toMatchObject([{ id: rated.reviewId, rating: 'good', reviewedAt: actor.clock.iso(), beforeState: { nextReviewAt: null, intervalDays: null, reviewCount: 0, lapseCount: 0 }, afterState: expected, undoneAt: null }]);
 
     actor.clock.set(expected.nextReviewAt!);

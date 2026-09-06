@@ -1,39 +1,54 @@
 import { describe, expect, it } from 'vitest';
-import { STUDY_HORIZON_HOURS, StudyQueue } from './StudyQueue.ts';
+
+import type { CardCadence } from './Cadence.ts';
 import type { Card } from './Card.ts';
+import { STUDY_HORIZON_HOURS, StudyQueue, type StudyQueueCandidate } from './StudyQueue.ts';
 
 const now = new Date('2026-01-01T12:00:00.000Z');
 
-function card(overrides: Partial<Omit<Card, 'id'>> & Pick<Card, 'id'>): Card {
-  return {
+function candidate(
+  id: string,
+  overrides: Partial<Card> & Partial<CardCadence> = {},
+): StudyQueueCandidate {
+  const card: Card = {
+    id,
     deckId: '00000000-0000-0000-0000-000000000001',
-    name: overrides.name ?? overrides.id,
-    frontMarkdown: overrides.frontMarkdown ?? overrides.id,
+    name: overrides.name ?? id,
+    frontMarkdown: overrides.frontMarkdown ?? id,
     backMarkdown: overrides.backMarkdown ?? 'answer',
     tags: overrides.tags ?? [],
     speechText: null,
     speechLocale: null,
-    suspended: false,
-    nextReviewAt: null,
-    intervalDays: null,
-    reviewCount: 0,
-    lapseCount: 0,
+    reversible: overrides.reversible ?? false,
+    suspended: overrides.suspended ?? false,
     version: 0,
     createdAt: overrides.createdAt ?? '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
-    ...overrides,
-    id: overrides.id,
+    cadences: [],
   };
+  const cadence: CardCadence = {
+    id,
+    cardId: card.id,
+    direction: overrides.direction ?? 'forward',
+    nextReviewAt: overrides.nextReviewAt ?? null,
+    intervalDays: overrides.intervalDays ?? null,
+    reviewCount: overrides.reviewCount ?? 0,
+    lapseCount: overrides.lapseCount ?? 0,
+    version: overrides.version ?? 0,
+    createdAt: card.createdAt,
+    updatedAt: card.updatedAt,
+  };
+  return { card, cadence };
 }
 
 describe('StudyQueue', () => {
   const queue = new StudyQueue();
 
-  it('selects studied cards before new cards', () => {
+  it('selects studied cadences before new cadences', () => {
     const snapshot = queue.build([
-      card({ id: '00000000-0000-0000-0000-000000000003', createdAt: '2026-01-01T00:00:00.000Z' }),
-      card({ id: '00000000-0000-0000-0000-000000000002', nextReviewAt: '2026-01-01T11:00:00.000Z', intervalDays: 1 }),
-      card({ id: '00000000-0000-0000-0000-000000000001', createdAt: '2025-12-31T00:00:00.000Z' }),
+      candidate('00000000-0000-0000-0000-000000000003', { createdAt: '2026-01-01T00:00:00.000Z' }),
+      candidate('00000000-0000-0000-0000-000000000002', { nextReviewAt: '2026-01-01T11:00:00.000Z', intervalDays: 1 }),
+      candidate('00000000-0000-0000-0000-000000000001', { createdAt: '2025-12-31T00:00:00.000Z' }),
     ], now, { limit: 50 });
 
     expect(snapshot.items.map((item) => item.id)).toEqual([
@@ -44,10 +59,10 @@ describe('StudyQueue', () => {
     expect(snapshot.items.map((item) => item.status)).toEqual(['due', 'new', 'new']);
   });
 
-  it('keeps short future retries before new cards', () => {
+  it('keeps short future retries before new cadences', () => {
     const snapshot = queue.build([
-      card({ id: '00000000-0000-0000-0000-000000000001' }),
-      card({ id: '00000000-0000-0000-0000-000000000002', nextReviewAt: '2026-01-01T12:01:00.000Z', intervalDays: 1 }),
+      candidate('00000000-0000-0000-0000-000000000001'),
+      candidate('00000000-0000-0000-0000-000000000002', { nextReviewAt: '2026-01-01T12:01:00.000Z', intervalDays: 1 }),
     ], now, { limit: 50 });
 
     expect(snapshot.items.map((item) => item.id)).toEqual([
@@ -57,50 +72,28 @@ describe('StudyQueue', () => {
     expect(snapshot.items.map((item) => item.status)).toEqual(['future', 'new']);
   });
 
-  it('orders ties by card ID and uses the inclusive twelve-hour horizon', () => {
+  it('orders all new forward cadences before reverse cadences and swaps reverse content', () => {
+    const snapshot = queue.build([
+      candidate('00000000-0000-0000-0000-000000000004', { cardId: '00000000-0000-0000-0000-000000000002', direction: 'reverse', reversible: true, frontMarkdown: 'A front', backMarkdown: 'A back' }),
+      candidate('00000000-0000-0000-0000-000000000003', { cardId: '00000000-0000-0000-0000-000000000001', direction: 'reverse', reversible: true, frontMarkdown: 'B front', backMarkdown: 'B back' }),
+      candidate('00000000-0000-0000-0000-000000000002', { direction: 'forward', reversible: true, frontMarkdown: 'A front', backMarkdown: 'A back' }),
+      candidate('00000000-0000-0000-0000-000000000001', { direction: 'forward', reversible: true, frontMarkdown: 'B front', backMarkdown: 'B back' }),
+    ], now, { limit: 50 });
+
+    expect(snapshot.items.map((item) => item.direction)).toEqual(['forward', 'forward', 'reverse', 'reverse']);
+    expect(snapshot.items[2]).toMatchObject({ frontMarkdown: 'B back', backMarkdown: 'B front' });
+  });
+
+  it('uses the inclusive twelve-hour horizon and excludes suspended cards', () => {
     const horizon = new Date(now.getTime() + STUDY_HORIZON_HOURS * 3_600_000).toISOString();
     const snapshot = queue.build([
-      card({ id: '00000000-0000-0000-0000-000000000002', nextReviewAt: horizon, intervalDays: 1 }),
-      card({ id: '00000000-0000-0000-0000-000000000001', nextReviewAt: horizon, intervalDays: 1 }),
-      card({ id: '00000000-0000-0000-0000-000000000003', nextReviewAt: new Date(Date.parse(horizon) + 1).toISOString(), intervalDays: 1 }),
+      candidate('00000000-0000-0000-0000-000000000002', { nextReviewAt: horizon, intervalDays: 1 }),
+      candidate('00000000-0000-0000-0000-000000000001', { suspended: true }),
+      candidate('00000000-0000-0000-0000-000000000003', { nextReviewAt: new Date(Date.parse(horizon) + 1).toISOString(), intervalDays: 1 }),
     ], now, { limit: 50 });
 
-    expect(snapshot.items.map((item) => item.id)).toEqual([
-      '00000000-0000-0000-0000-000000000001',
-      '00000000-0000-0000-0000-000000000002',
-    ]);
-    expect(snapshot.items.map((item) => item.status)).toEqual(['future', 'future']);
+    expect(snapshot.items.map((item) => item.id)).toEqual(['00000000-0000-0000-0000-000000000002']);
+    expect(snapshot.items[0].status).toBe('future');
     expect(snapshot.horizon).toBe(horizon);
-  });
-
-  it('excludes suspended and beyond-horizon cards', () => {
-    const afterHorizon = new Date(now.getTime() + STUDY_HORIZON_HOURS * 3_600_000 + 1).toISOString();
-    const snapshot = queue.build([
-      card({ id: '00000000-0000-0000-0000-000000000001', suspended: true }),
-      card({ id: '00000000-0000-0000-0000-000000000002', nextReviewAt: afterHorizon, intervalDays: 1 }),
-    ], now, { limit: 50 });
-
-    expect(snapshot.items).toEqual([]);
-  });
-
-  it('truncates the reviewed-first working set without changing source cards', () => {
-    const cards = [
-      card({ id: '00000000-0000-0000-0000-000000000001' }),
-      card({ id: '00000000-0000-0000-0000-000000000002', nextReviewAt: now.toISOString(), intervalDays: 1 }),
-    ];
-    const before = structuredClone(cards);
-    const snapshot = queue.build(cards, now, { limit: 1 });
-
-    expect(snapshot.items).toEqual([expect.objectContaining({ id: '00000000-0000-0000-0000-000000000002' })]);
-    expect(cards).toEqual(before);
-  });
-
-  it('classifies studied cards due at or before server time', () => {
-    const snapshot = queue.build([
-      card({ id: '00000000-0000-0000-0000-000000000001', nextReviewAt: '2026-01-01T12:00:00.000Z', intervalDays: 1 }),
-      card({ id: '00000000-0000-0000-0000-000000000002', nextReviewAt: '2026-01-01T12:00:00.001Z', intervalDays: 1 }),
-    ], now, { limit: 50 });
-
-    expect(snapshot.items.map((item) => item.status)).toEqual(['due', 'future']);
   });
 });

@@ -1,11 +1,12 @@
-import { and, asc, eq, isNotNull, isNull, lte } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { DeckSchema } from '../../../../src/domain/Deck.ts';
 import { ApplicationError } from '../../../../src/domain/errors.ts';
-import { QueueOptionsSchema, QueueSnapshotSchema, STUDY_HORIZON_HOURS, StudyQueue, type QueueOptions } from '../../../../src/domain/StudyQueue.ts';
+import { QueueOptionsSchema, QueueSnapshotSchema } from '../../../../src/domain/StudyQueue.ts';
 import { UuidSchema, toIsoTimestamp } from '../../../../src/domain/primitives.ts';
-import { cards, decks } from '../../../../src/db/schema.ts';
-import { cardsOwnedBy, decksOwnedBy, requireDeck } from '../../../../src/db/tenant.ts';
+import { decks } from '../../../../src/db/schema.ts';
+import { decksOwnedBy, requireDeck } from '../../../../src/db/tenant.ts';
+import { queueSnapshot } from '../study-queue.ts';
 import { protectedProcedure, t } from '../trpc.ts';
 
 const DeckListInputSchema = z.object({});
@@ -18,18 +19,6 @@ const DeckRemoveOutputSchema = z.object({ removed: z.literal(true) });
 
 function mapDeck(row: typeof decks.$inferSelect) {
   return { id: row.id, name: row.name, defaultSpeechLocale: row.defaultSpeechLocale, createdAt: toIsoTimestamp(row.createdAt), updatedAt: toIsoTimestamp(row.updatedAt), version: row.version };
-}
-function mapCard(row: typeof cards.$inferSelect) {
-  return { id: row.id, deckId: row.deckId, name: row.name, frontMarkdown: row.frontMarkdown, backMarkdown: row.backMarkdown, speechText: row.speechText, speechLocale: row.speechLocale, tags: row.tags, suspended: row.suspended, createdAt: toIsoTimestamp(row.createdAt), updatedAt: toIsoTimestamp(row.updatedAt), nextReviewAt: row.nextReviewAt ? toIsoTimestamp(row.nextReviewAt) : null, intervalDays: row.intervalDays, reviewCount: row.reviewCount, lapseCount: row.lapseCount, version: row.version };
-}
-
-async function queueSnapshot(db: Parameters<typeof cardsOwnedBy>[0], userId: string, deckId: string, options: QueueOptions, now: Date) {
-  const horizon = new Date(now.getTime() + STUDY_HORIZON_HOURS * 3_600_000).toISOString();
-  const [studiedRows, newRows] = await Promise.all([
-    cardsOwnedBy(db, userId).where(and(eq(cards.deckId, deckId), eq(cards.suspended, false), isNotNull(cards.nextReviewAt), lte(cards.nextReviewAt, horizon))).orderBy(asc(cards.nextReviewAt), asc(cards.id)).limit(options.limit),
-    cardsOwnedBy(db, userId).where(and(eq(cards.deckId, deckId), eq(cards.suspended, false), isNull(cards.nextReviewAt))).orderBy(asc(cards.createdAt), asc(cards.id)).limit(options.limit),
-  ]);
-  return new StudyQueue().build([...studiedRows.map(({ cards: card }) => mapCard(card)), ...newRows.map(({ cards: card }) => mapCard(card))], now, options);
 }
 
 const UNIQUE_VIOLATION = '23505';

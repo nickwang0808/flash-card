@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { CardSchema } from './Card.ts';
+import { CardCadenceSchema } from './Cadence.ts';
+
+const forwardCadence = {
+  id: '33333333-3333-4333-8333-333333333333',
+  cardId: '11111111-1111-4111-8111-111111111111',
+  direction: 'forward' as const,
+  nextReviewAt: null,
+  intervalDays: null,
+  reviewCount: 0,
+  lapseCount: 0,
+  version: 0,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+};
 
 const validCard = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -10,19 +24,22 @@ const validCard = {
   tags: ['basic'],
   speechText: null,
   speechLocale: null,
+  reversible: false,
   suspended: false,
-  nextReviewAt: null,
-  intervalDays: null,
-  reviewCount: 0,
-  lapseCount: 0,
   version: 0,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
+  cadences: [forwardCadence],
 };
 
 describe('CardSchema', () => {
   it('accepts the complete canonical Card DTO', () => {
     expect(CardSchema.parse(validCard)).toEqual(validCard);
+  });
+
+  it('requires complete independently scheduled cadences', () => {
+    expect(CardCadenceSchema.parse(forwardCadence)).toEqual(forwardCadence);
+    expect(() => CardCadenceSchema.parse({ ...forwardCadence, direction: 'sideways' })).toThrow();
   });
 
   it('rejects raw HTML outside the ruby subset', () => {

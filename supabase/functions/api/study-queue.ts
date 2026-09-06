@@ -1,0 +1,32 @@
+import { and, eq, isNull, lte, or } from 'drizzle-orm';
+
+import { STUDY_HORIZON_HOURS, StudyQueue, type QueueOptions } from '../../../src/domain/StudyQueue.ts';
+import { cardCadences, cards } from '../../../src/db/schema.ts';
+import { cardCadencesOwnedBy } from '../../../src/db/tenant.ts';
+
+import { mapCadence, mapCard } from './card-aggregate.ts';
+
+/** Reads enough directional candidates for a full queue plus sibling spacing. */
+export async function queueSnapshot(
+  db: Parameters<typeof cardCadencesOwnedBy>[0],
+  userId: string,
+  deckId: string,
+  options: QueueOptions,
+  now: Date,
+) {
+  const horizon = new Date(now.getTime() + STUDY_HORIZON_HOURS * 3_600_000).toISOString();
+  const rows = await cardCadencesOwnedBy(db, userId)
+    .where(and(
+      eq(cards.deckId, deckId),
+      eq(cards.suspended, false),
+      or(isNull(cardCadences.nextReviewAt), lte(cardCadences.nextReviewAt, horizon)),
+    ))
+    .limit(options.limit * 2);
+
+  return new StudyQueue().build(
+    rows
+      .map(({ card, cadence }) => ({ card: mapCard(card), cadence: mapCadence(cadence) })),
+    now,
+    options,
+  );
+}

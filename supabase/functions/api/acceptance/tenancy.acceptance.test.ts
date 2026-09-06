@@ -13,19 +13,19 @@ describe('authentication, tenancy, and validation boundary', () => {
     actors.push(owner, intruder);
     const deck = await createDeck(owner, 'Private');
     const card = await createNewCard(owner, deck, { name: 'Private Front' });
-    const rated = await owner.api.review.rate({ cardId: card.id, deckId: deck.id, rating: 'good', expectedVersion: 0, requestId: crypto.randomUUID(), queue });
+    const rated = await owner.api.review.rate({ cadenceId: card.cadences[0].id, deckId: deck.id, rating: 'good', expectedVersion: 0, requestId: crypto.randomUUID(), queue });
     const intruderCard = await createNewCard(intruder, await createDeck(intruder, 'Intruder'), { name: 'Private Front' });
 
     await expect(intruder.api.deck.queue({ deckId: deck.id, ...queue })).rejects.toThrow('NOT_FOUND');
     await expect(intruder.api.card.get({ cardId: card.id, deckId: deck.id })).rejects.toThrow('NOT_FOUND');
     await expect(intruder.api.card.search({ deckId: deck.id, query: 'Front', pagination: { limit: 10 } })).rejects.toThrow('NOT_FOUND');
     await expect(intruder.api.card.remove({ cardId: card.id, deckId: deck.id, expectedVersion: 1, confirmation: true, queue })).rejects.toThrow('NOT_FOUND');
-    await expect(intruder.api.review.rate({ cardId: card.id, deckId: deck.id, rating: 'good', expectedVersion: 1, requestId: crypto.randomUUID(), queue })).rejects.toThrow('NOT_FOUND');
-    await expect(intruder.api.review.history({ cardId: card.id, deckId: deck.id, pagination: { limit: 10 } })).rejects.toThrow('NOT_FOUND');
+    await expect(intruder.api.review.rate({ cadenceId: card.cadences[0].id, deckId: deck.id, rating: 'good', expectedVersion: 1, requestId: crypto.randomUUID(), queue })).rejects.toThrow('NOT_FOUND');
+    await expect(intruder.api.review.history({ cadenceId: card.cadences[0].id, deckId: deck.id, pagination: { limit: 10 } })).rejects.toThrow('NOT_FOUND');
     await expect(intruder.api.review.undo({ reviewId: rated.reviewId, deckId: deck.id, queue })).rejects.toThrow('NOT_FOUND');
 
     expect((await owner.api.card.get({ cardId: card.id, deckId: deck.id })).version).toBe(1);
-    expect((await owner.api.review.history({ cardId: card.id, deckId: deck.id, pagination: { limit: 10 } })).events.map(({ id }) => id)).toEqual([rated.reviewId]);
+    expect((await owner.api.review.history({ cadenceId: card.cadences[0].id, deckId: deck.id, pagination: { limit: 10 } })).events.map(({ id }) => id)).toEqual([rated.reviewId]);
     const unscoped = await owner.api.card.search({ query: 'Private Front', pagination: { limit: 10 } });
     expect(unscoped.cards.map(({ id }) => id)).toContain(card.id);
     expect(unscoped.cards.map(({ id }) => id)).not.toContain(intruderCard.id);

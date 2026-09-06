@@ -37,6 +37,25 @@ describe('card and deck lifecycle', () => {
     await expect(actor.api.deck.remove({ deckId: deck.id, expectedVersion: 0, confirmation: true })).resolves.toEqual({ removed: true });
   });
 
+  test('creates both directional cadences for reversible cards and queues forwards first', async () => {
+    actor = await createActor('reversible-card');
+    const deck = await createDeck(actor);
+    const [first, second] = await Promise.all([
+      createNewCard(actor, deck, { name: 'First', frontMarkdown: 'one', backMarkdown: 'uno', reversible: true }),
+      createNewCard(actor, deck, { name: 'Second', frontMarkdown: 'two', backMarkdown: 'dos', reversible: true }),
+    ]);
+
+    expect(first.cadences.map(({ direction }) => direction)).toEqual(['forward', 'reverse']);
+    expect(second.cadences.map(({ direction }) => direction)).toEqual(['forward', 'reverse']);
+    const queueSnapshot = await actor.api.deck.queue({ deckId: deck.id, limit: 50 });
+    expect(queueSnapshot.items.map(({ direction }) => direction)).toEqual(['forward', 'forward', 'reverse', 'reverse']);
+    expect(queueSnapshot.items.find((item) => item.id === first.cadences.find((cadence) => cadence.direction === 'reverse')?.id)).toMatchObject({
+      cardId: first.id,
+      frontMarkdown: 'uno',
+      backMarkdown: 'one',
+    });
+  });
+
   test('persists every mutable field, paginates revisions, and preserves tags on rollback', async () => {
     actor = await createActor('content-revisions');
     const deck = await createDeck(actor);
