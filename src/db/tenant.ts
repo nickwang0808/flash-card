@@ -42,11 +42,6 @@ export async function requireDeck(db: AppDb, userId: string, deckId: string) {
   return rows[0];
 }
 
-export async function requireDeckForCadence(db: AppDb, userId: string, cadenceId: string, deckId: string) {
-  const rows = await cardCadencesOwnedBy(db, userId).where(and(eq(cardCadences.id, cadenceId), eq(cards.deckId, deckId))).limit(1);
-  if (rows.length === 0) throw new ApplicationError('NOT_FOUND', 'Cadence not found');
-  return rows[0];
-}
 
 export async function requireDeckForCard(db: AppDb, userId: string, cardId: string, deckId: string) {
   const rows = await cardsOwnedBy(db, userId).where(and(eq(cards.id, cardId), eq(cards.deckId, deckId))).limit(1);

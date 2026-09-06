@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { CadenceStateSchema } from './CadenceState.ts';
 import { TimestampSchema } from './primitives.ts';
 
-export const CadenceDirectionSchema = z.enum(['forward', 'reverse']);
+const CadenceDirectionSchema = z.enum(['forward', 'reverse']);
 export const CardCadenceSchema = CadenceStateSchema.extend({
   id: z.string().uuid(),
   cardId: z.string().uuid(),
@@ -13,7 +13,6 @@ export const CardCadenceSchema = CadenceStateSchema.extend({
   updatedAt: TimestampSchema,
 });
 
-export type CadenceDirection = z.output<typeof CadenceDirectionSchema>;
 export type CardCadence = z.output<typeof CardCadenceSchema>;
 import { ApplicationError } from './errors.ts';
 import type { CadenceState } from './CadenceState.ts';
