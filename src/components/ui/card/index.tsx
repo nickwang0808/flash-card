@@ -4,8 +4,8 @@ import { View } from 'react-native';
 import { cardStyle } from './styles';
 import type { VariantProps } from '@gluestack-ui/utils/nativewind-utils';
 
-type ICardProps = React.ComponentPropsWithoutRef<typeof View> & 
-  VariantProps<typeof cardStyle> & { 
+type ICardProps = React.ComponentPropsWithoutRef<typeof View> &
+  VariantProps<typeof cardStyle> & {
     className?: string;
     size?: 'default' | 'sm';
   };

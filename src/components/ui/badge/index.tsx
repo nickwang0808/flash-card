@@ -95,7 +95,7 @@ type IBadgeIconProps = React.ComponentPropsWithoutRef<typeof PrimitiveIcon> &
   VariantProps<typeof badgeIconStyle> & {
     size?: number;
 };
-  
+
 const StyledUIIcon = styled(UIIcon, { className: 'style' });
 
 
