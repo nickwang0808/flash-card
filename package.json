@@ -14,7 +14,8 @@
     "check": "tsc && knip",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "db:seed": "node scripts/seed-local.mjs"
   },
   "dependencies": {
     "@expo/html-elements": "^0.12.5",
