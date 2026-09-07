@@ -1,5 +1,5 @@
 import { ScrollView, View } from 'react-native';
-
+import { Path, Svg } from 'react-native-svg';
 import { Button, ButtonText } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/heading';
@@ -19,7 +19,7 @@ interface StudyCardProps {
 }
 
 function PronunciationButton({ isPlaying, onPress }: { isPlaying: boolean; onPress(): void }) {
-  return <Button accessibilityLabel="Play pronunciation" onPress={onPress} size="sm" testID="play-pronunciation" variant="ghost"><ButtonText>{isPlaying ? 'Playing pronunciation' : 'Play pronunciation'}</ButtonText></Button>;
+  return <Button accessibilityLabel={isPlaying ? 'Playing pronunciation' : 'Play pronunciation'} onPress={onPress} size="icon" testID="play-pronunciation" variant="ghost"><Svg aria-hidden height={20} viewBox="0 0 24 24" width={20}><Path d="M11 5 6 9H2v6h4l5 4V5Z" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} /><Path d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth={2} /><Path d="M19 5a10 10 0 0 1 0 14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth={2} /></Svg></Button>;
 }
 
 export function StudyCard({ card, answerRevealed, canSpeak, speechIsPlaying, onReveal, onSpeak }: StudyCardProps) {
