@@ -24,7 +24,7 @@ describe('authentication, tenancy, and validation boundary', () => {
     await expect(intruder.api.review.history({ cadenceId: card.cadences[0].id, deckId: deck.id, pagination: { limit: 10 } })).rejects.toThrow('NOT_FOUND');
     await expect(intruder.api.review.undo({ reviewId: rated.reviewId, deckId: deck.id, queue })).rejects.toThrow('NOT_FOUND');
 
-    expect((await owner.api.card.get({ cardId: card.id, deckId: deck.id })).version).toBe(1);
+    expect((await owner.api.card.get({ cardId: card.id, deckId: deck.id })).cadences[0].version).toBe(1);
     expect((await owner.api.review.history({ cadenceId: card.cadences[0].id, deckId: deck.id, pagination: { limit: 10 } })).events.map(({ id }) => id)).toEqual([rated.reviewId]);
     const unscoped = await owner.api.card.search({ query: 'Private Front', pagination: { limit: 10 } });
     expect(unscoped.cards.map(({ id }) => id)).toContain(card.id);

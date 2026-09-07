@@ -34,15 +34,17 @@ ALTER TABLE "review_events" ALTER COLUMN "cadence_id" SET NOT NULL;
 --> statement-breakpoint
 ALTER TABLE "review_events" DROP CONSTRAINT "review_events_card_id_request_id_key";
 --> statement-breakpoint
-ALTER TABLE "review_events" DROP CONSTRAINT "review_events_card_id_cards_id_fk";
+ALTER TABLE "review_events" DROP CONSTRAINT IF EXISTS "review_events_card_id_cards_id_fk";
+--> statement-breakpoint
+ALTER TABLE "review_events" DROP CONSTRAINT IF EXISTS "review_events_card_id_fkey";
 --> statement-breakpoint
 ALTER TABLE "review_events" DROP COLUMN "card_id";
 --> statement-breakpoint
-DROP INDEX "cards_new_order_idx";
+DROP INDEX IF EXISTS "cards_new_order_idx";
 --> statement-breakpoint
-DROP INDEX "cards_review_order_idx";
+DROP INDEX IF EXISTS "cards_review_order_idx";
 --> statement-breakpoint
-DROP INDEX "review_events_card_reviewed_idx";
+DROP INDEX IF EXISTS "review_events_card_reviewed_idx";
 --> statement-breakpoint
 ALTER TABLE "cards" DROP CONSTRAINT "cards_interval_days_check";
 --> statement-breakpoint

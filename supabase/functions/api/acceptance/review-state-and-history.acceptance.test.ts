@@ -20,7 +20,7 @@ describe('review persistence and history', () => {
     expect(replay[0].reviewId).toBe(replay[1].reviewId);
     const sameHistory = await actor.api.review.history({ cadenceId: same.cadences[0].id, deckId: deck.id, pagination: { limit: 10 } });
     expect(sameHistory.events).toHaveLength(1);
-    expect(await actor.api.card.get({ cardId: same.id, deckId: deck.id })).toMatchObject({ version: 1, nextReviewAt: sameHistory.events[0].afterState.nextReviewAt, intervalDays: sameHistory.events[0].afterState.intervalDays });
+    expect((await actor.api.card.get({ cardId: same.id, deckId: deck.id })).cadences[0]).toMatchObject({ version: 1, nextReviewAt: sameHistory.events[0].afterState.nextReviewAt, intervalDays: sameHistory.events[0].afterState.intervalDays });
 
     const different = await createNewCard(actor, deck);
     const raced = await Promise.allSettled([
@@ -32,7 +32,7 @@ describe('review persistence and history', () => {
     expect((raced.find((result) => result.status === 'rejected') as PromiseRejectedResult).reason.message).toContain('CONFLICT');
     const history = await actor.api.review.history({ cadenceId: different.cadences[0].id, deckId: deck.id, pagination: { limit: 10 } });
     expect(history.events).toHaveLength(1);
-    expect(await actor.api.card.get({ cardId: different.id, deckId: deck.id })).toMatchObject({ version: 1, nextReviewAt: history.events[0].afterState.nextReviewAt });
+    expect((await actor.api.card.get({ cardId: different.id, deckId: deck.id })).cadences[0]).toMatchObject({ version: 1, nextReviewAt: history.events[0].afterState.nextReviewAt });
   });
 
   test('guards undo order, retains events, and keyset-paginates history', async () => {

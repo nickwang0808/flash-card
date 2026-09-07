@@ -43,7 +43,7 @@ describe('request-scoped application clock over the served Edge Function', () =>
     const rated = await a.api.review.rate({ cadenceId: cardA.cadences[0].id, deckId: deckA.id, rating: 'again', expectedVersion: 0, requestId: crypto.randomUUID(), queue: queueOptions });
     const expectedState = new Cadence().rate({ nextReviewAt: null, intervalDays: null, reviewCount: 0, lapseCount: 0 }, 'again', a.clock.now());
     expect(rated.queue.asOf).toBe(a.clock.iso());
-    expect(rated.queue.items[0]).toMatchObject({ id: cardA.id, nextReviewAt: expectedState.nextReviewAt });
+    expect(rated.queue.items[0]).toMatchObject({ id: cardA.cadences[0].id, cardId: cardA.id, nextReviewAt: expectedState.nextReviewAt });
 
     const history = await a.api.review.history({ cadenceId: cardA.cadences[0].id, deckId: deckA.id, pagination: { limit: 10 } });
     expect(history.events).toHaveLength(1);
@@ -54,7 +54,8 @@ describe('request-scoped application clock over the served Edge Function', () =>
     const [updatedCadence] = await fixtureDb().select().from(cardCadences).where(eq(cardCadences.id, cardA.cadences[0].id));
     expect(toIsoTimestamp(event.createdAt)).toBe(a.clock.iso());
     expect(toIsoTimestamp(event.reviewedAt)).toBe(a.clock.iso());
-    expect(toIsoTimestamp(updatedCard.updatedAt)).toBe(a.clock.iso());
+    expect(toIsoTimestamp(updatedCard.updatedAt)).toBe(cardA.updatedAt);
+    expect(toIsoTimestamp(updatedCadence.updatedAt)).toBe(a.clock.iso());
     expect(updatedCadence.nextReviewAt === null ? null : toIsoTimestamp(updatedCadence.nextReviewAt)).toBe(expectedState.nextReviewAt);
   });
 

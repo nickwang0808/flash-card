@@ -17,13 +17,13 @@ describe('queue boundaries', () => {
       createStudiedCard(actor, deck, { name: 'outside', nextReviewAt: new Date(now + 12 * 3_600_000 + 1).toISOString() }),
     ]);
     const snapshot = await actor.api.deck.queue({ deckId: deck.id, limit: 50 });
-    expect(snapshot.items).toMatchObject([{ id: due.id, status: 'due' }, { id: horizon.id, status: 'future' }]);
-    expect(snapshot.items.map((item) => item.id)).not.toContain(outside.id);
+    expect(snapshot.items).toMatchObject([{ id: due.cadences[0].id, cardId: due.id, status: 'due' }, { id: horizon.cadences[0].id, cardId: horizon.id, status: 'future' }]);
+    expect(snapshot.items.map((item) => item.id)).not.toContain(outside.cadences[0].id);
 
     const limited = await actor.api.deck.queue({ deckId: deck.id, limit: 1 });
-    expect(limited.items).toEqual([expect.objectContaining({ id: due.id })]);
+    expect(limited.items).toEqual([expect.objectContaining({ id: due.cadences[0].id })]);
     actor.clock.advance({ milliseconds: 1 });
     const after = await actor.api.deck.queue({ deckId: deck.id, limit: 50 });
-    expect(after.items[0]).toMatchObject({ id: due.id, status: 'due' });
+    expect(after.items[0]).toMatchObject({ id: due.cadences[0].id, status: 'due' });
   });
 });

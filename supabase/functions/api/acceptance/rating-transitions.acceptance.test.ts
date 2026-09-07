@@ -16,10 +16,10 @@ describe('ratings and idempotency', () => {
     const expected = new Cadence().rate({ nextReviewAt: null, intervalDays: null, reviewCount: 0, lapseCount: 0 }, rating, actor.clock.now());
     const result = await actor.api.review.rate({ cadenceId: card.cadences[0].id, deckId: deck.id, rating, expectedVersion: 0, requestId: crypto.randomUUID(), queue });
     const updated = await actor.api.card.get({ cardId: card.id, deckId: deck.id });
-    expect(updated).toMatchObject({ version: 1, ...expected, updatedAt: actor.clock.iso() });
+    expect(updated.cadences[0]).toMatchObject({ version: 1, ...expected, updatedAt: actor.clock.iso() });
     expect(result.queue).toMatchObject({ asOf: actor.clock.iso() });
     if (expected.nextReviewAt !== null && new Date(expected.nextReviewAt).getTime() <= actor.clock.now().getTime() + 12 * 3_600_000) {
-      expect(result.queue.items).toMatchObject([{ id: card.id, nextReviewAt: expected.nextReviewAt }]);
+      expect(result.queue.items).toMatchObject([{ id: card.cadences[0].id, cardId: card.id, nextReviewAt: expected.nextReviewAt }]);
     } else {
       expect(result.queue.items).toEqual([]);
     }
@@ -38,7 +38,7 @@ describe('ratings and idempotency', () => {
     expect(history.events).toHaveLength(1);
     expect(history.events[0]).toMatchObject({ id: first.reviewId, rating: 'good' });
     const updated = await actor.api.card.get({ cardId: card.id, deckId: deck.id });
-    expect(updated.version).toBe(1);
+    expect(updated.cadences[0].version).toBe(1);
     await expect(actor.api.review.rate({ cadenceId: card.cadences[0].id, deckId: deck.id, rating: 'good', expectedVersion: 0, requestId: crypto.randomUUID(), queue })).rejects.toThrow('CONFLICT');
   });
 });

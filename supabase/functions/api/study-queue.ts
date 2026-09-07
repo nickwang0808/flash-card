@@ -1,4 +1,4 @@
-import { and, eq, isNull, lte, or } from 'drizzle-orm';
+import { and, asc, eq, isNull, lte, or, sql } from 'drizzle-orm';
 
 import { STUDY_HORIZON_HOURS, StudyQueue, type QueueOptions } from '../../../src/domain/StudyQueue.ts';
 import { cardCadences, cards } from '../../../src/db/schema.ts';
@@ -6,7 +6,7 @@ import { cardCadencesOwnedBy } from '../../../src/db/tenant.ts';
 
 import { mapCadence, mapCard } from './card-aggregate.ts';
 
-/** Reads enough directional candidates for a full queue plus sibling spacing. */
+/** Reads a directional working set large enough to retain queue ordering after ratings. */
 export async function queueSnapshot(
   db: Parameters<typeof cardCadencesOwnedBy>[0],
   userId: string,
@@ -21,6 +21,14 @@ export async function queueSnapshot(
       eq(cards.suspended, false),
       or(isNull(cardCadences.nextReviewAt), lte(cardCadences.nextReviewAt, horizon)),
     ))
+    .orderBy(
+      sql`case when ${cardCadences.nextReviewAt} is null then 1 else 0 end`,
+      asc(cardCadences.nextReviewAt),
+      sql`case ${cardCadences.direction} when 'forward' then 0 else 1 end`,
+      asc(cards.createdAt),
+      asc(cards.id),
+      asc(cardCadences.id),
+    )
     .limit(options.limit * 2);
 
   return new StudyQueue().build(

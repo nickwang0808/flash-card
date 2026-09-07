@@ -31,7 +31,7 @@ describe('card and deck lifecycle', () => {
     const suspended = await actor.api.card.suspend({ cardId: card.id, deckId: deck.id, expectedVersion: 2, queue });
     expect(suspended.queue.items).toEqual([]);
     const restored = await actor.api.card.restore({ cardId: card.id, deckId: deck.id, expectedVersion: 3, queue });
-    expect(restored).toMatchObject({ card: { id: card.id, version: 4, suspended: false }, queue: { items: [{ id: card.id, status: 'new' }] } });
+    expect(restored).toMatchObject({ card: { id: card.id, version: 4, suspended: false }, queue: { items: [{ id: card.cadences[0].id, cardId: card.id, status: 'new' }] } });
 
     await expect(actor.api.card.remove({ cardId: card.id, deckId: deck.id, expectedVersion: 4, confirmation: true, queue })).resolves.toMatchObject({ queue: { items: [] } });
     await expect(actor.api.deck.remove({ deckId: deck.id, expectedVersion: 0, confirmation: true })).resolves.toEqual({ removed: true });
