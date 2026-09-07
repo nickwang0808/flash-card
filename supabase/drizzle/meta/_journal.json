@@ -36,6 +36,13 @@
       "when": 1788724707767,
       "tag": "0004_card_cadences",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788813101094,
+      "tag": "0005_add-card-speech-side",
+      "breakpoints": true
     }
   ]
 }

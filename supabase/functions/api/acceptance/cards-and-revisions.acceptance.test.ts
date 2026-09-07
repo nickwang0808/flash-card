@@ -14,9 +14,9 @@ describe('card and deck lifecycle', () => {
     const card = await createNewCard(actor, deck, { name: 'Bonjour', frontMarkdown: 'Good morning', backMarkdown: 'Bonjour', tags: ['greeting'] });
     expect(card).toMatchObject({ version: 0, createdAt: actor.clock.iso(), updatedAt: actor.clock.iso() });
 
-    const updated = await actor.api.card.update({ cardId: card.id, deckId: deck.id, name: 'Bonsoir', frontMarkdown: 'Good evening', backMarkdown: 'Bonsoir', tags: ['greeting', 'night'], speechText: null, speechLocale: null, expectedVersion: 0 });
+    const updated = await actor.api.card.update({ cardId: card.id, deckId: deck.id, name: 'Bonsoir', frontMarkdown: 'Good evening', backMarkdown: 'Bonsoir', tags: ['greeting', 'night'], speechText: null, speechLocale: null, speechSide: null, expectedVersion: 0 });
     expect(updated).toMatchObject({ version: 1, name: 'Bonsoir', updatedAt: actor.clock.iso() });
-    await expect(actor.api.card.update({ cardId: card.id, deckId: deck.id, name: 'Stale', frontMarkdown: 'Stale', backMarkdown: 'Stale', tags: [], speechText: null, speechLocale: null, expectedVersion: 0 })).rejects.toThrow('CONFLICT');
+    await expect(actor.api.card.update({ cardId: card.id, deckId: deck.id, name: 'Stale', frontMarkdown: 'Stale', backMarkdown: 'Stale', tags: [], speechText: null, speechLocale: null, speechSide: null, expectedVersion: 0 })).rejects.toThrow('CONFLICT');
 
     const search = await actor.api.card.search({ deckId: deck.id, query: 'night', pagination: { limit: 10 } });
     expect(search.cards).toMatchObject([{ id: card.id, name: 'Bonsoir' }]);
@@ -59,12 +59,12 @@ describe('card and deck lifecycle', () => {
   test('persists every mutable field, paginates revisions, and preserves tags on rollback', async () => {
     actor = await createActor('content-revisions');
     const deck = await createDeck(actor);
-    const original = { name: 'Original', frontMarkdown: 'Original front', backMarkdown: 'Original back', speechText: 'こんにちは', speechLocale: 'ja-JP' };
+    const original = { name: 'Original', frontMarkdown: 'Original front', backMarkdown: 'Original back', speechText: 'こんにちは', speechLocale: 'ja-JP', speechSide: 'front' as const };
     const card = await actor.api.card.create({ deckId: deck.id, ...original, tags: ['original'] });
     expect(card).toMatchObject({ ...original, tags: ['original'] });
     expect(await actor.api.card.get({ cardId: card.id, deckId: deck.id })).toMatchObject({ ...original, tags: ['original'] });
     actor.clock.advance({ minutes: 1 });
-    const edited = { name: 'Edited', frontMarkdown: 'Edited front', backMarkdown: 'Edited back', speechText: 'こんばんは', speechLocale: 'ja-JP' };
+    const edited = { name: 'Edited', frontMarkdown: 'Edited front', backMarkdown: 'Edited back', speechText: 'こんばんは', speechLocale: 'ja-JP', speechSide: 'back' as const };
     await expect(actor.api.card.update({ cardId: card.id, deckId: deck.id, ...edited, tags: ['edited'], expectedVersion: 0 })).resolves.toMatchObject({ ...edited, tags: ['edited'], version: 1 });
     expect((await actor.api.card.search({ deckId: deck.id, query: 'Edited front', pagination: { limit: 10 } })).cards).toMatchObject([{ id: card.id, ...edited, tags: ['edited'] }]);
     const first = await actor.api.card.revisions({ cardId: card.id, deckId: deck.id, pagination: { limit: 1 } });
@@ -86,8 +86,8 @@ describe('card and deck lifecycle', () => {
     const deckB = await createDeck(actor, 'B');
     const raced = await createNewCard(actor, deckA, { name: 'Raced marker' });
     const updates = await Promise.allSettled([
-      actor.api.card.update({ cardId: raced.id, deckId: deckA.id, name: 'Winner one', frontMarkdown: 'one', backMarkdown: 'one', tags: [], speechText: null, speechLocale: null, expectedVersion: 0 }),
-      actor.api.card.update({ cardId: raced.id, deckId: deckA.id, name: 'Winner two', frontMarkdown: 'two', backMarkdown: 'two', tags: [], speechText: null, speechLocale: null, expectedVersion: 0 }),
+      actor.api.card.update({ cardId: raced.id, deckId: deckA.id, name: 'Winner one', frontMarkdown: 'one', backMarkdown: 'one', tags: [], speechText: null, speechLocale: null, speechSide: null, expectedVersion: 0 }),
+      actor.api.card.update({ cardId: raced.id, deckId: deckA.id, name: 'Winner two', frontMarkdown: 'two', backMarkdown: 'two', tags: [], speechText: null, speechLocale: null, speechSide: null, expectedVersion: 0 }),
     ]);
     const winner = updates.find((result) => result.status === 'fulfilled');
     expect(winner?.status).toBe('fulfilled');

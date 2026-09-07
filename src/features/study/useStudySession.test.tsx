@@ -23,6 +23,7 @@ const cards = ['A', 'B', 'C'].map((name, index) => ({
   backMarkdown: `back ${name}`,
   speechText: null,
   speechLocale: null,
+  speechSide: null,
   tags: [],
   reversible: false,
   suspended: false,

@@ -1,6 +1,6 @@
 {
-  "id": "13f55295-4350-451a-b21d-a29b355ae994",
-  "prevId": "ac782ffa-20d3-4cc8-bd50-27c614b53676",
+  "id": "bbe00eb4-53ae-40b8-8d02-96ef099a9c04",
+  "prevId": "13f55295-4350-451a-b21d-a29b355ae994",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -416,6 +416,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "speech_side": {
+          "name": "speech_side",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "tags": {
           "name": "tags",
           "type": "text[]",
@@ -535,6 +541,10 @@
         "cards_name_check": {
           "name": "cards_name_check",
           "value": "btrim(\"cards\".\"name\") <> ''"
+        },
+        "cards_speech_fields_check": {
+          "name": "cards_speech_fields_check",
+          "value": "(\"cards\".\"speech_text\" is null and \"cards\".\"speech_locale\" is null and \"cards\".\"speech_side\" is null) or (\"cards\".\"speech_text\" is not null and btrim(\"cards\".\"speech_text\") <> '' and \"cards\".\"speech_side\" in ('front', 'back'))"
         }
       },
       "isRLSEnabled": false

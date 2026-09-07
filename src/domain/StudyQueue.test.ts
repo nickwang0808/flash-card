@@ -17,8 +17,9 @@ function candidate(
     frontMarkdown: overrides.frontMarkdown ?? id,
     backMarkdown: overrides.backMarkdown ?? 'answer',
     tags: overrides.tags ?? [],
-    speechText: null,
-    speechLocale: null,
+    speechText: overrides.speechText ?? null,
+    speechLocale: overrides.speechLocale ?? null,
+    speechSide: overrides.speechSide ?? null,
     reversible: overrides.reversible ?? false,
     suspended: overrides.suspended ?? false,
     version: 0,
@@ -82,6 +83,17 @@ describe('StudyQueue', () => {
 
     expect(snapshot.items.map((item) => item.direction)).toEqual(['forward', 'forward', 'reverse', 'reverse']);
     expect(snapshot.items[2]).toMatchObject({ frontMarkdown: 'B back', backMarkdown: 'B front' });
+  });
+
+  it('moves speech side with reversed content', () => {
+    const snapshot = queue.build([
+      candidate('00000000-0000-0000-0000-000000000001', { speechText: 'front', speechSide: 'front', direction: 'forward' }),
+      candidate('00000000-0000-0000-0000-000000000002', { speechText: 'back', speechSide: 'back', direction: 'forward' }),
+      candidate('00000000-0000-0000-0000-000000000003', { speechText: 'front', speechSide: 'front', direction: 'reverse', reversible: true }),
+      candidate('00000000-0000-0000-0000-000000000004', { speechText: 'back', speechSide: 'back', direction: 'reverse', reversible: true }),
+    ], now);
+
+    expect(snapshot.items.map(({ speechSide }) => speechSide)).toEqual(['front', 'back', 'back', 'front']);
   });
 
   it('uses the inclusive twelve-hour horizon and excludes suspended cards', () => {

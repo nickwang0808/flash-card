@@ -24,6 +24,7 @@ const validCard = {
   tags: ['basic'],
   speechText: null,
   speechLocale: null,
+  speechSide: null,
   reversible: false,
   suspended: false,
   version: 0,
@@ -48,5 +49,16 @@ describe('CardSchema', () => {
 
   it('requires a readable non-empty name', () => {
     expect(() => CardSchema.parse({ ...validCard, name: '   ' })).toThrow();
+  });
+
+  it('requires speech text and side together while allowing a deck-locale fallback', () => {
+    expect(CardSchema.parse({ ...validCard, speechText: 'Hola', speechLocale: null, speechSide: 'front' })).toMatchObject({ speechText: 'Hola', speechLocale: null, speechSide: 'front' });
+    expect(() => CardSchema.parse({ ...validCard, speechText: 'Hola', speechLocale: null, speechSide: null })).toThrow();
+    expect(() => CardSchema.parse({ ...validCard, speechText: null, speechLocale: 'es-ES', speechSide: null })).toThrow();
+  });
+
+  it('canonicalizes BCP 47 speech locales and rejects malformed values', () => {
+    expect(CardSchema.parse({ ...validCard, speechText: 'Hola', speechLocale: 'ES-mx', speechSide: 'front' }).speechLocale).toBe('es-MX');
+    expect(() => CardSchema.parse({ ...validCard, speechText: 'Hola', speechLocale: 'not a locale', speechSide: 'front' })).toThrow();
   });
 });

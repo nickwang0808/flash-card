@@ -24,6 +24,7 @@ export async function createNewCard(
     tags: overrides.tags ?? [],
     speechText: null,
     speechLocale: null,
+    speechSide: null,
     reversible: overrides.reversible ?? false,
   });
 }

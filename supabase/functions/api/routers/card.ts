@@ -2,6 +2,7 @@ import { and, arrayContains, asc, desc, eq, ilike, inArray, lt, or, type SQL } f
 import { z } from 'zod';
 
 import { CardContentSchema, CardNameSchema, CardSchema, MarkdownSchema, type Card, type CardContent } from '../../../../src/domain/Card.ts';
+import { validateCardSpeechFields } from '../../../../src/domain/Speech.ts';
 import type { CardCadence } from '../../../../src/domain/Cadence.ts';
 import { CardRevisionSchema, type CardRevision } from '../../../../src/domain/CardRevision.ts';
 import { ApplicationError } from '../../../../src/domain/errors.ts';
@@ -22,7 +23,7 @@ const ReplacementQueueSchema = z.object({ queue: QueueSnapshotSchema });
 const CardMutationTagsSchema = z.array(z.string().trim().min(1).max(100)).max(100).default([]);
 const CardGetInputSchema = z.object({ cardId: UuidSchema, deckId: UuidSchema });
 const CardSearchInputSchema = z.object({ deckId: UuidSchema.nullable().optional(), query: z.string().trim().min(1).max(500), pagination: PaginationInputSchema });
-const CardCreateInputSchema = z.object({ deckId: UuidSchema, name: CardNameSchema, frontMarkdown: MarkdownSchema, backMarkdown: MarkdownSchema, tags: CardMutationTagsSchema, speechText: CardContentSchema.shape.speechText.default(null), speechLocale: CardContentSchema.shape.speechLocale.default(null), reversible: z.boolean().default(false) });
+const CardCreateInputSchema = z.object({ deckId: UuidSchema, name: CardNameSchema, frontMarkdown: MarkdownSchema, backMarkdown: MarkdownSchema, tags: CardMutationTagsSchema, speechText: CardContentSchema.shape.speechText.default(null), speechLocale: CardContentSchema.shape.speechLocale.default(null), speechSide: CardContentSchema.shape.speechSide.default(null), reversible: z.boolean().default(false) }).superRefine(validateCardSpeechFields);
 const CardUpdateInputSchema = CardCreateInputSchema.extend({ cardId: UuidSchema, expectedVersion: ExpectedVersionSchema });
 const CardSuspendInputSchema = z.object({ cardId: UuidSchema, deckId: UuidSchema, expectedVersion: ExpectedVersionSchema, queue: QueueOptionsSchema });
 const CardRemoveInputSchema = z.object({ cardId: UuidSchema, deckId: UuidSchema, expectedVersion: ExpectedVersionSchema, confirmation: ConfirmationSchema, queue: QueueOptionsSchema });
@@ -30,7 +31,7 @@ const CardRevisionsInputSchema = z.object({ cardId: UuidSchema, deckId: UuidSche
 const CardRollbackRevisionInputSchema = z.object({ cardId: UuidSchema, deckId: UuidSchema, revisionId: UuidSchema, expectedVersion: ExpectedVersionSchema });
 
 function contentOf(card: Card): CardContent {
-  return { name: card.name, frontMarkdown: card.frontMarkdown, backMarkdown: card.backMarkdown, speechText: card.speechText, speechLocale: card.speechLocale, reversible: card.reversible };
+  return { name: card.name, frontMarkdown: card.frontMarkdown, backMarkdown: card.backMarkdown, speechText: card.speechText, speechLocale: card.speechLocale, speechSide: card.speechSide, reversible: card.reversible };
 }
 
 async function cardAggregate(db: Parameters<typeof cardsOwnedBy>[0], userId: string, cardId: string, deckId: string): Promise<Card> {
@@ -78,7 +79,7 @@ export const cardRouter = t.router({
   }),
   create: protectedProcedure.input(CardCreateInputSchema).output(CardSchema).mutation(async ({ ctx, input }) => {
     await requireDeck(ctx.db, ctx.identity.userId, input.deckId);
-    const content = { name: input.name, frontMarkdown: input.frontMarkdown, backMarkdown: input.backMarkdown, speechText: input.speechText, speechLocale: input.speechLocale, reversible: input.reversible };
+    const content = { name: input.name, frontMarkdown: input.frontMarkdown, backMarkdown: input.backMarkdown, speechText: input.speechText, speechLocale: input.speechLocale, speechSide: input.speechSide, reversible: input.reversible };
     return ctx.db.transaction(async (tx) => {
       const timestamp = ctx.now.toISOString();
       const [row] = await tx.insert(cards).values({ deckId: input.deckId, ...content, tags: input.tags, createdAt: timestamp, updatedAt: timestamp }).returning();
@@ -90,7 +91,7 @@ export const cardRouter = t.router({
     });
   }),
   update: protectedProcedure.input(CardUpdateInputSchema).output(CardSchema).mutation(async ({ ctx, input }) => {
-    const content = { name: input.name, frontMarkdown: input.frontMarkdown, backMarkdown: input.backMarkdown, speechText: input.speechText, speechLocale: input.speechLocale, reversible: input.reversible };
+    const content = { name: input.name, frontMarkdown: input.frontMarkdown, backMarkdown: input.backMarkdown, speechText: input.speechText, speechLocale: input.speechLocale, speechSide: input.speechSide, reversible: input.reversible };
     return ctx.db.transaction(async (tx) => {
       const before = await cardAggregate(tx, ctx.identity.userId, input.cardId, input.deckId);
       if (before.version !== input.expectedVersion) throw new ApplicationError('CONFLICT', `Card changed since version ${input.expectedVersion}`);
@@ -136,7 +137,7 @@ export const cardRouter = t.router({
     const revision = rows[0].revision;
     if (before.version !== input.expectedVersion) throw new ApplicationError('CONFLICT', `Card changed since version ${input.expectedVersion}`);
     if (before.reversible !== revision.afterContent.reversible) throw new ApplicationError('INVALID_STATE', 'Card direction cannot change after creation');
-    const rowsUpdated = await tx.update(cards).set({ name: revision.afterContent.name, frontMarkdown: revision.afterContent.frontMarkdown, backMarkdown: revision.afterContent.backMarkdown, speechText: revision.afterContent.speechText, speechLocale: revision.afterContent.speechLocale, version: input.expectedVersion + 1, updatedAt: ctx.now.toISOString() }).where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion))).returning();
+    const rowsUpdated = await tx.update(cards).set({ name: revision.afterContent.name, frontMarkdown: revision.afterContent.frontMarkdown, backMarkdown: revision.afterContent.backMarkdown, speechText: revision.afterContent.speechText, speechLocale: revision.afterContent.speechLocale, speechSide: revision.afterContent.speechSide, version: input.expectedVersion + 1, updatedAt: ctx.now.toISOString() }).where(and(eq(cards.id, input.cardId), eq(cards.deckId, input.deckId), eq(cards.version, input.expectedVersion))).returning();
     if (rowsUpdated.length === 0) throw await versionError(tx, ctx.identity.userId, input.cardId, input.deckId, input.expectedVersion);
     const card = mapCard(rowsUpdated[0], before.cadences);
     await recordRevision(tx, card.id, 'restored', contentOf(before), revision.afterContent, ctx.now);

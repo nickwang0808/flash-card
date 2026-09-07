@@ -165,8 +165,9 @@ function cardFixtures() {
       frontMarkdown: spanish(number),
       backMarkdown: english(number),
       tags: ['numbers', 'spanish', 'english'],
-      speechText: null,
+      speechText: spanish(number),
       speechLocale: null,
+      speechSide: 'front',
       reversible: true,
     };
   });
@@ -209,7 +210,7 @@ async function seed() {
     };
     const decks = deckRouter.createCaller(context);
     const cards = cardRouter.createCaller(context);
-    const deck = await decks.create({ name: deckName, defaultSpeechLocale: null });
+    const deck = await decks.create({ name: deckName, defaultSpeechLocale: 'es-ES' });
 
     for (let offset = 0; offset < fixtures.length; offset += batchSize) {
       const batch = fixtures.slice(offset, offset + batchSize);

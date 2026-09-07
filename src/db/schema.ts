@@ -1,5 +1,6 @@
 import type { CadenceState } from '../domain/CadenceState.ts';
 import type { CardContent } from '../domain/Card.ts';
+import type { SpeechSide } from '../domain/Speech.ts';
 
 import { pgTable, pgSchema, uuid, text, timestamp, boolean, integer, doublePrecision, jsonb, index, unique, check, pgPolicy } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -41,6 +42,7 @@ export const cards = pgTable(
     backMarkdown: text('back_markdown').notNull(),
     speechText: text('speech_text'),
     speechLocale: text('speech_locale'),
+    speechSide: text('speech_side', { enum: ['front', 'back'] }).$type<SpeechSide>(),
     tags: text('tags').array().notNull().default([]),
     reversible: boolean('reversible').notNull().default(false),
     suspended: boolean('suspended').notNull().default(false),
@@ -51,6 +53,7 @@ export const cards = pgTable(
   (table) => [
     index('cards_deck_id_idx').on(table.deckId),
     check('cards_name_check', sql`btrim(${table.name}) <> ''`),
+    check('cards_speech_fields_check', sql`(${table.speechText} is null and ${table.speechLocale} is null and ${table.speechSide} is null) or (${table.speechText} is not null and btrim(${table.speechText}) <> '' and ${table.speechSide} in ('front', 'back'))`),
     pgPolicy('cards select own', { as: 'permissive', for: 'select', to: 'authenticated', using: sql`exists (select 1 from decks where decks.id = ${table.deckId} and decks.user_id = auth.uid())` }),
     pgPolicy('cards insert own', { as: 'permissive', for: 'insert', to: 'authenticated', withCheck: sql`exists (select 1 from decks where decks.id = ${table.deckId} and decks.user_id = auth.uid())` }),
     pgPolicy('cards update own', { as: 'permissive', for: 'update', to: 'authenticated', using: sql`exists (select 1 from decks where decks.id = ${table.deckId} and decks.user_id = auth.uid())` }),

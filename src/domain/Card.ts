@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { TimestampSchema } from './primitives.ts';
 import { CardCadenceSchema } from './Cadence.ts';
+import { CardSpeechFieldsSchema, validateCardSpeechFields } from './Speech.ts';
+import { TimestampSchema } from './primitives.ts';
 
 export const MarkdownSchema = z
   .string()
@@ -21,20 +22,18 @@ export const CardContentSchema = z.object({
   name: CardNameSchema,
   frontMarkdown: MarkdownSchema,
   backMarkdown: MarkdownSchema,
-  speechText: z.string().trim().max(10_000).nullable(),
-  speechLocale: z.string().trim().max(35).nullable(),
+  ...CardSpeechFieldsSchema.shape,
   reversible: z.boolean(),
-});
+}).superRefine(validateCardSpeechFields);
 
 
-export const CardSchema = z.object({
+export const CardBaseSchema = z.object({
   id: z.string().uuid(),
   deckId: z.string().uuid(),
   name: CardNameSchema,
   frontMarkdown: MarkdownSchema,
   backMarkdown: MarkdownSchema,
-  speechText: z.string().trim().max(10_000).nullable(),
-  speechLocale: z.string().trim().max(35).nullable(),
+  ...CardSpeechFieldsSchema.shape,
   tags: z.array(z.string().trim().min(1).max(100)).max(100),
   reversible: z.boolean(),
   suspended: z.boolean(),
@@ -43,6 +42,8 @@ export const CardSchema = z.object({
   version: z.number().int().nonnegative(),
   cadences: z.array(CardCadenceSchema),
 });
+
+export const CardSchema = CardBaseSchema.superRefine(validateCardSpeechFields);
 
 export type CardContent = z.output<typeof CardContentSchema>;
 export type Card = z.output<typeof CardSchema>;

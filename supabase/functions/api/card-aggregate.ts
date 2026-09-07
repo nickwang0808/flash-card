@@ -27,6 +27,7 @@ export function mapCard(row: CardRow, cadences: readonly CardCadence[] = []): Ca
     backMarkdown: row.backMarkdown,
     speechText: row.speechText,
     speechLocale: row.speechLocale,
+    speechSide: row.speechSide,
     tags: row.tags,
     reversible: row.reversible,
     suspended: row.suspended,

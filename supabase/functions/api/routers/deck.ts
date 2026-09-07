@@ -1,6 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { DeckSchema } from '../../../../src/domain/Deck.ts';
+import { SpeechLocaleSchema } from '../../../../src/domain/Speech.ts';
 import { ApplicationError } from '../../../../src/domain/errors.ts';
 import { QueueOptionsSchema, QueueSnapshotSchema } from '../../../../src/domain/StudyQueue.ts';
 import { UuidSchema, toIsoTimestamp } from '../../../../src/domain/primitives.ts';
@@ -10,7 +11,7 @@ import { queueSnapshot } from '../study-queue.ts';
 import { protectedProcedure, t } from '../trpc.ts';
 
 const DeckListInputSchema = z.object({});
-const DeckCreateInputSchema = z.object({ name: z.string().trim().min(1).max(200), defaultSpeechLocale: z.string().trim().max(35).nullable().default(null) });
+const DeckCreateInputSchema = z.object({ name: z.string().trim().min(1).max(200), defaultSpeechLocale: SpeechLocaleSchema.nullable().default(null) });
 const DeckRenameInputSchema = z.object({ deckId: UuidSchema, name: z.string().trim().min(1).max(200), expectedVersion: z.number().int().nonnegative() });
 const DeckRemoveInputSchema = z.object({ deckId: UuidSchema, expectedVersion: z.number().int().nonnegative(), confirmation: z.literal(true) });
 const DeckQueueInputSchema = z.object({ deckId: UuidSchema }).and(QueueOptionsSchema);

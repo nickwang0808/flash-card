@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
 import { CardCadenceSchema, type CardCadence } from './Cadence.ts';
-import { CardSchema, type Card } from './Card.ts';
+import { CardBaseSchema, type Card } from './Card.ts';
+import { validateCardSpeechFields } from './Speech.ts';
 import { ApplicationError } from './errors.ts';
 import { TimestampSchema } from './primitives.ts';
 
@@ -11,7 +12,7 @@ const QueueStatusSchema = z.enum(['new', 'due', 'future']);
 export const QueueOptionsSchema = z.object({
   limit: z.number().int().min(1).max(100).default(50),
 });
-const QueueCardSchema = CardSchema.omit({ cadences: true }).extend({
+const QueueCardSchema = CardBaseSchema.omit({ cadences: true }).extend({
   id: z.string().uuid(),
   cardId: z.string().uuid(),
   direction: CardCadenceSchema.shape.direction,
@@ -21,7 +22,7 @@ const QueueCardSchema = CardSchema.omit({ cadences: true }).extend({
   lapseCount: CardCadenceSchema.shape.lapseCount,
   version: CardCadenceSchema.shape.version,
   status: QueueStatusSchema,
-});
+}).superRefine(validateCardSpeechFields);
 export const QueueSnapshotSchema = z.object({
   asOf: TimestampSchema,
   horizon: TimestampSchema,
@@ -64,6 +65,7 @@ export class StudyQueue {
       backMarkdown: cadence.direction === 'forward' ? card.backMarkdown : card.frontMarkdown,
       speechText: card.speechText,
       speechLocale: card.speechLocale,
+      speechSide: cadence.direction === 'forward' ? card.speechSide : card.speechSide === 'front' ? 'back' : card.speechSide === 'back' ? 'front' : null,
       tags: card.tags,
       reversible: card.reversible,
       suspended: card.suspended,
