@@ -63,4 +63,28 @@ describe('mixed study state', () => {
     const undone = await actor.api.review.undo({ reviewId: rated.reviewId, deckId: deck.id, queue: limitOne });
     expect(undone.queue).toEqual(await actor.api.deck.queue({ deckId: deck.id, ...limitOne }));
   });
+
+  test('counts the full review and new workloads beyond the returned window', async () => {
+    actor = await createActor('queue-counts');
+    const deck = await createDeck(actor, 'Queue counts');
+    await Promise.all([
+      createStudiedCard(actor, deck, { name: 'review A' }),
+      createStudiedCard(actor, deck, { name: 'review B' }),
+      createNewCard(actor, deck, { name: 'new A' }),
+      createNewCard(actor, deck, { name: 'new B' }),
+    ]);
+    const limitedQueue = { limit: 1 };
+
+    const initial = await actor.api.deck.queue({ deckId: deck.id, ...limitedQueue });
+    expect(initial.items).toHaveLength(1);
+    expect(initial.counts).toEqual({ review: 2, new: 2 });
+
+    const firstReview = initial.items[0];
+    const good = await actor.api.review.rate({ cadenceId: firstReview.id, deckId: deck.id, rating: 'good', expectedVersion: firstReview.version, requestId: crypto.randomUUID(), queue: limitedQueue });
+    expect(good.queue.counts).toEqual({ review: 1, new: 2 });
+
+    const secondReview = good.queue.items[0];
+    const again = await actor.api.review.rate({ cadenceId: secondReview.id, deckId: deck.id, rating: 'again', expectedVersion: secondReview.version, requestId: crypto.randomUUID(), queue: limitedQueue });
+    expect(again.queue.counts).toEqual({ review: 1, new: 2 });
+  });
 });

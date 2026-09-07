@@ -23,7 +23,8 @@ interface UndoToken {
 export interface StudySession {
   activeCard: QueueItem | null;
   answerRevealed: boolean;
-  remaining: number;
+  reviewCount: number;
+  newCount: number;
   pendingRatings: number;
   phase: 'loading' | 'error' | 'ready' | 'saving' | 'complete';
   error: Error | null;
@@ -172,7 +173,8 @@ export function useStudySession(deckId: string): StudySession {
   }, [pendingCommands.length, undoMutation, undoToken]);
 
   const pendingRatings = Math.max(pendingCommands.length, claimedIds.size);
-  const remaining = visibleItems.filter((item) => item.id !== activeCard?.id).length + (activeCard ? 1 : 0);
+  const reviewCount = snapshot?.counts.review ?? 0;
+  const newCount = snapshot?.counts.new ?? 0;
   const error = queue.isError ? asError(queue.error) : refreshError;
   const phase: StudySession['phase'] = queue.isPending ? 'loading'
     : !activeCard && queue.isError ? 'error'
@@ -183,7 +185,8 @@ export function useStudySession(deckId: string): StudySession {
   return {
     activeCard,
     answerRevealed,
-    remaining,
+    reviewCount,
+    newCount,
     pendingRatings,
     phase,
     error,

@@ -50,7 +50,7 @@ describe('StudyQueue', () => {
       candidate('00000000-0000-0000-0000-000000000003', { createdAt: '2026-01-01T00:00:00.000Z' }),
       candidate('00000000-0000-0000-0000-000000000002', { nextReviewAt: '2026-01-01T11:00:00.000Z', intervalDays: 1 }),
       candidate('00000000-0000-0000-0000-000000000001', { createdAt: '2025-12-31T00:00:00.000Z' }),
-    ], now, { limit: 50 });
+    ], now, { review: 1, new: 2 }, { limit: 50 });
 
     expect(snapshot.items.map((item) => item.id)).toEqual([
       '00000000-0000-0000-0000-000000000002',
@@ -58,13 +58,14 @@ describe('StudyQueue', () => {
       '00000000-0000-0000-0000-000000000003',
     ]);
     expect(snapshot.items.map((item) => item.status)).toEqual(['due', 'new', 'new']);
+    expect(snapshot.counts).toEqual({ review: 1, new: 2 });
   });
 
   it('keeps short future retries before new cadences', () => {
     const snapshot = queue.build([
       candidate('00000000-0000-0000-0000-000000000001'),
       candidate('00000000-0000-0000-0000-000000000002', { nextReviewAt: '2026-01-01T12:01:00.000Z', intervalDays: 1 }),
-    ], now, { limit: 50 });
+    ], now, { review: 1, new: 1 }, { limit: 50 });
 
     expect(snapshot.items.map((item) => item.id)).toEqual([
       '00000000-0000-0000-0000-000000000002',
@@ -79,7 +80,7 @@ describe('StudyQueue', () => {
       candidate('00000000-0000-0000-0000-000000000003', { cardId: '00000000-0000-0000-0000-000000000001', direction: 'reverse', reversible: true, frontMarkdown: 'B front', backMarkdown: 'B back' }),
       candidate('00000000-0000-0000-0000-000000000002', { direction: 'forward', reversible: true, frontMarkdown: 'A front', backMarkdown: 'A back' }),
       candidate('00000000-0000-0000-0000-000000000001', { direction: 'forward', reversible: true, frontMarkdown: 'B front', backMarkdown: 'B back' }),
-    ], now, { limit: 50 });
+    ], now, { review: 0, new: 4 }, { limit: 50 });
 
     expect(snapshot.items.map((item) => item.direction)).toEqual(['forward', 'forward', 'reverse', 'reverse']);
     expect(snapshot.items[2]).toMatchObject({ frontMarkdown: 'B back', backMarkdown: 'B front' });
@@ -91,7 +92,7 @@ describe('StudyQueue', () => {
       candidate('00000000-0000-0000-0000-000000000002', { speechText: 'back', speechSide: 'back', direction: 'forward' }),
       candidate('00000000-0000-0000-0000-000000000003', { speechText: 'front', speechSide: 'front', direction: 'reverse', reversible: true }),
       candidate('00000000-0000-0000-0000-000000000004', { speechText: 'back', speechSide: 'back', direction: 'reverse', reversible: true }),
-    ], now);
+    ], now, { review: 0, new: 4 });
 
     expect(snapshot.items.map(({ speechSide }) => speechSide)).toEqual(['front', 'back', 'back', 'front']);
   });
@@ -102,10 +103,11 @@ describe('StudyQueue', () => {
       candidate('00000000-0000-0000-0000-000000000002', { nextReviewAt: horizon, intervalDays: 1 }),
       candidate('00000000-0000-0000-0000-000000000001', { suspended: true }),
       candidate('00000000-0000-0000-0000-000000000003', { nextReviewAt: new Date(Date.parse(horizon) + 1).toISOString(), intervalDays: 1 }),
-    ], now, { limit: 50 });
+    ], now, { review: 1, new: 0 }, { limit: 50 });
 
     expect(snapshot.items.map((item) => item.id)).toEqual(['00000000-0000-0000-0000-000000000002']);
     expect(snapshot.items[0].status).toBe('future');
     expect(snapshot.horizon).toBe(horizon);
+    expect(snapshot.counts).toEqual({ review: 1, new: 0 });
   });
 });

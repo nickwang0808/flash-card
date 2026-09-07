@@ -12,6 +12,10 @@ const QueueStatusSchema = z.enum(['new', 'due', 'future']);
 export const QueueOptionsSchema = z.object({
   limit: z.number().int().min(1).max(100).default(50),
 });
+const QueueCountsSchema = z.object({
+  review: z.number().int().nonnegative(),
+  new: z.number().int().nonnegative(),
+});
 const QueueCardSchema = CardBaseSchema.omit({ cadences: true }).extend({
   id: z.string().uuid(),
   cardId: z.string().uuid(),
@@ -26,11 +30,13 @@ const QueueCardSchema = CardBaseSchema.omit({ cadences: true }).extend({
 export const QueueSnapshotSchema = z.object({
   asOf: TimestampSchema,
   horizon: TimestampSchema,
+  counts: QueueCountsSchema,
   items: z.array(QueueCardSchema),
 });
 
 export type QueueOptions = z.output<typeof QueueOptionsSchema>;
 export type QueueItem = z.output<typeof QueueCardSchema>;
+export type QueueCounts = z.output<typeof QueueCountsSchema>;
 export type QueueSnapshot = z.output<typeof QueueSnapshotSchema>;
 export interface StudyQueueCandidate {
   card: Card;
@@ -40,12 +46,13 @@ export interface StudyQueueCandidate {
 const DEFAULT_QUEUE_OPTIONS: QueueOptions = Object.freeze({ limit: 50 });
 
 export class StudyQueue {
-  build(candidates: readonly StudyQueueCandidate[], now: Date, options: QueueOptions = DEFAULT_QUEUE_OPTIONS): QueueSnapshot {
+  build(candidates: readonly StudyQueueCandidate[], now: Date, counts: QueueCounts, options: QueueOptions = DEFAULT_QUEUE_OPTIONS): QueueSnapshot {
     const asOfTime = now.getTime();
     if (!Number.isFinite(asOfTime)) {
       throw new ApplicationError('VALIDATION_FAILED', 'Queue time must be a valid date');
     }
 
+    const queueCounts = QueueCountsSchema.parse(counts);
     const queueOptions = QueueOptionsSchema.parse(options);
     const horizonTime = asOfTime + STUDY_HORIZON_HOURS * 3_600_000;
     const eligible = candidates.filter(({ card, cadence }) => !card.suspended && (cadence.nextReviewAt === null || Date.parse(cadence.nextReviewAt) <= horizonTime));
@@ -83,6 +90,7 @@ export class StudyQueue {
     return Object.freeze({
       asOf: new Date(asOfTime).toISOString(),
       horizon: new Date(horizonTime).toISOString(),
+      counts: queueCounts,
       items,
     });
   }

@@ -38,8 +38,11 @@ const cards = ['A', 'B', 'C'].map((name, index) => ({
   status: 'new' as const,
 }));
 
-function snapshot(items = cards): QueueSnapshot {
-  return { asOf: '2026-01-01T00:00:00.000Z', horizon: '2026-01-01T12:00:00.000Z', items };
+function snapshot(items = cards, counts = {
+  review: items.filter((item) => item.status !== 'new').length,
+  new: items.filter((item) => item.status === 'new').length,
+}): QueueSnapshot {
+  return { asOf: '2026-01-01T00:00:00.000Z', horizon: '2026-01-01T12:00:00.000Z', counts, items };
 }
 
 function deferred<T>() {
@@ -48,12 +51,12 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function createHarness() {
+function createHarness(initial = snapshot()) {
   const first = deferred<{ reviewId: string; queue: QueueSnapshot }>();
   const second = deferred<{ reviewId: string; queue: QueueSnapshot }>();
   const rate = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
   state.api = {
-    deck: { queue: { query: vi.fn().mockResolvedValue(snapshot()) } },
+    deck: { queue: { query: vi.fn().mockResolvedValue(initial) } },
     review: { rate: { mutate: rate }, undo: { mutate: vi.fn() } },
   } as unknown as ApiClient;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -66,6 +69,7 @@ describe('useStudySession', () => {
     const harness = createHarness();
     const { result } = renderHook(() => useStudySession(deckId), { wrapper: harness.wrapper });
     await waitFor(() => expect(result.current.activeCard?.name).toBe('A'));
+    expect(result.current).toMatchObject({ reviewCount: 0, newCount: 3 });
 
     act(() => result.current.rate('good'));
     expect(result.current.activeCard?.name).toBe('B');

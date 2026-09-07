@@ -48,7 +48,7 @@ export function StudyScreen({ deckId }: StudyScreenProps) {
   if (!study.activeCard) return null;
 
   return <ScrollView className="flex-1 bg-background" contentContainerClassName="mx-auto min-h-full w-full max-w-md gap-5 p-5">
-    <View className="gap-1"><Text className="text-sm text-muted-foreground">{deckName}</Text><StudyHeader canUndo={study.canUndo} onEnd={() => { void speech.stop(); router.replace('/decks'); }} onUndo={study.undo} remaining={study.remaining} /></View>
+    <View className="gap-1"><Text className="text-sm text-muted-foreground">{deckName}</Text><StudyHeader canUndo={study.canUndo} onEnd={() => { void speech.stop(); router.replace('/decks'); }} onUndo={study.undo} reviewCount={study.reviewCount} newCount={study.newCount} /></View>
     {study.error ? <View accessibilityRole="alert" className="gap-2 rounded-md bg-destructive/10 p-3"><Text className="text-destructive">{study.error.message}</Text><Button size="sm" variant="outline" onPress={() => void study.refetch()}><ButtonText>Retry</ButtonText></Button></View> : null}
     {speech.error ? <View accessibilityRole="alert" className="rounded-md bg-destructive/10 p-3"><Text className="text-destructive">{speech.error.message}</Text></View> : null}
     <StudyCard answerRevealed={study.answerRevealed} canSpeak={canSpeak} card={study.activeCard} onSpeak={speak} speechIsPlaying={speech.isSpeaking} />
