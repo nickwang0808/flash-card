@@ -110,4 +110,9 @@
   --color-ring: rgb(var(--ring));
   --color-accent: rgb(var(--accent));
   --color-accent-foreground: rgb(var(--accent-foreground));
+
+  --font-sans: "Inter_400Regular";
+  --font-body: "Inter_400Regular";
+  --font-button: "Inter_500Medium";
+  --font-heading: "Inter_600SemiBold";
 }

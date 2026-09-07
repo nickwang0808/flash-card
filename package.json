@@ -18,6 +18,7 @@
     "db:seed": "node scripts/seed-local.mjs"
   },
   "dependencies": {
+    "@expo-google-fonts/inter": "^0.4.2",
     "@expo/html-elements": "^0.12.5",
     "@gluestack-ui/core": "^5.0.15",
     "@gluestack-ui/utils": "^5.0.6",
