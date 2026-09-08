@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { CardContentSchema } from '../domain/Card.ts';
+import { CardImportInputSchema } from '../domain/CardImport.ts';
+import { validateCardSpeechFields } from '../domain/Speech.ts';
 import { RatingSchema, UuidSchema } from '../domain/primitives.ts';
 import { QueueOptionsSchema } from '../domain/StudyQueue.ts';
 import { CliError } from './errors.ts';
@@ -8,6 +10,17 @@ import { CliError } from './errors.ts';
 const MAX_INPUT_BYTES = 1024 * 1024;
 const strictInteger = z.number().int().nonnegative();
 const pagination = z.object({ cursor: z.string().min(1).max(500).nullable().optional(), limit: z.number().int().min(1).max(100).default(50) }).strict();
+const cardCreate = z.object({
+  deckId: UuidSchema,
+  name: CardContentSchema.shape.name,
+  frontMarkdown: CardContentSchema.shape.frontMarkdown,
+  backMarkdown: CardContentSchema.shape.backMarkdown,
+  tags: z.array(z.string().trim().min(1).max(100)).max(100).default([]),
+  speechText: CardContentSchema.shape.speechText.default(null),
+  speechLocale: CardContentSchema.shape.speechLocale.default(null),
+  speechSide: CardContentSchema.shape.speechSide.default(null),
+  reversible: CardContentSchema.shape.reversible.default(false),
+}).strict().superRefine(validateCardSpeechFields);
 const queue = QueueOptionsSchema.strict();
 
 export const schemas = {
@@ -17,14 +30,15 @@ export const schemas = {
   deckQueue: z.object({ deckId: UuidSchema, limit: z.number().int().min(1).max(100).optional() }).strict(),
   cardGet: z.object({ cardId: UuidSchema, deckId: UuidSchema }).strict(),
   cardSearch: z.object({ deckId: UuidSchema.nullable().optional(), query: z.string().trim().min(1).max(500), pagination }).strict(),
-  cardCreate: CardContentSchema.safeExtend({ deckId: UuidSchema, tags: z.array(z.string().trim().min(1).max(100)).max(100).default([]), speechSide: CardContentSchema.shape.speechSide.default(null), reversible: CardContentSchema.shape.reversible.default(false) }).strict(),
-  cardUpdate: CardContentSchema.safeExtend({ cardId: UuidSchema, deckId: UuidSchema, tags: z.array(z.string().trim().min(1).max(100)).max(100).default([]), speechSide: CardContentSchema.shape.speechSide.default(null), reversible: CardContentSchema.shape.reversible.default(false), expectedVersion: strictInteger }).strict(),
+  cardCreate,
+  cardImport: CardImportInputSchema,
+  cardUpdate: cardCreate.safeExtend({ cardId: UuidSchema, expectedVersion: strictInteger }),
   cardQueueMutation: z.object({ cardId: UuidSchema, deckId: UuidSchema, expectedVersion: strictInteger, queue }).strict(),
   cardRemove: z.object({ cardId: UuidSchema, deckId: UuidSchema, expectedVersion: strictInteger, queue }).strict(),
   cardRevisions: z.object({ cardId: UuidSchema, deckId: UuidSchema, pagination }).strict(),
   cardRollback: z.object({ cardId: UuidSchema, deckId: UuidSchema, revisionId: UuidSchema, expectedVersion: strictInteger }).strict(),
-  reviewRate: z.object({ cardId: UuidSchema, deckId: UuidSchema, rating: RatingSchema, expectedVersion: strictInteger, requestId: UuidSchema.optional(), queue }).strict(),
-  reviewHistory: z.object({ cardId: UuidSchema, deckId: UuidSchema, pagination }).strict(),
+  reviewRate: z.object({ cadenceId: UuidSchema, deckId: UuidSchema, rating: RatingSchema, expectedVersion: strictInteger, requestId: UuidSchema.optional(), queue }).strict(),
+  reviewHistory: z.object({ cadenceId: UuidSchema, deckId: UuidSchema, pagination }).strict(),
   reviewUndo: z.object({ reviewId: UuidSchema, deckId: UuidSchema, queue }).strict(),
 };
 

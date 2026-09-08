@@ -61,6 +61,7 @@ export function createProgram(handler: CommandHandler, writeOut: (text: string) 
   addInput(card.command('get').option('--card-id <uuid>').option('--deck-id <uuid>')).action(invoke(handler, 'card.get'));
   addInput(addPagination(card.command('search').option('--query <query>').option('--deck-id <uuid>'))).action(invoke(handler, 'card.search'));
   addInput(addCardContent(card.command('create'))).action(invoke(handler, 'card.create'));
+  addInput(card.command('import')).action(invoke(handler, 'card.import'));
   addInput(addCardContent(card.command('update').option('--card-id <uuid>').option('--expected-version <version>'))).action(invoke(handler, 'card.update'));
   for (const name of ['suspend', 'restore'] as const) addInput(addQueue(card.command(name).option('--card-id <uuid>').option('--deck-id <uuid>').option('--expected-version <version>'))).action(invoke(handler, `card.${name}`));
   addInput(addQueue(card.command('remove').option('--card-id <uuid>').option('--deck-id <uuid>').option('--expected-version <version>').option('--yes'))).action(invoke(handler, 'card.remove'));
@@ -68,8 +69,8 @@ export function createProgram(handler: CommandHandler, writeOut: (text: string) 
   addInput(card.command('rollback').option('--card-id <uuid>').option('--deck-id <uuid>').option('--revision-id <uuid>').option('--expected-version <version>')).action(invoke(handler, 'card.rollback'));
 
   const review = program.command('review').description('Record and inspect reviews');
-  addInput(addQueue(review.command('rate').option('--card-id <uuid>').option('--deck-id <uuid>').option('--rating <again|hard|good|easy>').option('--expected-version <version>').option('--request-id <uuid>'))).action(invoke(handler, 'review.rate'));
-  addInput(addPagination(review.command('history').option('--card-id <uuid>').option('--deck-id <uuid>'))).action(invoke(handler, 'review.history'));
+  addInput(addQueue(review.command('rate').option('--cadence-id <uuid>').option('--deck-id <uuid>').option('--rating <again|hard|good|easy>').option('--expected-version <version>').option('--request-id <uuid>'))).action(invoke(handler, 'review.rate'));
+  addInput(addPagination(review.command('history').option('--cadence-id <uuid>').option('--deck-id <uuid>'))).action(invoke(handler, 'review.history'));
   addInput(addQueue(review.command('undo').option('--review-id <uuid>').option('--deck-id <uuid>'))).action(invoke(handler, 'review.undo'));
   return program;
 }

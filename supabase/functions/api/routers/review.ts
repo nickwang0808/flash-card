@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, lt, or, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { Cadence, type CardCadence } from '../../../../src/domain/Cadence.ts';
@@ -35,7 +35,7 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 function mapEvent(row: typeof reviewEvents.$inferSelect): ReviewEvent {
-  return { id: row.id, cadenceId: row.cadenceId, rating: row.rating, reviewedAt: toIsoTimestamp(row.reviewedAt), beforeState: row.beforeState, afterState: row.afterState, requestId: row.requestId, undoneAt: row.undoneAt ? toIsoTimestamp(row.undoneAt) : null, createdAt: toIsoTimestamp(row.createdAt) };
+  return { id: row.id, cadenceId: row.cadenceId, origin: row.origin, rating: row.rating, recalled: row.recalled, durationMs: row.durationMs, sequence: row.sequence, reviewedAt: toIsoTimestamp(row.reviewedAt), beforeState: row.beforeState, afterState: row.afterState, requestId: row.requestId, undoneAt: row.undoneAt ? toIsoTimestamp(row.undoneAt) : null, createdAt: toIsoTimestamp(row.createdAt) };
 }
 
 function mapHistory(row: typeof reviewEvents.$inferSelect): ReviewHistoryEntry {
@@ -45,6 +45,23 @@ function mapHistory(row: typeof reviewEvents.$inferSelect): ReviewHistoryEntry {
 
 function cadenceStateOf(cadence: CardCadence): CadenceState {
   return { nextReviewAt: cadence.nextReviewAt, intervalDays: cadence.intervalDays, reviewCount: cadence.reviewCount, lapseCount: cadence.lapseCount };
+}
+
+function encodeReviewCursor(sequence: number): string {
+  return btoa(String(sequence));
+}
+
+function decodeReviewCursor(cursor: string): number {
+  let decoded: string;
+  try {
+    decoded = atob(cursor);
+  } catch {
+    throw new ApplicationError('VALIDATION_FAILED', 'Invalid pagination cursor');
+  }
+  if (!/^[1-9]\d*$/.test(decoded)) throw new ApplicationError('VALIDATION_FAILED', 'Invalid pagination cursor');
+  const sequence = Number(decoded);
+  if (!Number.isSafeInteger(sequence)) throw new ApplicationError('VALIDATION_FAILED', 'Invalid pagination cursor');
+  return sequence;
 }
 
 export const reviewRouter = t.router({
@@ -59,12 +76,13 @@ export const reviewRouter = t.router({
         const cadence = mapCadence(cadenceRows[0].cadence);
         const existingRows = await reviewEventsOf(tx, ctx.identity.userId).where(and(eq(reviewEvents.cadenceId, input.cadenceId), eq(reviewEvents.requestId, input.requestId))).limit(1);
         if (existingRows.length > 0) return existingRows[0].event.id;
+        const latestRows = await reviewEventsOf(tx, ctx.identity.userId).where(eq(reviewEvents.cadenceId, input.cadenceId)).orderBy(desc(reviewEvents.sequence)).limit(1);
         if (cadence.version !== input.expectedVersion) throw new ApplicationError('CONFLICT', `Cadence changed since version ${input.expectedVersion}`);
         const beforeState = cadenceStateOf(cadence);
         const afterState = new Cadence().rate(beforeState, input.rating, now);
         let eventRows;
         try {
-          eventRows = await tx.insert(reviewEvents).values({ cadenceId: input.cadenceId, rating: input.rating, reviewedAt: now.toISOString(), beforeState, afterState, requestId: input.requestId, createdAt: now.toISOString() }).returning();
+          eventRows = await tx.insert(reviewEvents).values({ cadenceId: input.cadenceId, origin: 'native', rating: input.rating, recalled: input.rating !== 'again', durationMs: null, sequence: (latestRows[0]?.event.sequence ?? 0) + 1, reviewedAt: now.toISOString(), beforeState, afterState, requestId: input.requestId, createdAt: now.toISOString() }).returning();
         } catch (error) {
           if (isUniqueViolation(error)) throw new ReviewRequestExists(input.cadenceId, input.requestId);
           throw error;
@@ -88,7 +106,8 @@ export const reviewRouter = t.router({
       if (eventRows.length === 0) throw new ApplicationError('NOT_FOUND', 'Review not found');
       const event = mapEvent(eventRows[0].event);
       if (event.undoneAt !== null) throw new ApplicationError('INVALID_STATE', 'Review is already undone');
-      const newerRows = await reviewEventsOf(tx, ctx.identity.userId).where(and(eq(reviewEvents.cadenceId, event.cadenceId), isNull(reviewEvents.undoneAt), or(gt(reviewEvents.reviewedAt, event.reviewedAt), and(eq(reviewEvents.reviewedAt, event.reviewedAt), gt(reviewEvents.id, event.id))))).limit(1);
+      if (event.origin === 'imported') throw new ApplicationError('INVALID_STATE', 'Imported reviews cannot be undone');
+      const newerRows = await reviewEventsOf(tx, ctx.identity.userId).where(and(eq(reviewEvents.cadenceId, event.cadenceId), isNull(reviewEvents.undoneAt), gt(reviewEvents.sequence, event.sequence))).limit(1);
       if (newerRows.length > 0) throw new ApplicationError('INVALID_STATE', 'Only the latest active review can be undone');
       const beforeState = event.beforeState ?? { nextReviewAt: null, intervalDays: null, reviewCount: 0, lapseCount: 0 };
       await tx.update(reviewEvents).set({ undoneAt: now.toISOString() }).where(eq(reviewEvents.id, event.id));
@@ -98,12 +117,12 @@ export const reviewRouter = t.router({
   }),
   history: protectedProcedure.input(ReviewHistoryInputSchema).output(ReviewHistoryOutputSchema).query(async ({ ctx, input }) => {
     await requireDeck(ctx.db, ctx.identity.userId, input.deckId);
-    const after = input.pagination.cursor ? decodeCursor(input.pagination.cursor) : null;
-    const conditions: (SQL | undefined)[] = [eq(reviewEvents.cadenceId, input.cadenceId), eq(decks.id, input.deckId)];
-    if (after) conditions.push(or(lt(reviewEvents.reviewedAt, after.timestamp), and(eq(reviewEvents.reviewedAt, after.timestamp), lt(reviewEvents.id, after.id))));
-    const rows = await reviewEventsOf(ctx.db, ctx.identity.userId).where(and(...conditions)).orderBy(desc(reviewEvents.reviewedAt), desc(reviewEvents.id)).limit(input.pagination.limit + 1);
+    const after = input.pagination.cursor ? decodeReviewCursor(input.pagination.cursor) : null;
+    const conditions = [eq(reviewEvents.cadenceId, input.cadenceId), eq(decks.id, input.deckId)];
+    if (after !== null) conditions.push(lt(reviewEvents.sequence, after));
+    const rows = await reviewEventsOf(ctx.db, ctx.identity.userId).where(and(...conditions)).orderBy(desc(reviewEvents.sequence)).limit(input.pagination.limit + 1);
     const values = rows.map(({ event }) => mapHistory(event));
     const pageItems = values.length > input.pagination.limit ? values.slice(0, input.pagination.limit) : values;
-    return { events: pageItems, pageInfo: { nextCursor: values.length > input.pagination.limit ? encodeCursor(pageItems.at(-1)!.reviewedAt, pageItems.at(-1)!.id) : null } };
+    return { events: pageItems, pageInfo: { nextCursor: values.length > input.pagination.limit ? encodeReviewCursor(pageItems.at(-1)!.sequence) : null } };
   }),
 });

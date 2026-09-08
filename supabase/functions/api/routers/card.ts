@@ -2,13 +2,14 @@ import { and, arrayContains, asc, desc, eq, ilike, inArray, lt, or, type SQL } f
 import { z } from 'zod';
 
 import { CardContentSchema, CardNameSchema, CardSchema, MarkdownSchema, type Card, type CardContent } from '../../../../src/domain/Card.ts';
+import { CardImportInputSchema, type CardImportInput } from '../../../../src/domain/CardImport.ts';
 import { validateCardSpeechFields } from '../../../../src/domain/Speech.ts';
 import type { CardCadence } from '../../../../src/domain/Cadence.ts';
 import { CardRevisionSchema, type CardRevision } from '../../../../src/domain/CardRevision.ts';
 import { ApplicationError } from '../../../../src/domain/errors.ts';
 import { QueueOptionsSchema, QueueSnapshotSchema } from '../../../../src/domain/StudyQueue.ts';
 import { UuidSchema, toIsoTimestamp } from '../../../../src/domain/primitives.ts';
-import { cardCadences, cardRevisions, cards } from '../../../../src/db/schema.ts';
+import { cardCadences, cardRevisions, cards, reviewEvents } from '../../../../src/db/schema.ts';
 import { cardCadencesOwnedBy, cardsOwnedBy, decodeCursor, deckRevisionsOf, encodeCursor, requireDeck, requireDeckForCard } from '../../../../src/db/tenant.ts';
 
 import { mapCadence, mapCard } from '../card-aggregate.ts';
@@ -29,6 +30,13 @@ const CardSuspendInputSchema = z.object({ cardId: UuidSchema, deckId: UuidSchema
 const CardRemoveInputSchema = z.object({ cardId: UuidSchema, deckId: UuidSchema, expectedVersion: ExpectedVersionSchema, confirmation: ConfirmationSchema, queue: QueueOptionsSchema });
 const CardRevisionsInputSchema = z.object({ cardId: UuidSchema, deckId: UuidSchema, pagination: PaginationInputSchema });
 const CardRollbackRevisionInputSchema = z.object({ cardId: UuidSchema, deckId: UuidSchema, revisionId: UuidSchema, expectedVersion: ExpectedVersionSchema });
+const CardImportOutputSchema = z.object({ card: CardSchema, importedReviewCount: z.number().int().nonnegative(), alreadyImported: z.boolean() });
+const UNIQUE_VIOLATION = '23505';
+
+function isUniqueViolation(error: unknown): boolean {
+  const candidate = typeof error === 'object' && error !== null && 'cause' in error && error.cause !== undefined ? error.cause : error;
+  return typeof candidate === 'object' && candidate !== null && 'code' in candidate && candidate.code === UNIQUE_VIOLATION;
+}
 
 function contentOf(card: Card): CardContent {
   return { name: card.name, frontMarkdown: card.frontMarkdown, backMarkdown: card.backMarkdown, speechText: card.speechText, speechLocale: card.speechLocale, speechSide: card.speechSide, reversible: card.reversible };
@@ -64,6 +72,22 @@ async function recordRevision(tx: Parameters<typeof cardsOwnedBy>[0], cardId: st
   await tx.insert(cardRevisions).values({ cardId, eventType, beforeContent, afterContent, createdAt: now.toISOString() });
 }
 
+async function hashImportPayload(input: CardImportInput): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(input)));
+  let result = '';
+  for (const byte of new Uint8Array(digest)) result += byte.toString(16).padStart(2, '0');
+  return result;
+}
+
+async function importedCardFor(db: Parameters<typeof cardsOwnedBy>[0], userId: string, requestId: string, payloadHash: string): Promise<Card | null> {
+  const rows = await cardsOwnedBy(db, userId).where(eq(cards.importRequestId, requestId)).limit(1);
+  if (rows.length === 0) return null;
+  if (rows[0].cards.importPayloadHash !== payloadHash) {
+    throw new ApplicationError('IDEMPOTENCY_CONFLICT', 'Import request was already used with different input');
+  }
+  return cardAggregate(db, userId, rows[0].cards.id, rows[0].cards.deckId);
+}
+
 export const cardRouter = t.router({
   get: protectedProcedure.input(CardGetInputSchema).output(CardSchema).query(({ ctx, input }) => cardAggregate(ctx.db, ctx.identity.userId, input.cardId, input.deckId)),
   search: protectedProcedure.input(CardSearchInputSchema).output(z.object({ cards: z.array(CardSchema), pageInfo: PageInfoSchema })).query(async ({ ctx, input }) => {
@@ -89,6 +113,74 @@ export const cardRouter = t.router({
       await recordRevision(tx, card.id, 'created', null, content, ctx.now);
       return card;
     });
+  }),
+  import: protectedProcedure.input(CardImportInputSchema).output(CardImportOutputSchema).mutation(async ({ ctx, input }) => {
+    for (const cadence of input.cadences) {
+      for (const review of cadence.reviews) {
+        if (Date.parse(review.reviewedAt) > ctx.now.getTime()) {
+          throw new ApplicationError('VALIDATION_FAILED', 'Imported reviews cannot be in the future');
+        }
+      }
+    }
+    const importedReviewCount = input.cadences.reduce((total, cadence) => total + cadence.reviews.length, 0);
+    const payloadHash = await hashImportPayload(input);
+    const existing = await importedCardFor(ctx.db, ctx.identity.userId, input.requestId, payloadHash);
+    if (existing) return { card: existing, importedReviewCount, alreadyImported: true };
+
+    try {
+      return await ctx.db.transaction(async (tx) => {
+        await requireDeck(tx, ctx.identity.userId, input.deckId);
+        const timestamp = ctx.now.toISOString();
+        const { tags, suspended, ...content } = input.card;
+        const [row] = await tx.insert(cards).values({
+          deckId: input.deckId,
+          ...content,
+          tags,
+          suspended,
+          importRequestId: input.requestId,
+          importPayloadHash: payloadHash,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }).returning();
+        const cadenceRows = await tx.insert(cardCadences).values(input.cadences.map((cadence) => ({
+          cardId: row.id,
+          direction: cadence.direction,
+          ...(cadence.reviews.at(-1)?.afterState ?? cadence.baseState),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }))).returning();
+        const cadenceIdByDirection = new Map(cadenceRows.map((cadence) => [cadence.direction, cadence.id]));
+        const historyRows: (typeof reviewEvents.$inferInsert)[] = [];
+        for (const cadence of input.cadences) {
+          let beforeState = cadence.baseState;
+          for (const [index, review] of cadence.reviews.entries()) {
+            historyRows.push({
+              cadenceId: cadenceIdByDirection.get(cadence.direction)!,
+              origin: 'imported',
+              rating: review.rating,
+              recalled: review.recalled,
+              durationMs: review.durationMs,
+              sequence: index + 1,
+              reviewedAt: review.reviewedAt,
+              beforeState,
+              afterState: review.afterState,
+              requestId: crypto.randomUUID(),
+              createdAt: timestamp,
+            });
+            beforeState = review.afterState;
+          }
+        }
+        if (historyRows.length > 0) await tx.insert(reviewEvents).values(historyRows);
+        const card = mapCard(row, cadenceRows.map(mapCadence));
+        await recordRevision(tx, card.id, 'created', null, content, ctx.now);
+        return { card, importedReviewCount, alreadyImported: false };
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const replay = await importedCardFor(ctx.db, ctx.identity.userId, input.requestId, payloadHash);
+      if (replay) return { card: replay, importedReviewCount, alreadyImported: true };
+      throw error;
+    }
   }),
   update: protectedProcedure.input(CardUpdateInputSchema).output(CardSchema).mutation(async ({ ctx, input }) => {
     const content = { name: input.name, frontMarkdown: input.frontMarkdown, backMarkdown: input.backMarkdown, speechText: input.speechText, speechLocale: input.speechLocale, speechSide: input.speechSide, reversible: input.reversible };

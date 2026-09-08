@@ -43,6 +43,13 @@
       "when": 1788813101094,
       "tag": "0005_add-card-speech-side",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788902693231,
+      "tag": "0006_card-history-import",
+      "breakpoints": true
     }
   ]
 }

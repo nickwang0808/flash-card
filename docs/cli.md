@@ -40,6 +40,7 @@ Deck JSON: create `{name,defaultSpeechLocale?}`; rename `{deckId,name,expectedVe
 flashcard card get --card-id <uuid> --deck-id <uuid>
 flashcard card search --query <query> [--deck-id <uuid>] [--cursor <cursor>] [--limit <1..100>]
 flashcard card create --deck-id <uuid> --name <name> --front-markdown <markdown> --back-markdown <markdown> [--tag <tag>] [--speech-text <text>] [--speech-locale <locale>] [--speech-side <front|back>] [--reversible]
+flashcard card import --input <path|->
 flashcard card update --card-id <uuid> --deck-id <uuid> --name <name> --front-markdown <markdown> --back-markdown <markdown> --expected-version <integer> [--tag <tag>] [--speech-text <text>] [--speech-locale <locale>] [--speech-side <front|back>] [--reversible]
 flashcard card suspend|restore --card-id <uuid> --deck-id <uuid> --expected-version <integer> [--limit <1..100>]
 flashcard card remove --card-id <uuid> --deck-id <uuid> --expected-version <integer> --yes [--limit <1..100>]
@@ -47,15 +48,62 @@ flashcard card revisions --card-id <uuid> --deck-id <uuid> [--cursor <cursor>] [
 flashcard card rollback --card-id <uuid> --deck-id <uuid> --revision-id <uuid> --expected-version <integer>
 ```
 
-Card JSON: get `{cardId,deckId}`; search `{deckId?,query,pagination}`; create `{deckId,name,frontMarkdown,backMarkdown,tags?,speechText?,speechLocale?,speechSide?,reversible?}`; update adds `{cardId,expectedVersion}`; suspend/restore `{cardId,deckId,expectedVersion,queue}`; remove uses the same input without confirmation; revisions `{cardId,deckId,pagination}`; rollback `{cardId,deckId,revisionId,expectedVersion}`. Flag-mode create/update is a full replacement: omitted tags become `[]`, omitted speech fields become `null`, and omitted `reversible` becomes `false`. A card's direction cannot change after creation. To preserve a field, `card get` then submit it again. Rollback restores revision content only, not tags, suspension, or cadence.
+Card JSON: get `{cardId,deckId}`; search `{deckId?,query,pagination}`; create `{deckId,name,frontMarkdown,backMarkdown,tags?,speechText?,speechLocale?,speechSide?,reversible?}`; update adds `{cardId,expectedVersion}`; suspend/restore `{cardId,deckId,expectedVersion,queue}`; remove uses the same input without confirmation; revisions `{cardId,deckId,pagination}`; rollback `{cardId,deckId,revisionId,expectedVersion}`. Import accepts only the canonical JSON contract below. Flag-mode create/update is a full replacement: omitted tags become `[]`, omitted speech fields become `null`, and omitted `reversible` becomes `false`. A card's direction cannot change after creation. To preserve a field, `card get` then submit it again. Rollback restores revision content only, not tags, suspension, or cadence.
+
+### Historical card import
+
+`card import` creates one complete card, its active cadence state, and its review history atomically. It never replays imported reviews through the current scheduler. The last review's `afterState`, or `baseState` when history is empty, becomes the active cadence; subsequent ratings use the normal Flash Card scheduler.
+
+```json
+{
+  "requestId": "00000000-0000-4000-8000-000000000001",
+  "deckId": "00000000-0000-4000-8000-000000000002",
+  "card": {
+    "name": "Imported card",
+    "frontMarkdown": "Front",
+    "backMarkdown": "Back",
+    "tags": ["imported"],
+    "speechText": null,
+    "speechLocale": null,
+    "speechSide": null,
+    "reversible": false,
+    "suspended": false
+  },
+  "cadences": [{
+    "direction": "forward",
+    "baseState": {
+      "nextReviewAt": null,
+      "intervalDays": null,
+      "reviewCount": 0,
+      "lapseCount": 0
+    },
+    "reviews": [{
+      "reviewedAt": "2025-01-01T00:00:00.000Z",
+      "rating": null,
+      "recalled": true,
+      "durationMs": null,
+      "afterState": {
+        "nextReviewAt": "2025-02-01T00:00:00.000Z",
+        "intervalDays": 31,
+        "reviewCount": 1,
+        "lapseCount": 0
+      }
+    }]
+  }]
+}
+```
+
+Cadences require one unique `forward` direction and, when `card.reversible` is true, one unique `reverse` direction. Reviews are oldest first; equal `reviewedAt` timestamps retain array order. Every review must increment `reviewCount` by one, may increment `lapseCount` by at most one, and must provide at least one of `rating` or `recalled`. Scheduling timestamps and `intervalDays` are both null for a new state or both populated for a studied state. Imported reviews cannot be undone.
+
+`requestId` is the card-level idempotency key. Repeating the same ID and normalized payload returns the existing card with `alreadyImported:true`; reusing it for different input fails with `IDEMPOTENCY_CONFLICT`. Server-generated card and cadence versions start at zero regardless of imported history.
 
 ```text
-flashcard review rate --card-id <uuid> --deck-id <uuid> --rating <again|hard|good|easy> --expected-version <integer> [--request-id <uuid>] [--limit <1..100>]
-flashcard review history --card-id <uuid> --deck-id <uuid> [--cursor <cursor>] [--limit <1..100>]
+flashcard review rate --cadence-id <uuid> --deck-id <uuid> --rating <again|hard|good|easy> --expected-version <integer> [--request-id <uuid>] [--limit <1..100>]
+flashcard review history --cadence-id <uuid> --deck-id <uuid> [--cursor <cursor>] [--limit <1..100>]
 flashcard review undo --review-id <uuid> --deck-id <uuid> [--limit <1..100>]
 ```
 
-Review JSON: rate `{cardId,deckId,rating,expectedVersion,requestId?,queue}`; history `{cardId,deckId,pagination}`; undo `{reviewId,deckId,queue}`. If rate has no request ID, the CLI generates one once; reuse a caller-supplied ID when recovering from an uncertain request. The server replacement queue is authoritative. Do not reorder it, persist it, or reconstruct scheduling. Undo can reverse only the latest active review.
+Review JSON: rate `{cadenceId,deckId,rating,expectedVersion,requestId?,queue}`; history `{cadenceId,deckId,pagination}`; undo `{reviewId,deckId,queue}`. If rate has no request ID, the CLI generates one once; reuse a caller-supplied ID when recovering from an uncertain request. The server replacement queue is authoritative. Do not reorder it, persist it, or reconstruct scheduling. Undo can reverse only the latest active native review.
 
 ## Destructive operations and examples
 

@@ -20,7 +20,7 @@ function runTool(name, args, env = process.env) { return spawnSync(bin(name), ar
 function runSupabase(args, env = process.env) { return runTool('supabase', [...args, '--workdir', acceptanceWorkdir], env); }
 function command(args, env = process.env) {
   const result = runSupabase(args, env);
-  if (result.status !== 0) fail(`${args.join(' ')} failed\n${result.stderr || result.stdout}`);
+  if (result.status !== 0) fail(`${args.join(' ')} failed\n${result.stdout}${result.stderr}`);
   return result.stdout;
 }
 function statusEnvironment() { return Object.fromEntries([...command(['status', '-o', 'env']).matchAll(/^(\w+)="(.*)"$/gm)].map(([, key, value]) => [key, value])); }
@@ -80,7 +80,7 @@ async function stopFunction() {
 }
 function startAcceptanceStack() {
   if (runSupabase(['status', '-o', 'env']).status === 0) fail('acceptance stack is already running; stop it so this run owns its environment');
-  command(['start']); stackOwned = true;
+  command(['start', '--exclude', 'edge-runtime']); stackOwned = true;
   const environment = statusEnvironment();
   if (!environment.API_URL || !environment.DB_URL || !environment.PUBLISHABLE_KEY || !environment.SECRET_KEY) fail('Supabase status did not provide local API, database, and keys');
   assertLocal(environment.API_URL, 'API_URL'); assertLocal(environment.DB_URL, 'DB_URL');

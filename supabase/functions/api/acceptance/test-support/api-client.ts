@@ -29,6 +29,7 @@ export class AcceptanceApiClient {
 
   card = {
     create: (input: Inputs['card']['create']) => this.mutation<Outputs['card']['create']>('card.create', input),
+    import: (input: Inputs['card']['import']) => this.mutation<Outputs['card']['import']>('card.import', input),
     get: (input: Inputs['card']['get']) => this.query<Outputs['card']['get']>('card.get', input),
     search: (input: Inputs['card']['search']) => this.query<Outputs['card']['search']>('card.search', input),
     update: (input: Inputs['card']['update']) => this.mutation<Outputs['card']['update']>('card.update', input),

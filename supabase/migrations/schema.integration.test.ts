@@ -92,6 +92,7 @@ describe('authoritative schema contracts', () => {
         lapse_count: 0,
       }),
       request_id: '00000000-0000-4000-8000-000000000001',
+      sequence: 1,
     };
 
     const { error: first } = await admin.from('review_events').insert(event);
@@ -102,6 +103,26 @@ describe('authoritative schema contracts', () => {
 
     const { error: badRating } = await admin.from('review_events').insert({ ...event, rating: 'meh' });
     expect(badRating).not.toBeNull();
+
+    const importedEvent = {
+      ...event,
+      origin: 'imported',
+      rating: null,
+      recalled: true,
+      duration_ms: 1500,
+      sequence: 2,
+      request_id: '00000000-0000-4000-8000-000000000002',
+    };
+    const { error: imported } = await admin.from('review_events').insert(importedEvent);
+    expect(imported).toBeNull();
+
+    const { error: missingResult } = await admin.from('review_events').insert({
+      ...importedEvent,
+      recalled: null,
+      sequence: 3,
+      request_id: '00000000-0000-4000-8000-000000000003',
+    });
+    expect(missingResult).not.toBeNull();
   });
 
   it('denies anonymous access through RLS', async () => {

@@ -74,6 +74,7 @@ async function runOperation(operation: string, options: Options, io: CliIo, runt
     case 'card.get': return client.card.get.query(await input(options, schemas.cardGet, io, () => ({ cardId: text(options.cardId), deckId: text(options.deckId) })));
     case 'card.search': return client.card.search.query(await input(options, schemas.cardSearch, io, () => ({ deckId: nullableText(options.deckId), query: text(options.query), pagination: page(options) })));
     case 'card.create': return client.card.create.mutate(await input(options, schemas.cardCreate, io, () => cardContent(options)));
+    case 'card.import': return client.card.import.mutate(await input(options, schemas.cardImport, io, () => ({})));
     case 'card.update': return client.card.update.mutate(await input(options, schemas.cardUpdate, io, () => ({ ...cardContent(options), cardId: text(options.cardId), expectedVersion: integer(options.expectedVersion) })));
     case 'card.suspend': return client.card.suspend.mutate(await input(options, schemas.cardQueueMutation, io, () => queueMutation(options)));
     case 'card.restore': return client.card.restore.mutate(await input(options, schemas.cardQueueMutation, io, () => queueMutation(options)));
@@ -81,10 +82,10 @@ async function runOperation(operation: string, options: Options, io: CliIo, runt
     case 'card.revisions': return client.card.revisions.query(await input(options, schemas.cardRevisions, io, () => ({ cardId: text(options.cardId), deckId: text(options.deckId), pagination: page(options) })));
     case 'card.rollback': return client.card.rollbackRevision.mutate(await input(options, schemas.cardRollback, io, () => ({ cardId: text(options.cardId), deckId: text(options.deckId), revisionId: text(options.revisionId), expectedVersion: integer(options.expectedVersion) })));
     case 'review.rate': {
-      const request = await input(options, schemas.reviewRate, io, () => ({ cardId: text(options.cardId), deckId: text(options.deckId), rating: text(options.rating), expectedVersion: integer(options.expectedVersion), requestId: optionalText(options.requestId), queue: queue(options) }));
+      const request = await input(options, schemas.reviewRate, io, () => ({ cadenceId: text(options.cadenceId), deckId: text(options.deckId), rating: text(options.rating), expectedVersion: integer(options.expectedVersion), requestId: optionalText(options.requestId), queue: queue(options) }));
       return client.review.rate.mutate({ ...request, requestId: request.requestId ?? runtime.createRequestId() });
     }
-    case 'review.history': return client.review.history.query(await input(options, schemas.reviewHistory, io, () => ({ cardId: text(options.cardId), deckId: text(options.deckId), pagination: page(options) })));
+    case 'review.history': return client.review.history.query(await input(options, schemas.reviewHistory, io, () => ({ cadenceId: text(options.cadenceId), deckId: text(options.deckId), pagination: page(options) })));
     case 'review.undo': return client.review.undo.mutate(await input(options, schemas.reviewUndo, io, () => ({ reviewId: text(options.reviewId), deckId: text(options.deckId), queue: queue(options) })));
     default: throw new CliError('USAGE_ERROR', 'Unknown command');
   }

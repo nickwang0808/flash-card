@@ -5,7 +5,11 @@ import { RatingSchema, TimestampSchema } from './primitives.ts';
 const ReviewEventFields = {
   id: z.string().uuid(),
   cadenceId: z.string().uuid(),
-  rating: RatingSchema,
+  origin: z.enum(['native', 'imported']),
+  rating: RatingSchema.nullable(),
+  recalled: z.boolean().nullable(),
+  durationMs: z.number().int().nonnegative().nullable(),
+  sequence: z.number().int().positive(),
   reviewedAt: TimestampSchema,
   beforeState: CadenceStateSchema.nullable(),
   afterState: CadenceStateSchema,
