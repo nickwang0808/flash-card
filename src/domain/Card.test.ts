@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { CardSchema } from './Card.ts';
+import { CardCadenceSchema } from './Cadence.ts';
+
+const forwardCadence = {
+  id: '33333333-3333-4333-8333-333333333333',
+  cardId: '11111111-1111-4111-8111-111111111111',
+  direction: 'forward' as const,
+  nextReviewAt: null,
+  intervalDays: null,
+  reviewCount: 0,
+  lapseCount: 0,
+  version: 0,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+};
 
 const validCard = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -10,19 +24,23 @@ const validCard = {
   tags: ['basic'],
   speechText: null,
   speechLocale: null,
+  speechSide: null,
+  reversible: false,
   suspended: false,
-  nextReviewAt: null,
-  intervalDays: null,
-  reviewCount: 0,
-  lapseCount: 0,
   version: 0,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
+  cadences: [forwardCadence],
 };
 
 describe('CardSchema', () => {
   it('accepts the complete canonical Card DTO', () => {
     expect(CardSchema.parse(validCard)).toEqual(validCard);
+  });
+
+  it('requires complete independently scheduled cadences', () => {
+    expect(CardCadenceSchema.parse(forwardCadence)).toEqual(forwardCadence);
+    expect(() => CardCadenceSchema.parse({ ...forwardCadence, direction: 'sideways' })).toThrow();
   });
 
   it('rejects raw HTML outside the ruby subset', () => {
@@ -31,5 +49,16 @@ describe('CardSchema', () => {
 
   it('requires a readable non-empty name', () => {
     expect(() => CardSchema.parse({ ...validCard, name: '   ' })).toThrow();
+  });
+
+  it('requires speech text and side together while allowing a deck-locale fallback', () => {
+    expect(CardSchema.parse({ ...validCard, speechText: 'Hola', speechLocale: null, speechSide: 'front' })).toMatchObject({ speechText: 'Hola', speechLocale: null, speechSide: 'front' });
+    expect(() => CardSchema.parse({ ...validCard, speechText: 'Hola', speechLocale: null, speechSide: null })).toThrow();
+    expect(() => CardSchema.parse({ ...validCard, speechText: null, speechLocale: 'es-ES', speechSide: null })).toThrow();
+  });
+
+  it('canonicalizes BCP 47 speech locales and rejects malformed values', () => {
+    expect(CardSchema.parse({ ...validCard, speechText: 'Hola', speechLocale: 'ES-mx', speechSide: 'front' }).speechLocale).toBe('es-MX');
+    expect(() => CardSchema.parse({ ...validCard, speechText: 'Hola', speechLocale: 'not a locale', speechSide: 'front' })).toThrow();
   });
 });

@@ -10,7 +10,7 @@ describe('per-test actor isolation', () => {
       const cards = await Promise.all(actors.map((actor, index) => createNewCard(actor, decks[index], { name: `Card ${index}` })));
       const queues = await Promise.all(actors.map((actor, index) => actor.api.deck.queue({ deckId: decks[index].id, limit: 50 })));
       for (let index = 0; index < actors.length; index += 1) {
-        expect(queues[index]).toMatchObject({ asOf: actors[index].clock.iso(), items: [{ id: cards[index].id }] });
+        expect(queues[index]).toMatchObject({ asOf: actors[index].clock.iso(), items: [{ id: cards[index].cadences[0].id, cardId: cards[index].id }] });
       }
     } finally {
       await Promise.all(actors.map(destroyActor));

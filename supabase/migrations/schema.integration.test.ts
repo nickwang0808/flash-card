@@ -40,8 +40,8 @@ const newCardInsert = (deckId: string) => ({
 });
 
 describe('authoritative schema contracts', () => {
-  it('creates the four authoritative tables', async () => {
-    for (const table of ['decks', 'cards', 'review_events', 'card_revisions'] as const) {
+  it('creates the five authoritative tables', async () => {
+    for (const table of ['decks', 'cards', 'card_cadences', 'review_events', 'card_revisions'] as const) {
       const { error } = await admin.from(table).select('id').limit(1);
       expect(error, `${table} should exist`).toBeNull();
     }
@@ -66,8 +66,10 @@ describe('authoritative schema contracts', () => {
 
   it('rejects partially populated cadence state', async () => {
     const { data: deck } = await admin.from('decks').select('id').eq('user_id', userIdA).single();
-    const { error } = await admin.from('cards').insert({
-      ...newCardInsert(deck!.id),
+    const { data: card } = await admin.from('cards').insert(newCardInsert(deck!.id)).select('id').single();
+    const { error } = await admin.from('card_cadences').insert({
+      card_id: card!.id,
+      direction: 'forward',
       next_review_at: new Date().toISOString(),
       // interval_days intentionally missing
     });
@@ -77,9 +79,10 @@ describe('authoritative schema contracts', () => {
   it('enforces the request_id idempotency key on review events', async () => {
     const { data: deck } = await admin.from('decks').select('id').eq('user_id', userIdA).single();
     const { data: card } = await admin.from('cards').insert(newCardInsert(deck!.id)).select().single();
+    const { data: cadence } = await admin.from('card_cadences').insert({ card_id: card!.id, direction: 'forward' }).select().single();
 
     const event = {
-      card_id: card!.id,
+      cadence_id: cadence!.id,
       rating: 'good',
       reviewed_at: new Date().toISOString(),
       after_state: JSON.stringify({

@@ -24,17 +24,17 @@ describe('mixed study state', () => {
 
     const snapshot = await actor.api.deck.queue({ deckId: deck.id, ...queue });
     expect(snapshot.items.map((item) => item.id)).toEqual([
-      overdue.id,
-      dueNow.id,
-      future.id,
-      ...[newA.id, newB.id].sort(),
+      overdue.cadences[0].id,
+      dueNow.cadences[0].id,
+      future.cadences[0].id,
+      ...[newA, newB].sort((left, right) => left.id.localeCompare(right.id)).map((card) => card.cadences[0].id),
     ]);
-    expect(snapshot.items.map((item) => item.id)).not.toContain(outside.id);
-    expect(snapshot.items.map((item) => item.id)).not.toContain(suspended.id);
-    expect(snapshot.items[2]).toMatchObject({ id: future.id, status: 'future' });
+    expect(snapshot.items.map((item) => item.id)).not.toContain(outside.cadences[0].id);
+    expect(snapshot.items.map((item) => item.id)).not.toContain(suspended.cadences[0].id);
+    expect(snapshot.items[2]).toMatchObject({ id: future.cadences[0].id, cardId: future.id, status: 'future' });
 
     const firstNew = snapshot.items.find((item) => item.status === 'new')!;
-    const rate = await actor.api.review.rate({ cardId: firstNew.id, deckId: deck.id, rating: 'again', expectedVersion: 0, requestId: crypto.randomUUID(), queue });
+    const rate = await actor.api.review.rate({ cadenceId: firstNew.id, deckId: deck.id, rating: 'again', expectedVersion: 0, requestId: crypto.randomUUID(), queue });
     const retryIndex = rate.queue.items.findIndex((item) => item.id === firstNew.id);
     const remainingNewIndex = rate.queue.items.findIndex((item) => item.status === 'new');
     expect(retryIndex).toBeGreaterThanOrEqual(0);
@@ -43,11 +43,11 @@ describe('mixed study state', () => {
 
     const reloaded = await actor.api.deck.queue({ deckId: deck.id, ...queue });
     expect(reloaded).toEqual(rate.queue);
-    const history = await actor.api.review.history({ cardId: firstNew.id, deckId: deck.id, pagination: { limit: 10 } });
+    const history = await actor.api.review.history({ cadenceId: firstNew.id, deckId: deck.id, pagination: { limit: 10 } });
     expect(history.events).toHaveLength(1);
 
     const undone = await actor.api.review.undo({ reviewId: rate.reviewId, deckId: deck.id, queue });
-    expect(undone.queue.items.filter((item) => item.status === 'new').map((item) => item.id)).toEqual([newA.id, newB.id].sort());
+    expect(undone.queue.items.filter((item) => item.status === 'new').map((item) => item.id)).toEqual([newA, newB].sort((left, right) => left.id.localeCompare(right.id)).map((card) => card.cadences[0].id));
   });
 
   test('backfills limit-one mutation snapshots from persisted queue rows', async () => {
@@ -57,10 +57,34 @@ describe('mixed study state', () => {
     const second = await createNewCard(actor, deck, { name: 'second' });
     const limitOne = { limit: 1 };
     expect((await actor.api.deck.queue({ deckId: deck.id, ...limitOne })).items).toHaveLength(1);
-    const rated = await actor.api.review.rate({ cardId: first.id, deckId: deck.id, rating: 'good', expectedVersion: 0, requestId: crypto.randomUUID(), queue: limitOne });
-    expect(rated.queue.items.map(({ id }) => id)).toEqual([second.id]);
+    const rated = await actor.api.review.rate({ cadenceId: first.cadences[0].id, deckId: deck.id, rating: 'good', expectedVersion: 0, requestId: crypto.randomUUID(), queue: limitOne });
+    expect(rated.queue.items.map(({ id }) => id)).toEqual([second.cadences[0].id]);
     expect(rated.queue).toEqual(await actor.api.deck.queue({ deckId: deck.id, ...limitOne }));
     const undone = await actor.api.review.undo({ reviewId: rated.reviewId, deckId: deck.id, queue: limitOne });
     expect(undone.queue).toEqual(await actor.api.deck.queue({ deckId: deck.id, ...limitOne }));
+  });
+
+  test('counts the full review and new workloads beyond the returned window', async () => {
+    actor = await createActor('queue-counts');
+    const deck = await createDeck(actor, 'Queue counts');
+    await Promise.all([
+      createStudiedCard(actor, deck, { name: 'review A' }),
+      createStudiedCard(actor, deck, { name: 'review B' }),
+      createNewCard(actor, deck, { name: 'new A' }),
+      createNewCard(actor, deck, { name: 'new B' }),
+    ]);
+    const limitedQueue = { limit: 1 };
+
+    const initial = await actor.api.deck.queue({ deckId: deck.id, ...limitedQueue });
+    expect(initial.items).toHaveLength(1);
+    expect(initial.counts).toEqual({ review: 2, new: 2 });
+
+    const firstReview = initial.items[0];
+    const good = await actor.api.review.rate({ cadenceId: firstReview.id, deckId: deck.id, rating: 'good', expectedVersion: firstReview.version, requestId: crypto.randomUUID(), queue: limitedQueue });
+    expect(good.queue.counts).toEqual({ review: 1, new: 2 });
+
+    const secondReview = good.queue.items[0];
+    const again = await actor.api.review.rate({ cadenceId: secondReview.id, deckId: deck.id, rating: 'again', expectedVersion: secondReview.version, requestId: crypto.randomUUID(), queue: limitedQueue });
+    expect(again.queue.counts).toEqual({ review: 1, new: 2 });
   });
 });

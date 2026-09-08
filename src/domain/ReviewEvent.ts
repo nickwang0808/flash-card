@@ -4,7 +4,7 @@ import { RatingSchema, TimestampSchema } from './primitives.ts';
 
 const ReviewEventFields = {
   id: z.string().uuid(),
-  cardId: z.string().uuid(),
+  cadenceId: z.string().uuid(),
   rating: RatingSchema,
   reviewedAt: TimestampSchema,
   beforeState: CadenceStateSchema.nullable(),

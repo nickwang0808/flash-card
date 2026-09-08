@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { CardCadenceSchema } from './Cadence.ts';
+import { CardSpeechFieldsSchema, validateCardSpeechFields } from './Speech.ts';
 import { TimestampSchema } from './primitives.ts';
 
 export const MarkdownSchema = z
@@ -20,43 +22,28 @@ export const CardContentSchema = z.object({
   name: CardNameSchema,
   frontMarkdown: MarkdownSchema,
   backMarkdown: MarkdownSchema,
-  speechText: z.string().trim().max(10_000).nullable(),
-  speechLocale: z.string().trim().max(35).nullable(),
-});
+  ...CardSpeechFieldsSchema.shape,
+  reversible: z.boolean(),
+}).superRefine(validateCardSpeechFields);
 
-const CadenceFields = {
-  nextReviewAt: TimestampSchema.nullable(),
-  intervalDays: z.number().finite().positive().nullable(),
-  reviewCount: z.number().int().nonnegative(),
-  lapseCount: z.number().int().nonnegative(),
-};
 
-function withCadenceRefinement<T extends z.ZodTypeAny>(schema: T) {
-  return schema.superRefine((card, context) => {
-    const value = card as { nextReviewAt: string | null; intervalDays: number | null };
-    const isNew = value.nextReviewAt === null && value.intervalDays === null;
-    const isStudied = value.nextReviewAt !== null && value.intervalDays !== null;
-    if (!isNew && !isStudied) {
-      context.addIssue({ code: 'custom', message: 'Scheduling fields must be all null for new cards or all populated for studied cards' });
-    }
-  });
-}
-
-export const CardSchema = withCadenceRefinement(z.object({
+export const CardBaseSchema = z.object({
   id: z.string().uuid(),
   deckId: z.string().uuid(),
   name: CardNameSchema,
   frontMarkdown: MarkdownSchema,
   backMarkdown: MarkdownSchema,
-  speechText: z.string().trim().max(10_000).nullable(),
-  speechLocale: z.string().trim().max(35).nullable(),
+  ...CardSpeechFieldsSchema.shape,
   tags: z.array(z.string().trim().min(1).max(100)).max(100),
+  reversible: z.boolean(),
   suspended: z.boolean(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
-  ...CadenceFields,
   version: z.number().int().nonnegative(),
-}));
+  cadences: z.array(CardCadenceSchema),
+});
+
+export const CardSchema = CardBaseSchema.superRefine(validateCardSpeechFields);
 
 export type CardContent = z.output<typeof CardContentSchema>;
 export type Card = z.output<typeof CardSchema>;

@@ -9,9 +9,14 @@
   "vitest": {
     "config": ["vitest.config.ts", "vitest.integration.config.ts", "vitest.acceptance.config.ts"]
   },
-  "ignoreDependencies": ["expo-updates", "expo-system-ui"],
+  "ignoreFiles": ["src/components/ui/**"],
+  "ignoreDependencies": ["expo-updates", "expo-system-ui", "@legendapp/motion", "react-aria", "react-native-worklets", "react-stately", "tailwind-variants", "@tailwindcss/postcss", "babel-plugin-module-resolver"],
   "ignoreBinaries": [],
   "ignoreIssues": {
+    "src/components/ui/**": ["exports", "types"],
+    "src/api/environment.ts": ["types"],
+    "src/auth/AuthProvider.tsx": ["types"],
+    "src/features/study/useStudySession.ts": ["types"],
     "src/db/client.ts": ["types"],
     "src/domain/Deck.ts": ["types"],
     "src/domain/errors.ts": ["types"],

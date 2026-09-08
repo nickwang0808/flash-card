@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import type { AppDb } from './client.ts';
-import { cardRevisions, cards, decks, reviewEvents } from './schema.ts';
+import { cardCadences, cardRevisions, cards, decks, reviewEvents } from './schema.ts';
 import { ApplicationError } from '../domain/errors.ts';
 
 export function decksOwnedBy(db: AppDb, userId: string) {
@@ -11,11 +11,20 @@ export function cardsOwnedBy(db: AppDb, userId: string) {
   return db.select().from(cards).innerJoin(decks, and(eq(decks.id, cards.deckId), eq(decks.userId, userId)));
 }
 
+export function cardCadencesOwnedBy(db: AppDb, userId: string) {
+  return db
+    .select({ card: cards, cadence: cardCadences })
+    .from(cardCadences)
+    .innerJoin(cards, eq(cards.id, cardCadences.cardId))
+    .innerJoin(decks, and(eq(decks.id, cards.deckId), eq(decks.userId, userId)));
+}
+
 export function reviewEventsOf(db: AppDb, userId: string) {
   return db
-    .select({ event: reviewEvents })
+    .select({ event: reviewEvents, cadence: cardCadences, card: cards })
     .from(reviewEvents)
-    .innerJoin(cards, eq(cards.id, reviewEvents.cardId))
+    .innerJoin(cardCadences, eq(cardCadences.id, reviewEvents.cadenceId))
+    .innerJoin(cards, eq(cards.id, cardCadences.cardId))
     .innerJoin(decks, and(eq(decks.id, cards.deckId), eq(decks.userId, userId)));
 }
 
@@ -32,6 +41,7 @@ export async function requireDeck(db: AppDb, userId: string, deckId: string) {
   if (rows.length === 0) throw new ApplicationError('NOT_FOUND', 'Deck not found');
   return rows[0];
 }
+
 
 export async function requireDeckForCard(db: AppDb, userId: string, cardId: string, deckId: string) {
   const rows = await cardsOwnedBy(db, userId).where(and(eq(cards.id, cardId), eq(cards.deckId, deckId))).limit(1);
