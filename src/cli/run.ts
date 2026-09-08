@@ -104,7 +104,7 @@ async function login(options: Options, io: CliIo, runtime: CliRuntime): Promise<
 
 async function input<T extends z.ZodType>(options: Options, schema: T, io: CliIo, fromFlags: () => unknown): Promise<z.output<T>> {
   if (typeof options.input === 'string') {
-    const supplied = Object.entries(options).some(([key, value]) => key !== 'input' && key !== 'yes' && value !== undefined && !(key === 'tag' && Array.isArray(value) && value.length === 0));
+    const supplied = Object.entries(options).some(([key, value]) => key !== 'input' && key !== 'yes' && value !== undefined && !(key === 'tag' && Array.isArray(value) && value.length === 0) && !(key === 'reversible' && value === false));
     if (supplied) throw new CliError('USAGE_ERROR', 'Use flags or --input, not both');
     return parseInput(options.input, schema, io.stdin);
   }
@@ -118,7 +118,7 @@ function integer(value: unknown): number { return numberFlag(text(value)); }
 function optionalInteger(value: unknown): number | undefined { return value === undefined ? undefined : integer(value); }
 function queue(options: Options) { return { limit: optionalInteger(options.limit) ?? 50 }; }
 function page(options: Options) { return { cursor: optionalText(options.cursor), limit: optionalInteger(options.limit) ?? 50 }; }
-function cardContent(options: Options) { return { deckId: text(options.deckId), name: text(options.name), frontMarkdown: text(options.frontMarkdown), backMarkdown: text(options.backMarkdown), tags: Array.isArray(options.tag) ? options.tag.map(String) : [], speechText: nullableText(options.speechText), speechLocale: nullableText(options.speechLocale) }; }
+function cardContent(options: Options) { return { deckId: text(options.deckId), name: text(options.name), frontMarkdown: text(options.frontMarkdown), backMarkdown: text(options.backMarkdown), tags: Array.isArray(options.tag) ? options.tag.map(String) : [], speechText: nullableText(options.speechText), speechLocale: nullableText(options.speechLocale), speechSide: nullableText(options.speechSide), reversible: options.reversible === true }; }
 function queueMutation(options: Options) { return { cardId: text(options.cardId), deckId: text(options.deckId), expectedVersion: integer(options.expectedVersion), queue: queue(options) }; }
 
 async function confirmation(kind: 'deck' | 'card', id: string, yes: unknown, io: CliIo): Promise<true> {

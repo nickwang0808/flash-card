@@ -22,7 +22,9 @@ function addCardContent(command: Command): Command {
     .option('--back-markdown <markdown>')
     .option('--tag <tag>', 'card tag', collect, [])
     .option('--speech-text <text>')
-    .option('--speech-locale <locale>');
+    .option('--speech-locale <locale>')
+    .option('--speech-side <front|back>')
+    .option('--reversible');
 }
 
 function collect(value: string, previous: string[]): string[] {
