@@ -1,4 +1,5 @@
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
+import { corsHeaders, withCors } from './cors.ts';
 import { readApiEnv } from './env.ts';
 import { getDb } from '../../../src/db/client.ts';
 import { bearerToken, verifyAccessToken } from './jwt.ts';
@@ -13,17 +14,6 @@ declare const Deno: {
 
 const env = readApiEnv();
 
-function corsHeaders(request: Request): Record<string, string> {
-  const origin = request.headers.get('origin');
-  const allowed = env.allowedOrigins.includes('*') || (origin !== null && env.allowedOrigins.includes(origin)) ? (origin ?? '*') : null;
-  return {
-    'Access-Control-Allow-Origin': allowed ?? 'null',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Flashcard-Test-Clock, X-Flashcard-Test-Secret',
-    'Access-Control-Max-Age': '86400',
-    Vary: 'Origin',
-  };
-}
 
 function requestNow(request: Request): Date {
   const suppliedSecret = request.headers.get('x-flashcard-test-secret');
@@ -39,17 +29,17 @@ function buildContext(identity: VerifiedIdentity, now: Date): ApiContext {
 }
 
 Deno.serve(async (request: Request) => {
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(request) });
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(request, env.allowedOrigins) });
   const token = bearerToken(request.headers.get('authorization'));
-  if (!token) return new Response(JSON.stringify({ error: { message: 'Authentication required', code: 'UNAUTHORIZED' } }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders(request) } });
+  if (!token) return withCors(new Response(JSON.stringify({ error: { message: 'Authentication required', code: 'UNAUTHORIZED' } }), { status: 401, headers: { 'Content-Type': 'application/json' } }), request, env.allowedOrigins);
   let identity: VerifiedIdentity;
   try {
     identity = await verifyAccessToken(token, env);
   } catch {
-    return new Response(JSON.stringify({ error: { message: 'Invalid or expired access token', code: 'UNAUTHORIZED' } }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders(request) } });
+    return withCors(new Response(JSON.stringify({ error: { message: 'Invalid or expired access token', code: 'UNAUTHORIZED' } }), { status: 401, headers: { 'Content-Type': 'application/json' } }), request, env.allowedOrigins);
   }
   const now = requestNow(request);
-  return fetchRequestHandler({
+  const response = await fetchRequestHandler({
     endpoint: '/api',
     req: request,
     router: appRouter,
@@ -58,4 +48,5 @@ Deno.serve(async (request: Request) => {
       if (Deno.env.get('DEV') === 'true') console.error('tRPC error:', error.message);
     },
   });
+  return withCors(response, request, env.allowedOrigins);
 });
