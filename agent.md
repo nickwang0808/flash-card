@@ -17,8 +17,9 @@ npm run db:generate -- --name=my-change
 DATABASE_URL=... npm run db:migrate
 ```
 
-Never edit an applied migration. Historical Supabase migration files remain
-archived reconstruction evidence.
+Because production starts from the current schema, `supabase/drizzle/0000_production-baseline.sql`
+is the single baseline migration. Never edit it after the first production deployment;
+generate forward-only migrations from then on.
 
 Server procedures live in `supabase/functions/api/routers/`; shared domain schemas and scheduling rules live in `src/domain/`.
 

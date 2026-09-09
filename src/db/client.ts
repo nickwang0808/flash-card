@@ -24,7 +24,9 @@ export function getDb(databaseUrl: string): AppDbWithPool {
   if (shared?.databaseUrl === databaseUrl) return shared.db;
   const pool = postgres(databaseUrl, {
     max: 5,
-    // Supabase transaction-pooler URLs carry sslmode=require; local URLs do not.
+    // Transaction pooling cannot retain prepared statements between requests.
+    prepare: false,
+    // Supabase pooler URLs carry sslmode=require; local URLs do not.
     ssl: databaseUrl.includes('sslmode=require') ? 'require' : false,
   });
   const db = drizzle(pool, { schema }) as AppDbWithPool;

@@ -6,7 +6,11 @@ export interface PublicClientEnvironment {
 
 type EnvironmentValues = Record<string, string | undefined>;
 
-export function readFrontendEnvironment(environment: EnvironmentValues = process.env): PublicClientEnvironment {
+export function readFrontendEnvironment(environment: EnvironmentValues = {
+  EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
+  EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+  EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
+}): PublicClientEnvironment {
   return readEnvironment(environment, {
     supabaseUrl: 'EXPO_PUBLIC_SUPABASE_URL',
     supabasePublishableKey: 'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
