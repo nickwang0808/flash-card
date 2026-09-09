@@ -60,10 +60,19 @@ supabase start
 
 ## Deployment
 
-On merge to master, GitHub Actions applies database migrations and exports the static web bundle to GitHub Pages.
+Every push to `master` runs unit tests and repository checks, builds the production
+web bundle, applies database migrations, deploys the `api` Edge Function, and
+publishes the bundle to GitHub Pages.
 
 Required GitHub secrets:
 
 - `DATABASE_URL`
+- `FUNCTION_DATABASE_URL`
 - `SUPABASE_PROJECT_REF`
 - `SUPABASE_ACCESS_TOKEN`
+
+Required GitHub Actions variables:
+
+- `EXPO_PUBLIC_SUPABASE_URL`
+- `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `EXPO_PUBLIC_API_URL`
