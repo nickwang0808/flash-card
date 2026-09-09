@@ -42,3 +42,31 @@ export function SignInForm({ onSubmit }: SignInFormProps) {
     </Button>
   </View>;
 }
+
+interface GitHubSignInButtonProps {
+  onSubmit(): Promise<void>;
+}
+
+export function GitHubSignInButton({ onSubmit }: GitHubSignInButtonProps) {
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const submit = async () => {
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await onSubmit();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to sign in with GitHub');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return <View className="w-full gap-3">
+    {error ? <FormControl isInvalid><FormControlError><FormControlErrorText>{error}</FormControlErrorText></FormControlError></FormControl> : null}
+    <Button isDisabled={isSubmitting} onPress={submit} testID="github-sign-in" variant="outline">
+      {isSubmitting ? <ButtonSpinner /> : null}<ButtonText>Continue with GitHub</ButtonText>
+    </Button>
+  </View>;
+}

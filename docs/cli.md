@@ -10,13 +10,19 @@ Local error codes are `USAGE_ERROR`, `VALIDATION_FAILED`, `CONFIRMATION_REQUIRED
 
 ## Authentication and credential storage
 
-- `auth login --email <email> [--password-stdin] [--credential-store keyring|file]`
+- `auth login [--no-open] [--credential-store keyring|file]`
 - `auth session`
 - `auth logout`
 
-Without `--password-stdin`, login requires an interactive terminal. `--password-stdin` reads one non-empty line through EOF; never pass a password as an argument or environment variable. The default store is a per-Supabase-origin OS keyring entry. Headless Linux needs an available Secret Service; use `--credential-store file` only as an explicit fallback. File sessions live under `%APPDATA%/flashcard`, `~/Library/Application Support/flashcard`, or `${XDG_CONFIG_HOME:-~/.config}/flashcard`, in `sessions/<sha256-origin>.json`; POSIX files/directories are owner-only. The remembered store selection contains no secrets. Logout is local-scope and idempotent; it removes local credentials even if remote revocation fails.
+`auth login` uses OAuth 2.1 Authorization Code with PKCE. It starts a temporary listener at `http://127.0.0.1:43821/oauth/callback`, opens the configured Supabase authorization URL, and exchanges the returned code only after validating the callback state. `--no-open` writes the authorization URL to stderr for a manually opened browser. The CLI never accepts an email, password, access token, refresh token, or OAuth client secret as input.
 
-A stored access token is refreshed once after a 401, using its refresh token under a per-origin lock. Concurrent processes re-read the store after acquiring that lock. Keyring failure never silently falls back to files.
+Each Supabase environment needs its own public OAuth client. Set its ID through `FLASHCARD_OAUTH_CLIENT_ID` and register the exact loopback callback URI. Local browser authorization uses the local email/password page; production browser authorization uses GitHub. The CLI protocol and stored session shape are identical in both environments.
+For local development, restart Supabase after applying `supabase/config.toml`, run `npm run auth:register-local-cli`, and evaluate its emitted `FLASHCARD_OAUTH_CLIENT_ID` export.
+
+
+The default store is a per-Supabase-origin OS keyring entry. Headless Linux needs an available Secret Service; use `--credential-store file` only as an explicit fallback. File sessions live under `%APPDATA%/flashcard`, `~/Library/Application Support/flashcard`, or `${XDG_CONFIG_HOME:-~/.config}/flashcard`, in `sessions/<sha256-origin>.json`; POSIX files/directories are owner-only. The remembered store selection contains no secrets. Logout only removes local credentials; revoke a lost CLI grant from the web application's Authorized applications screen.
+
+A stored access token is refreshed once after a 401 through the OAuth token endpoint using its refresh token and public client ID, under a per-origin lock. Concurrent processes re-read the store after acquiring that lock. Keyring failure never silently falls back to files.
 
 ## Input rules
 

@@ -25,7 +25,7 @@ export class CliError extends Error {
 
 export function toCliError(error: unknown): CliError {
   if (error instanceof CliError) return error;
-  if (error instanceof Error && /^FLASHCARD_(?:SUPABASE_URL|SUPABASE_PUBLISHABLE_KEY|API_URL) /.test(error.message)) return new CliError('CONFIGURATION_ERROR', 'CLI environment is incomplete or invalid');
+  if (error instanceof Error && /^FLASHCARD_(?:SUPABASE_URL|SUPABASE_PUBLISHABLE_KEY|API_URL|OAUTH_CLIENT_ID) /.test(error.message)) return new CliError('CONFIGURATION_ERROR', 'CLI environment is incomplete or invalid');
   if (error instanceof Error && /unknown (?:option|command)|missing required option|too many arguments/i.test(error.message)) return new CliError('USAGE_ERROR', 'Invalid command usage');
   const candidate = error as { data?: { code?: string; applicationCode?: string; details?: unknown }; shape?: { data?: { code?: string; applicationCode?: string } }; code?: string } | null;
   const appCode = candidate?.data?.applicationCode ?? candidate?.shape?.data?.applicationCode;

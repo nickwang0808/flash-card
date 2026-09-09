@@ -31,7 +31,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:seed": "node scripts/seed-local.mjs"
+    "db:seed": "node scripts/seed-local.mjs",
+    "auth:register-local-cli": "node scripts/register-local-cli-oauth.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",

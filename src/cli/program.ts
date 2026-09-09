@@ -46,7 +46,7 @@ export function createProgram(handler: CommandHandler, writeOut: (text: string) 
     .configureOutput({ writeOut, writeErr: () => undefined });
 
   const auth = program.command('auth').description('Manage local authentication');
-  auth.command('login').option('--email <email>').option('--password-stdin').option('--credential-store <keyring|file>').action(invoke(handler, 'auth.login'));
+  auth.command('login').option('--no-open', 'print the authorization URL instead of opening a browser').option('--credential-store <keyring|file>').action(invoke(handler, 'auth.login'));
   auth.command('session').action(invoke(handler, 'auth.session'));
   auth.command('logout').action(invoke(handler, 'auth.logout'));
 

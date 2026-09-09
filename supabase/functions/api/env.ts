@@ -12,6 +12,7 @@ export interface ApiEnv {
   jwkSet: unknown;
   /** Legacy fallback for runtimes without SUPABASE_JWKS. */
   jwtSecret: string | null;
+  authIssuer: string;
   databaseUrl: string;
   allowedOrigins: readonly string[];
   /**
@@ -27,6 +28,8 @@ export function readApiEnv(): ApiEnv {
   // SUPABASE_DB_URL is container-reachable in the local Edge Runtime;
   // deployed functions receive DATABASE_URL as the transaction-pooler secret.
   const databaseUrl = Deno.env.get('SUPABASE_DB_URL') ?? Deno.env.get('DATABASE_URL');
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const authIssuer = Deno.env.get('SUPABASE_AUTH_ISSUER') ?? (supabaseUrl ? new URL('/auth/v1', supabaseUrl).href : null);
   const allowedOrigins = (Deno.env.get('API_ALLOWED_ORIGINS') ?? '*')
     .split(',')
     .map((origin) => origin.trim())
@@ -38,6 +41,9 @@ export function readApiEnv(): ApiEnv {
   if (!databaseUrl) {
     throw new Error('DATABASE_URL or SUPABASE_DB_URL is not configured');
   }
+  if (!authIssuer) {
+    throw new Error('SUPABASE_URL or SUPABASE_AUTH_ISSUER is not configured');
+  }
 
   let jwkSet: unknown = null;
   if (jwkSetRaw) {
@@ -48,5 +54,5 @@ export function readApiEnv(): ApiEnv {
     }
   }
 
-  return { jwkSet, jwtSecret, databaseUrl, allowedOrigins, testClockSecret: Deno.env.get('FLASHCARD_TEST_CLOCK_SECRET') ?? null };
+  return { jwkSet, jwtSecret, authIssuer, databaseUrl, allowedOrigins, testClockSecret: Deno.env.get('FLASHCARD_TEST_CLOCK_SECRET') ?? null };
 }

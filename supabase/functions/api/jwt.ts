@@ -1,4 +1,4 @@
-import { createLocalJWKSet, jwtVerify, type JSONWebKeySet } from 'jose';
+import { createLocalJWKSet, jwtVerify, type JSONWebKeySet, type JWTVerifyOptions } from 'jose';
 import { ApplicationError } from '../../../src/domain/errors.ts';
 import type { ApiEnv } from './env.ts';
 import type { VerifiedIdentity } from './identity.ts';
@@ -13,12 +13,17 @@ import type { VerifiedIdentity } from './identity.ts';
 export async function verifyAccessToken(token: string, env: ApiEnv): Promise<VerifiedIdentity> {
   let payload;
   try {
+    const options: JWTVerifyOptions = { algorithms: ['HS256', 'ES256'], issuer: env.authIssuer, audience: 'authenticated' };
     const verified = env.jwkSet
-      ? await jwtVerify(token, createLocalJWKSet(env.jwkSet as JSONWebKeySet), { algorithms: ['HS256', 'ES256'] })
-      : await jwtVerify(token, new TextEncoder().encode(env.jwtSecret ?? ''), { algorithms: ['HS256'] });
+      ? await jwtVerify(token, createLocalJWKSet(env.jwkSet as JSONWebKeySet), options)
+      : await jwtVerify(token, new TextEncoder().encode(env.jwtSecret ?? ''), { ...options, algorithms: ['HS256'] });
     payload = verified.payload;
   } catch {
     throw new ApplicationError('UNAUTHENTICATED', 'Invalid or expired access token');
+  }
+
+  if (payload.role !== 'authenticated') {
+    throw new ApplicationError('UNAUTHENTICATED', 'Token does not grant user access');
   }
 
   const userId = payload.sub;
@@ -28,6 +33,7 @@ export async function verifyAccessToken(token: string, env: ApiEnv): Promise<Ver
   return {
     userId,
     email: typeof payload.email === 'string' ? payload.email : null,
+    clientId: typeof payload.client_id === 'string' ? payload.client_id : null,
     issuedAt: typeof payload.iat === 'number' ? new Date(payload.iat * 1000).toISOString() : null,
     expiresAt: typeof payload.exp === 'number' ? new Date(payload.exp * 1000).toISOString() : null,
   };

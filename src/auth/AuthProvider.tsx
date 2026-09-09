@@ -6,7 +6,8 @@ import { supabase } from './supabase';
 export interface AuthContextValue {
   session: Session | null;
   isRestoring: boolean;
-  signIn(email: string, password: string): Promise<void>;
+  signInWithPassword(email: string, password: string): Promise<void>;
+  signInWithGitHub(redirectTo: string): Promise<void>;
   signOut(): Promise<void>;
 }
 
@@ -43,8 +44,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const value = useMemo<AuthContextValue>(() => ({
     session,
     isRestoring,
-    async signIn(email, password) {
+    async signInWithPassword(email, password) {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    },
+    async signInWithGitHub(redirectTo) {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: { redirectTo },
+      });
       if (error) throw error;
     },
     async signOut() {

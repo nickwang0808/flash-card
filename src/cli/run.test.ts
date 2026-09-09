@@ -19,6 +19,7 @@ const environment = {
   FLASHCARD_SUPABASE_URL: 'http://127.0.0.1:54321',
   FLASHCARD_SUPABASE_PUBLISHABLE_KEY: 'public-key',
   FLASHCARD_API_URL: 'http://127.0.0.1:54321/functions/v1/api',
+  FLASHCARD_OAUTH_CLIENT_ID: 'local-cli-client-id',
   NODE_ENV: 'test',
 };
 const ids = {
@@ -89,9 +90,10 @@ function fakeRuntime(calls: Array<{ operation: string; input: unknown }>): CliRu
       undo: { mutate: query('review.undo') },
     },
   } as unknown as ApiClient;
-  const login = vi.fn(async (email: string, password: string) => {
-    calls.push({ operation: 'auth.login', input: { email, password } });
-    return { userId: 'user-id', email: 'person@example.com', session: { version: 1 as const, accessToken: 'access-token', refreshToken: 'refresh-token' } };
+  const authorize = vi.fn(async (_environment: unknown, options: { openBrowser: boolean; showAuthorizationUrl(url: string): void }) => {
+    if (!options.openBrowser) options.showAuthorizationUrl('https://project.supabase.co/auth/v1/oauth/authorize?state=test');
+    calls.push({ operation: 'auth.authorize', input: { openBrowser: options.openBrowser } });
+    return { version: 1 as const, accessToken: 'access-token', refreshToken: 'refresh-token' };
   });
   const save = vi.fn(async (session: unknown, remember: unknown) => {
     calls.push({ operation: 'auth.save', input: { session, remember } });
@@ -100,11 +102,11 @@ function fakeRuntime(calls: Array<{ operation: string; input: unknown }>): CliRu
     createSessionManager: async () => ({
       kind: 'file',
       api: () => api,
-      login,
       save,
       requireSession: async () => ({ version: 1, accessToken: 'access-token', refreshToken: 'refresh-token' }),
       logout: async () => ({ hadSession: true }),
     }),
+    authorize,
     createRequestId: vi.fn(() => ids.request),
   };
 }
@@ -147,7 +149,7 @@ describe('runCli', () => {
     const calls: Array<{ operation: string; input: unknown }> = [];
     const runtime = fakeRuntime(calls);
     const commands = [
-      { argv: ['auth', 'login', '--email', 'person@example.com', '--password-stdin', '--credential-store', 'file'], stdin: 'password', operation: 'auth.login', input: { email: 'person@example.com', password: 'password' } },
+      { argv: ['auth', 'login', '--credential-store', 'file'], operation: 'auth.authorize', input: { openBrowser: true } },
       { argv: ['auth', 'session'], operation: 'auth.session', input: {} },
       { argv: ['deck', 'list'], operation: 'deck.list', input: {} },
       { argv: ['deck', 'create', '--name', 'Deck', '--default-speech-locale', 'en-US'], operation: 'deck.create', input: { name: 'Deck', defaultSpeechLocale: 'en-US' } },
@@ -181,5 +183,14 @@ describe('runCli', () => {
       input: { session: { version: 1, accessToken: 'access-token', refreshToken: 'refresh-token' }, remember: true },
     });
     expect(runtime.createRequestId).toHaveBeenCalledOnce();
+  });
+
+  it('prints the authorization URL on stderr when browser launch is disabled', async () => {
+    const calls: Array<{ operation: string; input: unknown }> = [];
+    const result = await execute(['auth', 'login', '--no-open'], fakeRuntime(calls));
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('Open this URL in a browser to authorize Flash Cards:\nhttps://project.supabase.co/auth/v1/oauth/authorize?state=test\n');
+    expect(calls).toContainEqual({ operation: 'auth.authorize', input: { openBrowser: false } });
   });
 });

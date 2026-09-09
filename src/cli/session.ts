@@ -1,8 +1,7 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { CliEnvironment } from '../api/environment.ts';
 import { mkdir, rmdir, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { createApiClient, type ApiClient } from '../api/client.ts';
-import type { PublicClientEnvironment } from '../api/environment.ts';
 import { CredentialPreference, type CredentialStore, type CredentialStoreKind, createCredentialStore, configRoot, profileIdFor, type StoredSession } from './credentials.ts';
 import { CliError } from './errors.ts';
 
@@ -14,18 +13,13 @@ export class SessionManager {
   readonly profileId: string;
   readonly root: string;
   readonly preference: CredentialPreference;
-  readonly auth: SupabaseClient;
-
-  private constructor(readonly environment: PublicClientEnvironment, readonly kind: CredentialStoreKind, readonly store: CredentialStore) {
+  private constructor(readonly environment: CliEnvironment, readonly kind: CredentialStoreKind, readonly store: CredentialStore) {
     this.profileId = profileIdFor(environment.supabaseUrl);
     this.root = configRoot();
     this.preference = new CredentialPreference(this.root);
-    this.auth = createClient(environment.supabaseUrl, environment.supabasePublishableKey, {
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    });
   }
 
-  static async create(environment: PublicClientEnvironment, requestedKind?: CredentialStoreKind): Promise<SessionManager> {
+  static async create(environment: CliEnvironment, requestedKind?: CredentialStoreKind): Promise<SessionManager> {
     const root = configRoot();
     const profileId = profileIdFor(environment.supabaseUrl);
     const preference = new CredentialPreference(root);
@@ -68,15 +62,6 @@ export class SessionManager {
       if (remember) await this.preference.write(this.kind);
     });
   }
-  async login(email: string, password: string): Promise<{ userId: string; email: string; session: StoredSession }> {
-    const { data, error } = await this.auth.auth.signInWithPassword({ email, password });
-    if (error || !data.session || !data.user) throw new CliError('AUTHENTICATION_FAILED', 'Email or password was rejected');
-    return {
-      userId: data.user.id,
-      email: data.user.email ?? email,
-      session: { version: 1, accessToken: data.session.access_token, refreshToken: data.session.refresh_token },
-    };
-  }
 
 
   async refreshSession(): Promise<boolean> {
@@ -87,12 +72,30 @@ export class SessionManager {
         this.current = stored;
         return true;
       }
-      const { data, error } = await this.auth.auth.refreshSession({ refresh_token: stored.refreshToken });
-      if (error || !data.session) {
-        if (error && /invalid|expired|refresh token|unauthorized/i.test(error.message)) return false;
+      let response: Response;
+      try {
+        response = await fetch(new URL('/auth/v1/oauth/token', this.environment.supabaseUrl), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: stored.refreshToken,
+            client_id: this.environment.oauthClientId,
+          }),
+        });
+      } catch {
         throw new CliError('TRANSPORT_ERROR', 'Authentication service could not refresh the session');
       }
-      const refreshed: StoredSession = { version: 1, accessToken: data.session.access_token, refreshToken: data.session.refresh_token };
+      if (response.status === 400 || response.status === 401) return false;
+      if (!response.ok) throw new CliError('TRANSPORT_ERROR', 'Authentication service could not refresh the session');
+      let data: unknown;
+      try { data = await response.json(); } catch { throw new CliError('TRANSPORT_ERROR', 'Authentication service returned an invalid refresh response'); }
+      if (typeof data !== 'object' || data === null) throw new CliError('TRANSPORT_ERROR', 'Authentication service returned an invalid refresh response');
+      const tokens = data as Record<string, unknown>;
+      if (typeof tokens.access_token !== 'string' || typeof tokens.refresh_token !== 'string' || !tokens.access_token || !tokens.refresh_token) {
+        throw new CliError('TRANSPORT_ERROR', 'Authentication service returned incomplete refresh credentials');
+      }
+      const refreshed: StoredSession = { version: 1, accessToken: tokens.access_token, refreshToken: tokens.refresh_token };
       await this.store.write(refreshed);
       this.current = refreshed;
       return true;
@@ -109,22 +112,8 @@ export class SessionManager {
   async logout(): Promise<{ hadSession: boolean }> {
     return this.withLock(async () => {
       const session = await this.store.read();
-      this.current = session;
-      let remoteError = false;
-      try {
-        if (session) {
-          const { error: setError } = await this.auth.auth.setSession({ access_token: session.accessToken, refresh_token: session.refreshToken });
-          if (setError) remoteError = true;
-          else {
-            const { error } = await this.auth.auth.signOut({ scope: 'local' });
-            remoteError = Boolean(error);
-          }
-        }
-      } finally {
-        await this.store.delete();
-        this.current = null;
-      }
-      if (remoteError) throw new CliError('TRANSPORT_ERROR', 'Remote logout failed', { localCredentialsRemoved: true });
+      await this.store.delete();
+      this.current = null;
       return { hadSession: Boolean(session) };
     });
   }

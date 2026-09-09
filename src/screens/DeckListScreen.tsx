@@ -17,7 +17,7 @@ export function DeckListScreen() {
   if (decks.isError) return <ScreenState title="Could not load decks" detail={decks.error.message} actionLabel="Retry" onAction={() => void decks.refetch()} />;
 
   return <ScrollView className="flex-1 bg-background" contentContainerClassName="mx-auto w-full max-w-md gap-4 p-5">
-    <View className="mb-4 flex-row items-start justify-between gap-4"><View className="flex-1 gap-1"><Heading size="2xl">Your decks</Heading><Text className="text-muted-foreground">Choose a deck to begin studying.</Text></View><Button variant="outline" size="sm" onPress={() => void signOut()}><ButtonText>Sign out</ButtonText></Button></View>
+    <View className="mb-4 flex-row items-start justify-between gap-4"><View className="flex-1 gap-1"><Heading size="2xl">Your decks</Heading><Text className="text-muted-foreground">Choose a deck to begin studying.</Text></View><View className="gap-2"><Button variant="outline" size="sm" onPress={() => router.push('/authorized-applications')}><ButtonText>Applications</ButtonText></Button><Button variant="outline" size="sm" onPress={() => void signOut()}><ButtonText>Sign out</ButtonText></Button></View></View>
     {decks.data.decks.length ? decks.data.decks.map((deck) => <DeckListItem deck={deck} key={deck.id} onPress={() => router.push(`/study/${deck.id}`)} />) : <ScreenState title="No decks yet" detail="Create a deck through the API, then return here to study it." />}
   </ScrollView>;
 }

@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { CommanderError } from 'commander';
 import { z } from 'zod';
-import { readCliEnvironment, type PublicClientEnvironment } from '../api/environment.ts';
+import { readCliEnvironment, type CliEnvironment } from '../api/environment.ts';
 import { CliError, toCliError } from './errors.ts';
 import { type CredentialStoreKind } from './credentials.ts';
+import type { StoredSession } from './credentials.ts';
+import { authorizeWithOAuth, type OAuthLoginOptions } from './oauth.ts';
 import { numberFlag, parseInput, schemas, validate } from './input.ts';
 import { createProgram } from './program.ts';
 import { SessionManager } from './session.ts';
@@ -16,15 +18,17 @@ interface CliIo {
 
 type Options = Record<string, unknown>;
 
-type CliSessionManager = Pick<SessionManager, 'api' | 'kind' | 'login' | 'logout' | 'requireSession' | 'save'>;
+type CliSessionManager = Pick<SessionManager, 'api' | 'kind' | 'logout' | 'requireSession' | 'save'>;
 
 export interface CliRuntime {
-  createSessionManager: (environment: PublicClientEnvironment, requestedKind?: CredentialStoreKind) => Promise<CliSessionManager>;
+  createSessionManager: (environment: CliEnvironment, requestedKind?: CredentialStoreKind) => Promise<CliSessionManager>;
+  authorize: (environment: CliEnvironment, options: OAuthLoginOptions) => Promise<StoredSession>;
   createRequestId: () => string;
 }
 
 const defaultRuntime: CliRuntime = {
   createSessionManager: SessionManager.create,
+  authorize: authorizeWithOAuth,
   createRequestId: randomUUID,
 };
 
@@ -92,15 +96,18 @@ async function runOperation(operation: string, options: Options, io: CliIo, runt
 }
 
 async function login(options: Options, io: CliIo, runtime: CliRuntime): Promise<unknown> {
-  const email = validate(z.string().email(), options.email);
   const requested = options.credentialStore;
   if (requested !== undefined && requested !== 'keyring' && requested !== 'file') throw new CliError('VALIDATION_FAILED', 'Credential store must be keyring or file');
-  const password = options.passwordStdin ? await passwordFromStdin(io.stdin) : await passwordFromTty(io);
   const environment = readCliEnvironment(io.environment ?? process.env);
   const manager = await runtime.createSessionManager(environment, requested as CredentialStoreKind | undefined);
-  const signedIn = await manager.login(email, password);
-  await manager.save(signedIn.session, true);
-  return { userId: signedIn.userId, email: signedIn.email, credentialStore: manager.kind };
+  const session = await runtime.authorize(environment, {
+    openBrowser: options.open !== false,
+    showAuthorizationUrl(url) {
+      io.stderr.write(`Open this URL in a browser to authorize Flash Cards:${String.fromCharCode(10)}${url}${String.fromCharCode(10)}`);
+    },
+  });
+  await manager.save(session, true);
+  return { credentialStore: manager.kind };
 }
 
 async function input<T extends z.ZodType>(options: Options, schema: T, io: CliIo, fromFlags: () => unknown): Promise<z.output<T>> {
@@ -127,56 +134,43 @@ async function confirmation(kind: 'deck' | 'card', id: string, yes: unknown, io:
   if (!io.stdin.isTTY || !io.stderr.isTTY) throw new CliError('CONFIRMATION_REQUIRED', 'Deletion requires --yes outside an interactive terminal');
   const prompt = kind === 'deck' ? `Delete deck ${id} and all of its cards? [y/N] ` : `Delete card ${id} and its history? [y/N] `;
   io.stderr.write(prompt);
-  const answer = (await readTtyLine(io, false)).trim().toLowerCase();
+  const answer = (await readTtyLine(io)).trim().toLowerCase();
   if (answer !== 'y' && answer !== 'yes') throw new CliError('CANCELLED', 'Deletion cancelled');
   return true;
 }
 
-async function passwordFromStdin(stdin: NodeJS.ReadableStream): Promise<string> {
-  let value = '';
-  for await (const chunk of stdin) {
-    value += Buffer.from(chunk).toString('utf8');
-    if (Buffer.byteLength(value) > 1024 * 1024) throw new CliError('VALIDATION_FAILED', 'Password input exceeds 1 MiB');
-  }
-  value = value.replace(/\r?\n$/, '');
-  if (!value || /\r|\n/.test(value)) throw new CliError('VALIDATION_FAILED', 'Password input must be one non-empty line');
-  return value;
-}
-
-async function passwordFromTty(io: CliIo): Promise<string> {
-  return readTtyLine(io, true);
-}
-
-async function readTtyLine(io: CliIo, hidden: boolean): Promise<string> {
-  if (!io.stdin.isTTY || !io.stderr.isTTY) throw new CliError('USAGE_ERROR', 'Use --password-stdin outside an interactive terminal');
-  const stdin = io.stdin as NodeJS.ReadableStream & { setRawMode?: (enabled: boolean) => void };
-  if (!stdin.setRawMode) throw new CliError('USAGE_ERROR', 'Interactive terminal does not support hidden input');
-  io.stderr.write(hidden ? 'Password: ' : '');
-  const { promise, resolve, reject } = Promise.withResolvers<string>();
-  let value = '';
-  const finish = (error?: Error) => {
-    stdin.off('data', onData);
-    stdin.setRawMode?.(false);
-    io.stderr.write('\n');
-    if (error) reject(error);
-    else resolve(value);
-  };
-  const onData = (chunk: Buffer | string) => {
-    for (const byte of Buffer.from(chunk)) {
-      if (byte === 3) { finish(new CliError('CANCELLED', 'Input cancelled')); return; }
-      if (byte === 13 || byte === 10) { finish(); return; }
-      if (byte === 127 || byte === 8) {
-        if (value.length > 0) { value = value.slice(0, -1); if (!hidden) io.stderr.write('\b \b'); }
-        continue;
+async function readTtyLine(io: CliIo): Promise<string> {
+  if (!io.stdin.isTTY || !io.stderr.isTTY) throw new CliError('USAGE_ERROR', 'Interactive terminal input is unavailable');
+  const stdin = io.stdin as NodeJS.ReadableStream & { setRawMode?: (enabled: boolean) => void; resume(): void };
+  if (!stdin.setRawMode) throw new CliError('USAGE_ERROR', 'Interactive terminal does not support terminal input');
+  return new Promise<string>((resolve, reject) => {
+    let value = '';
+    const cleanup = () => {
+      stdin.off('data', onData);
+      stdin.setRawMode?.(false);
+    };
+    const onData = (chunk: Buffer | string) => {
+      const input = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : chunk;
+      if (input === '\u0003') {
+        cleanup();
+        reject(new CliError('CANCELLED', 'Operation cancelled'));
+      } else if (input === '\r' || input === '\n') {
+        cleanup();
+        io.stderr.write('\n');
+        resolve(value);
+      } else if (input === '\u007f' || input === '\b') {
+        if (value.length > 0) {
+          value = value.slice(0, -1);
+          io.stderr.write('\b \b');
+        }
+      } else if (!/[\u0000-\u001f\u007f]/.test(input)) {
+        value += input;
+        io.stderr.write(input);
       }
-      value += String.fromCharCode(byte);
-      if (!hidden) io.stderr.write(String.fromCharCode(byte));
-      if (Buffer.byteLength(value) > 1024 * 1024) { finish(new CliError('VALIDATION_FAILED', 'Password input exceeds 1 MiB')); return; }
-    }
-  };
-  stdin.setRawMode(true);
-  stdin.on('data', onData);
-  const line = await promise;
-  if (!line) throw new CliError('VALIDATION_FAILED', hidden ? 'Password must not be empty' : 'Confirmation must not be empty');
-  return line;
+    };
+    stdin.setRawMode?.(true);
+    stdin.resume();
+    stdin.on('data', onData);
+  });
 }
+

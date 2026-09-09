@@ -10,11 +10,13 @@ const state = vi.hoisted(() => {
     unsubscribe,
     getSession: vi.fn(),
     signInWithPassword: vi.fn(),
+    signInWithOAuth: vi.fn(),
     signOut: vi.fn(),
     refreshSession: vi.fn(),
     auth: {
       getSession: vi.fn(),
       signInWithPassword: vi.fn(),
+      signInWithOAuth: vi.fn(),
       signOut: vi.fn(),
       refreshSession: vi.fn(),
       onAuthStateChange: vi.fn((callback) => {
@@ -28,6 +30,7 @@ const state = vi.hoisted(() => {
 
 state.auth.getSession = state.getSession;
 state.auth.signInWithPassword = state.signInWithPassword;
+state.auth.signInWithOAuth = state.signInWithOAuth;
 state.auth.signOut = state.signOut;
 state.auth.refreshSession = state.refreshSession;
 vi.mock('@/auth/supabase', () => ({ supabase: { auth: state.auth } }));
@@ -41,6 +44,7 @@ describe('AuthProvider', () => {
   beforeEach(() => {
     state.getSession.mockReset().mockResolvedValue({ data: { session: null }, error: null });
     state.signInWithPassword.mockReset().mockResolvedValue({ error: null });
+    state.signInWithOAuth.mockReset().mockResolvedValue({ error: null });
     state.signOut.mockReset().mockResolvedValue({ error: null });
     state.unsubscribe.mockReset();
   });
@@ -57,12 +61,17 @@ describe('AuthProvider', () => {
     expect(state.unsubscribe).toHaveBeenCalledOnce();
   });
 
-  it('surfaces sign-in failures and signs out on demand', async () => {
+  it('delegates password and GitHub sign-in without retaining credentials', async () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.isRestoring).toBe(false));
     state.signInWithPassword.mockResolvedValueOnce({ error: new Error('Invalid credentials') });
-    await expect(result.current.signIn('a@example.com', 'bad')).rejects.toThrow('Invalid credentials');
+    await expect(result.current.signInWithPassword('a@example.com', 'bad')).rejects.toThrow('Invalid credentials');
     expect(state.signInWithPassword).toHaveBeenCalledWith({ email: 'a@example.com', password: 'bad' });
+    await result.current.signInWithGitHub('https://example.com/flash-card/');
+    expect(state.signInWithOAuth).toHaveBeenCalledWith({
+      provider: 'github',
+      options: { redirectTo: 'https://example.com/flash-card/' },
+    });
     await result.current.signOut();
     expect(state.signOut).toHaveBeenCalledOnce();
   });

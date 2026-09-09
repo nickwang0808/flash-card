@@ -1,7 +1,18 @@
+export type FrontendAuthMode = 'password' | 'github';
+
 export interface PublicClientEnvironment {
   supabaseUrl: string;
   supabasePublishableKey: string;
   apiUrl: string;
+}
+
+export interface FrontendEnvironment extends PublicClientEnvironment {
+  authMode: FrontendAuthMode;
+  siteUrl: string;
+}
+
+export interface CliEnvironment extends PublicClientEnvironment {
+  oauthClientId: string;
 }
 
 type EnvironmentValues = Record<string, string | undefined>;
@@ -10,20 +21,28 @@ export function readFrontendEnvironment(environment: EnvironmentValues = {
   EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
   EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
   EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
-}): PublicClientEnvironment {
-  return readEnvironment(environment, {
+  EXPO_PUBLIC_AUTH_MODE: process.env.EXPO_PUBLIC_AUTH_MODE,
+  EXPO_PUBLIC_SITE_URL: process.env.EXPO_PUBLIC_SITE_URL,
+}): FrontendEnvironment {
+  const client = readEnvironment(environment, {
     supabaseUrl: 'EXPO_PUBLIC_SUPABASE_URL',
     supabasePublishableKey: 'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
     apiUrl: 'EXPO_PUBLIC_API_URL',
   });
+  const authMode = requiredValue(environment, 'EXPO_PUBLIC_AUTH_MODE');
+  if (authMode !== 'password' && authMode !== 'github') throw new Error('EXPO_PUBLIC_AUTH_MODE must be password or github');
+  return { ...client, authMode, siteUrl: requiredHttpUrl(environment, 'EXPO_PUBLIC_SITE_URL') };
 }
 
-export function readCliEnvironment(environment: EnvironmentValues = process.env): PublicClientEnvironment {
-  return readEnvironment(environment, {
-    supabaseUrl: 'FLASHCARD_SUPABASE_URL',
-    supabasePublishableKey: 'FLASHCARD_SUPABASE_PUBLISHABLE_KEY',
-    apiUrl: 'FLASHCARD_API_URL',
-  });
+export function readCliEnvironment(environment: EnvironmentValues = process.env): CliEnvironment {
+  return {
+    ...readEnvironment(environment, {
+      supabaseUrl: 'FLASHCARD_SUPABASE_URL',
+      supabasePublishableKey: 'FLASHCARD_SUPABASE_PUBLISHABLE_KEY',
+      apiUrl: 'FLASHCARD_API_URL',
+    }),
+    oauthClientId: requiredValue(environment, 'FLASHCARD_OAUTH_CLIENT_ID'),
+  };
 }
 
 function readEnvironment(
